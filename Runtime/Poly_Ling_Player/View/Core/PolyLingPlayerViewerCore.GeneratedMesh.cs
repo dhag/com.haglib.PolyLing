@@ -275,6 +275,15 @@ namespace Poly_Ling.Player
             int  oldMaterialIndex = model.CurrentMaterialIndex;
             bool matSlotAdded     = ApplyGeneratedMaterialIndex(model, meshObject, materialIndex, imageMaterial);
 
+            // 梯子の行列（段 10）。生成物は梯子の格納空間にあるので、梯子の 格納→バインド を掛けて
+            // モデル空間へ置く。置き方（位置・焼かなかった回転・拡大）は出力の姿勢が持つので、
+            // 出力の枠はルート（単位）。作り直し（ModifierSpace.TryComputeMatrix の poseOwnedByOutput）と揃える。
+            if (_createBeltSource != null)
+            {
+                model.ComputeWorldMatrices();
+                Poly_Ling.Ops.ModifierSpace.ApplyMatrix(meshObject, _createBeltSource.VertexToBindWorldMatrix);
+            }
+
             var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
                 poseRotation, poseScale, ignorePoseInArmature);
             ctx.ParentModelContext = model;
@@ -344,6 +353,16 @@ namespace Poly_Ling.Player
                 if (ReferenceEquals(srcObject, meshObject)) srcObject = meshObject.Clone();
                 foreach (var v in srcObject.Vertices)
                     v.Position += worldPos;
+            }
+
+            // 梯子の行列（段 10）。作り直し（ReplaceExisting：姿勢・位置を焼いたあとに M）と同じ順で掛ける。
+            //   M ＝（追加先の バインド→格納）×（梯子の 格納→バインド）
+            if (_createBeltSource != null)
+            {
+                if (ReferenceEquals(srcObject, meshObject)) srcObject = meshObject.Clone();
+                model.ComputeWorldMatrices();
+                if (Poly_Ling.Ops.ModifierSpace.TryComputeMatrix(_createBeltSource, targetMc, false, out var beltM))
+                    Poly_Ling.Ops.ModifierSpace.ApplyMatrix(srcObject, beltM);
             }
 
             // UNDO: 変更前スナップショット
@@ -430,6 +449,35 @@ namespace Poly_Ling.Player
         /// </summary>
         /// <param name="masterIndex">置き換えた描画オブジェクトの位置。失敗時は -1。</param>
         /// <returns>失敗理由。成功時は null。</returns>
+        /// <summary>ApplyReplaceTransforms を掛ける必要があるか。</summary>
+        private static bool NeedsReplaceTransforms(
+            Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            MeshContext targetMc, Poly_Ling.Ops.ModifierSpace.WriteBack spaceWb)
+            => poseRotation != Vector3.zero || poseScale != Vector3.one || worldPos != Vector3.zero
+            || spaceWb != null || targetMc.IsSkinned;
+
+        /// <summary>
+        /// 中身の入れ替えの前に生成物へ掛ける変換（mo をその場で書き換える）。
+        ///   1. 渡ってきた姿勢（回転・拡大）を焼き込む（対象の姿勢は変えない）
+        ///   2. 位置を足す
+        ///   3. スキンド化のあとの評価空間（段 5。ModifierSpace）：行列 M で出力の格納空間へ移し、
+        ///      出力の種別に合わせてウェイトを捨てる・欠けを検査する
+        /// 書き戻し（PrimitiveMeshReplaceExisting）と逆方向の作り直しの見本（BuildModifierTemplate。段 6）が
+        /// 同じ関数を通す。戻り値は失敗理由。
+        /// </summary>
+        private static string ApplyReplaceTransforms(
+            MeshObject mo, Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            MeshContext targetMc, Poly_Ling.Ops.ModifierSpace.WriteBack spaceWb, bool checkWeights = true)
+        {
+            if (poseRotation != Vector3.zero || poseScale != Vector3.one)
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshTransform.ApplyRotationScale(mo, poseRotation, poseScale);
+            if (worldPos != Vector3.zero)
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshTransform.Apply(mo, worldPos, Vector3.zero, Vector3.one);
+            if (spaceWb != null || targetMc.IsSkinned)
+                return Poly_Ling.Ops.ModifierSpace.PrepareForOutput(mo, targetMc, spaceWb, checkWeights);
+            return null;
+        }
+
         private string PrimitiveMeshReplaceExisting(
             ProjectContext project, MeshObject meshObject,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
@@ -445,19 +493,15 @@ namespace Poly_Ling.Player
             if (targetMc == null || targetMc.MeshObject == null)
                 return "置き換え先の描画オブジェクトが見つかりません";
 
-            // 渡ってきた姿勢は頂点へ焼き込む（対象の姿勢は変えない）。
+            // 渡ってきた姿勢・位置を頂点へ焼き込み、段 5 の評価空間へ移す（ApplyReplaceTransforms）。
+            // 中身を入れ替える前に済ませ、失敗なら何も書かない。元のメッシュは書き換えない（複製に掛ける）。
+            var spaceWb = Poly_Ling.Ops.ModifierSpace.Current;
             var srcObject = meshObject;
-            bool hasPose = poseRotation != Vector3.zero || poseScale != Vector3.one;
-            if (hasPose)
+            if (NeedsReplaceTransforms(worldPos, poseRotation, poseScale, targetMc, spaceWb))
             {
                 srcObject = meshObject.Clone();
-                Poly_Ling.PrimitiveMesh.PrimitiveMeshTransform.ApplyRotationScale(
-                    srcObject, poseRotation, poseScale);
-            }
-            if (worldPos != Vector3.zero)
-            {
-                if (ReferenceEquals(srcObject, meshObject)) srcObject = meshObject.Clone();
-                foreach (var v in srcObject.Vertices) v.Position += worldPos;
+                string spaceWhy = ApplyReplaceTransforms(srcObject, worldPos, poseRotation, poseScale, targetMc, spaceWb);
+                if (spaceWhy != null) return spaceWhy;
             }
 
             // UNDO: 変更前スナップショット
@@ -465,8 +509,12 @@ namespace Poly_Ling.Player
             //   書き込み先が先頭の選択メッシュになるため、選択中の別オブジェクトの
             //   MeshContext へ targetMc の MeshObject を入れてしまい、2 つの描画
             //   オブジェクトが同じ MeshObject を共有する。明示は記録の後で解除する。
+            //   記録を止めているとき（オブジェクトグループの作り直し・依存の評価）は書き込み先も設定しない。
+            //   SetMeshObjectFor は頂点編集の履歴を消す（MeshUndoController.SetMeshObjectFor）ので、
+            //   入力の編集の直後に評価が下流を書き戻すと、その編集の Undo が消える（段 4）。
             MeshObjectSnapshot before = null;
-            if (_editOps?.UndoController != null)
+            bool recordReplace = _editOps?.UndoController != null && !_editOps.UndoController.IsRecordingSuspended;
+            if (recordReplace)
             {
                 _editOps.UndoController.SetMeshObjectFor(targetMc, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
@@ -501,8 +549,10 @@ namespace Poly_Ling.Player
             dst.LineGroups = Poly_Ling.Ops.LineGroupOps.CloneList(srcObject);
             dst.RebuildIdSets();
 
-            // サブIDは入れ替え後の並びで、部品IDごとに 0 から振り直す。
-            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(dst);
+            // サブIDは振り直さない。中身を総入れ替えするので、生成物の値（図形ごとの決まりで
+            // PrimitiveMeshFactory.AssignPartsIds が振った値。藤壺・まつげは配置元のサブIDのまま）を
+            // そのまま使う。新規オブジェクト（PrimitiveMeshCreateNewObject）と同じにするため
+            // （振り直すと、作り直しのたびに新規作成と違うサブIDになっていた。作り直し整備計画 段 7）。
 
             // UnityMesh 再構築
             var newUnityMesh = dst.ToUnityMesh();
@@ -511,13 +561,13 @@ namespace Poly_Ling.Player
             targetMc.ReplaceUnityMesh(newUnityMesh);
 
             // UNDO: 変更後スナップショット記録
-            if (_editOps?.UndoController != null && before != null)
+            if (recordReplace && before != null)
             {
                 var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(
                     before, after, $"Replace Contents of {targetMc.Name}");
             }
-            _editOps?.UndoController?.ClearTargetMeshContext();
+            if (recordReplace) _editOps.UndoController.ClearTargetMeshContext();
 
             // 置き換え先がミラー対の実体側なら、ミラー側も実体側から作り直す。
             ReplaceMirrorSideContents(model, targetMc);
@@ -564,7 +614,10 @@ namespace Poly_Ling.Player
                 realMo, axis, realCtx.MirrorDistance, realCtx.MirrorMaterialOffset, mirrorCtx.Name);
             if (built == null) return;
 
+            // 記録を止めているとき（作り直し・依存の評価）は書き込み先を設定しない。
+            // SetMeshObjectFor は頂点編集の履歴を消す（段 5。本体側の ReplaceExisting と同じ扱い）。
             var undo = _editOps?.UndoController;
+            if (undo != null && undo.IsRecordingSuspended) undo = null;
             MeshObjectSnapshot before = null;
             if (undo != null)
             {

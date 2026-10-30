@@ -57,7 +57,8 @@ namespace Poly_Ling.Serialization
             {
                 name = name ?? meshObject.Name ?? "Untitled",
                 isTriangulated = meshObject.IsTriangulated,
-                skinKind = (int)meshObject.SkinKind
+                skinKind = (int)meshObject.SkinKind,
+                skinBakeMatrix = SkinBakeMatrixToArray(meshObject),
             };
 
             // BoneTransform
@@ -269,6 +270,9 @@ namespace Poly_Ling.Serialization
             else
                 meshObject.RecomputeSkinKind();
 
+            // スキンド化のときに焼いた行列（段 10）。欄が無い旧データは控え無し。
+            ApplySkinBakeMatrix(meshObject, meshDTO.skinBakeMatrix);
+
             return meshObject;
         }
 
@@ -391,6 +395,7 @@ namespace Poly_Ling.Serialization
                 excludeFromExport       = mc.ExcludeFromExport,
                 ignorePoseInArmature    = mc.IgnorePoseInArmature,
                 isMirrorBranchRoot      = mc.IsMirrorBranchRoot,
+                mirrorBranchSameSense   = mc.MirrorBranchSameSense,
                 preserveNormals         = mc.PreserveNormals,
                 exportSettingsDTO       = ToBoneTransformDTO(mc.BoneTransform),
             };
@@ -455,6 +460,7 @@ namespace Poly_Ling.Serialization
                 ExcludeFromExport      = meta.excludeFromExport,
                 IgnorePoseInArmature   = meta.ignorePoseInArmature,
                 IsMirrorBranchRoot     = meta.isMirrorBranchRoot,
+                MirrorBranchSameSense  = meta.mirrorBranchSameSense,
                 PreserveNormals        = meta.preserveNormals,
                 BoneTransform          = meta.exportSettingsDTO != null
                                          ? ToBoneTransform(meta.exportSettingsDTO)
@@ -500,6 +506,7 @@ namespace Poly_Ling.Serialization
                 meshIndex  = meshIndex,
                 isTriangulated = meshObject.IsTriangulated,
                 skinKind   = (int)meshObject.SkinKind,
+                skinBakeMatrix = SkinBakeMatrixToArray(meshObject),
             };
 
             foreach (var vertex in meshObject.Vertices)
@@ -546,10 +553,34 @@ namespace Poly_Ling.Serialization
             {
                 isTriangulated = geo.isTriangulated,
                 skinKind   = geo.skinKind,
+                skinBakeMatrix = geo.skinBakeMatrix,
                 vertices   = geo.vertices ?? new System.Collections.Generic.List<VertexDTO>(),
                 faces      = geo.faces    ?? new System.Collections.Generic.List<FaceDTO>(),
             };
             return ToMeshObject(tmp);
+        }
+
+        /// <summary>
+        /// スキンド化のときに焼いた ローカル→バインド の行列（段 10）を、Matrix4x4 の索引 0..15 の並びにする。
+        /// 控えが無ければ null（欄を書かない）。
+        /// </summary>
+        private static float[] SkinBakeMatrixToArray(MeshObject mo)
+        {
+            if (mo == null || !mo.HasSkinBakeMatrix) return null;
+            var a = new float[16];
+            var m = mo.SkinBakeMatrix;
+            for (int k = 0; k < 16; k++) a[k] = m[k];
+            return a;
+        }
+
+        /// <summary>SkinBakeMatrixToArray の逆。16 個そろっているときだけ書く。</summary>
+        private static void ApplySkinBakeMatrix(MeshObject mo, float[] a)
+        {
+            if (mo == null || a == null || a.Length < 16) return;
+            var m = new Matrix4x4();
+            for (int k = 0; k < 16; k++) m[k] = a[k];
+            mo.SkinBakeMatrix    = m;
+            mo.HasSkinBakeMatrix = true;
         }
     }
 }

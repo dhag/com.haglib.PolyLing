@@ -221,3 +221,13 @@ glTF へは X を反転して書く（位置 (-x, y, z)、回転 (x, -y, -z, w)�
 - 段 ⑤ の試験用 bakedBones だけのファイルは、muscles・body を消さずにキー名を改名して作った（MCP からは大きな JSON の一部を削れないため。読込は未知のキーを無視する）。
 - Editor の `UnityClipExportWindow` は今も `<root>_bones.csv`（UnityBone v3）を書くが、PolyLing 本体に読む側は無くなった（段 ⑤ で `LoadSourceRestCsv` を削除）。
 - PolyLing_mocopi は PolyLing を GitHub の固定コミットで取り込んでいる（`Packages/manifest.json`）。`MocopiToPolyLing.csproj` は `Library/ScriptAssemblies/PolyLing.Runtime.dll`（古い版）を参照するため、MCP の compile では今回の変更を検証できない。しかも変更前から `MocopiMuscleSender.cs:253`（`MotionLiveFrame.Source` / `MotionLiveJson.SourceMocopi` が無い）でエラーが出る＝固定コミットがすでに古い。PolyLing をプッシュし、mocopi 側でパッケージを更新してからコンパイル確認が要る（操作者の作業）。
+
+## 7. 残件の締め（2026-10-31。この計画は完了）
+
+- Save で並べ替えの警告が出なくなった件・VRMA 書き出しの節の使える条件：記録のみ（仕様）。
+- ライブ受信の届かなかったマッスル：選べるようにした。muscles のフレームに任意の `"absentMuscles":"rest"`（`MotionLiveFrame.AbsentRest`）。無ければ従来どおり 0。`UnityClipApplier.ApplyMuscleFrame(…, absentRest)` と、転送用の骨を作る `MotionLiveHandler.FillBones` が同じ規則を使う。送り手（mocopi・MediaPipe）は今のまま（欄なし＝0）。
+- `UnityClipExportWindow` の `<root>_bones.csv`：読む側が無いので書かないようにした（`BuildBoneCsv`・`CollectBones`・`DfsOrder`・オプション「bones.csv は Skinned…」を削除）。limits.csv は従来どおり。
+- ライブ受信で駆動されなくなった骨に前の回転が残る件：モーションスタジオ（`データとツール/VRMビュワー/polyling_motion_studio/polyling_motion_studio.html`）で、前のフレームにあった骨が今回無ければ `reset`（T ポーズへ戻してから当てる）を付けるようにした。
+- タイムラインでマッスルのトラックだけ変えたとき bakedBones と食い違う件：JS ではマッスルから骨を解けないので直さない（記録のみ）。
+- 段 ⑤ の試験用ファイルの作り方：記録のみ。
+- ファイルダイアログを使うパネル操作、ブラウザでのモーションスタジオの確認、Editor の窓（Play 外）からの Save、mocopi 側のコンパイル：道具で届かないので `PolyLing_残件.md` の 6 へ移した。

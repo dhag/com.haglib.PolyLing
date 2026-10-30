@@ -109,6 +109,66 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// オブジェクトグループの項目 1 つの引数（キー順）と、書けるか。
+        /// 書けるかは setObjectGroupStepArgs と同じ ObjectGroupOps.ArgWriteBlockReason で決める。
+        /// </summary>
+        private static string BuildObjectGroupStepArgsData(
+            ProjectContext project, ModelContext model, QueryObjectGroupStepArgsCommand cmd, out string error)
+        {
+            error = null;
+            var g = model.FindObjectGroupByName(cmd.GroupName);
+            if (g == null) { error = $"グループが見つかりません: {cmd.GroupName}"; return null; }
+
+            var step = g.GetStep(cmd.StepIndex);
+            if (step == null) { error = $"項目 {cmd.StepIndex} がありません（項目数 {g.StepCount}）"; return null; }
+
+            Type t = PanelCommandFactory.ResolveType(step.Action);
+
+            var keys     = new List<string>();
+            var vals     = new List<string>();
+            var writable = new List<int>();
+            var reasons  = new List<string>();
+
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Str("group",  g.Name ?? ""),
+                PLDataValue.Num("step",   cmd.StepIndex),
+                PLDataValue.Str("action", step.Action ?? ""),
+            };
+
+            foreach (var kv in step.SortedArgs())
+            {
+                string why = step.IsExecutable ? ObjectGroupOps.ArgWriteBlockReason(t, kv.Key) : "実行しない項目です";
+                keys.Add(kv.Key);
+                vals.Add(kv.Value ?? "");
+                writable.Add(why == null ? 1 : 0);
+                reasons.Add(why ?? "");
+                values.Add(PLDataValue.Str("arg." + kv.Key, kv.Value ?? ""));
+            }
+
+            var outIds = new List<string>();
+            foreach (ulong id in step.OutputObjectIds)
+                outIds.Add(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "objectGroupStepArgs"), values,
+                masterIndex: -1, objectId: 0UL,
+                source: PanelCommandFactory.ActionOf(typeof(QueryObjectGroupStepArgsCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",          entry)
+                .Text("action",          step.Action ?? "")
+                .Int("steps",            g.StepCount)
+                .Texts("keys",           keys)
+                .Texts("values",         vals)
+                .Ints("writable",        writable)
+                .Texts("blockReasons",   reasons)
+                .Texts("outputObjectIds", outIds)
+                .Build();
+        }
+
+        /// <summary>
         /// ボーンウェイトの行き先。
         /// 「塗り直されたか」は頂点数では判らず、どのボーンを指しているかで決まる。
         /// </summary>

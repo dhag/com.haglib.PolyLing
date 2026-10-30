@@ -26,7 +26,7 @@ namespace Poly_Ling.Context
         //
         //   【保存しない理由】
         //     モデルの中身ではなく、パネルを開いている間だけの見え方の指定。
-        //     CSV/JSON どちらにも書き出さないこと（規約4 の対称性の対象外）。
+        //     CSV / JSON / バイナリのどれにも書き出さないこと（規約4 の対称性の対象外）。
         //
         //   【誰が読むか】
         //     MeshSceneRenderer.PrepareBones / SubmitBones。

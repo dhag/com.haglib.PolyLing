@@ -129,3 +129,9 @@ BVH（関節の階層＋モーション）を読み書きする。正本はこ�
 
 - 表示の引き直し：モーションの姿勢を当てたときの表示更新用に、正規入口（Enter*）を 1 つ設ける案。
 - 未対応：MCP だけで書き出したときは、表示の引き直しが正規入口（EnterVerticesMoved）だけになる（UpdateTransform は規約で新規に呼ばない）。
+
+## 9. 残件の締め（2026-10-31。この計画は完了）
+
+- 表示の引き直し：正規入口 `PlayerViewportManager.SettleWorldPositions`（位置を送る → 行列表 → 描画。作り直し整備計画 段 B）が既にあるので、新しい入口は足さない。
+- MCP だけで書き出したときの表示：BVH・FBX のモーション書き出しの後始末を `EnterVerticesMoved(Dragging)` から `SettleWorldPositions` に替えた（`PolyLingPlayerViewerCore.CreateCommands.FileIO.cs`）。書き出しコマンドは Writes=None で、コマンド終わりの引き直しが走らないため。
+- あわせて、書き出しの標本化がモデルに姿勢を残す不具合を直した：`UnityClipApplier.ResetAllBones` が層を `PoseLayer.Clear()` で直接消していて行列のキャッシュが古いまま残った。`BonePoseData.ClearLayer` に替えた。確認：`__AちゃんH.pmx` で VMD → BVH（a）、CMU → BVH、VMD → BVH（c）。CMU の後の `queryBone LeftHand` は worldPosition＝bindPosition、a と c の最終フレームが一致（`SandBox/verify1031/`）。

@@ -139,6 +139,7 @@ namespace Poly_Ling.Player
             }
 
             Vector3 worldDelta;
+            Matrix4x4? localBasis = null;
             if (cmd.Space == Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World)
             {
                 worldDelta = cmd.Delta;
@@ -151,8 +152,9 @@ namespace Poly_Ling.Player
                 // オブジェクト（作業空間の代理など）でローカル量が往復で一致しない。
                 var baseMc = model.GetMeshContext(indices[0]);
                 bool showBind = _project?.ShowBindPose ?? false;
-                worldDelta = (showBind ? baseMc.BindWorldMatrix : baseMc.DisplayWorldMatrix)
-                             .MultiplyVector(cmd.Delta);
+                var basis = showBind ? baseMc.BindWorldMatrix : baseMc.DisplayWorldMatrix;
+                worldDelta = basis.MultiplyVector(cmd.Delta);
+                localBasis = basis;
             }
 
             // 作業空間の平面制約中（対象が代理だけ）は、移動量を平面内の成分として解釈する。
@@ -163,6 +165,18 @@ namespace Poly_Ling.Player
 
             if (worldDelta.sqrMagnitude < 1e-20f) { reason = "移動量が 0 です"; return false; }
 
+            // Local のときは、ワールドへ出した量を移動に使わない。
+            //   行列 × 逆行列は float で単位行列にならず、ワールドへ出して頂点ごとに
+            //   戻すと、動かしていない軸や移動量に端数が乗る（UV の作業空間では
+            //   反映した UV に出る）。基準の行列と同じ行列で描く頂点にはローカル量を
+            //   そのまま足し、違う行列の頂点だけ変換する（BeginMove → MakeWorldToLocal）。
+            Vector3 moveDelta = worldDelta;
+            if (localBasis.HasValue)
+            {
+                moveDelta = cmd.Delta;
+                if (esPlane.HasValue) moveDelta.z = 0f;
+            }
+
             // マグネットの UI 状態を退避する。
             bool         savedUse      = UseMagnet;
             float        savedRadius   = MagnetRadius;
@@ -170,6 +184,7 @@ namespace Poly_Ling.Player
             DistanceMode savedDistance = MagnetDistanceMode;
 
             _targetOverride = targets;
+            _localMoveBasis = localBasis;
             bool moved = false;
             try
             {
@@ -178,12 +193,13 @@ namespace Poly_Ling.Player
                 MagnetFalloff      = cmd.MagnetFalloff;
                 MagnetDistanceMode = cmd.MagnetDistanceMode;
 
-                moved = ApplyNumericMove(worldDelta);
+                moved = ApplyNumericMove(moveDelta);
                 if (!moved) reason = "対象メッシュに選択された要素がありません";
             }
             finally
             {
                 _targetOverride    = null;
+                _localMoveBasis    = null;
                 UseMagnet          = savedUse;
                 MagnetRadius       = savedRadius;
                 MagnetFalloff      = savedFalloff;

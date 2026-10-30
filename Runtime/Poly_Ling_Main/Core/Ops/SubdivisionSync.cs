@@ -1,5 +1,6 @@
 // SubdivisionSync.cs
 // サブディビジョンの親（ケージ）と子（滑らかな結果）のつながりを、実行時に保つ。
+// 評価器（ModifierEvaluator）に載る、subdivideMesh の処理器。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【つながりの正本は ObjectGroup】
@@ -7,13 +8,18 @@
 //   親（cageMasterIndex の ObjectId）・回数（level）・子（出力先）を持つ。
 //   保存・転送・Undo はグループの既存の仕組みに乗る。ここが持つのは
 //   計算済みのステンシルの控えだけで、保存しない。
+//   項目を集めるのは評価器（ModifierEvaluator.CollectEntries）。親は入力のキー cageMasterIndex で引く。
 //
-// 【いつ動くか】
-//   RefreshModel … GPU バッファを作り直す入口（MeshSceneRenderer.RebuildAdapter）の先頭。
-//                  面構成の署名が変わっていれば子を作り直し、変わっていなければ
-//                  位置だけ書き直す。面の追加・削除・Undo・読み込みはすべてここを通る。
-//   SyncFromCage … 頂点ドラッグ中の軽量同期（PlayerViewportManager.SyncMeshPositionsAndTransform）。
-//                  ミラー側の同期と同じ位置。面構成は変えず、位置だけを書く。
+// 【いつ動くか】評価器のきっかけ 2 か所から呼ばれる。
+//   Refresh  … GPU バッファを作り直す入口（MeshSceneRenderer.RebuildAdapter → ModifierEvaluator.RefreshModel）。
+//              面構成の署名が変わっていれば子を作り直し、変わっていなければ
+//              位置だけ書き直す。面の追加・削除・Undo・読み込みはすべてここを通る。
+//   SyncDrag … 頂点ドラッグ中の軽量同期（PlayerViewportManager.SyncMeshPositionsAndTransform →
+//              ModifierEvaluator.SyncFromInput）。SubdivideMeshCommand は FollowsDrag。
+//              ミラー側の同期と同じ位置。面構成は変えず、位置だけを書く。
+//
+// 【面構成の署名】SubdivisionOps.TopologySignature（線分を混ぜない）で判断する。
+//   評価器の入力の署名（MeshSignature.Topology）は線分も混ぜるので、作り直すかの判断には使わない。
 //
 // 【姿勢】子は親の子として置き、ローカルは単位。親を動かすと階層の計算
 //   （ModelContext.ComputeWorldMatrices）で子もそのまま動く。ここでは姿勢に触れない。
@@ -35,6 +41,9 @@ namespace Poly_Ling.Ops
         /// <summary>回数の引数のキー。</summary>
         public const string LevelKey = "level";
 
+        /// <summary>評価器へ登録する処理器（ModifierEvaluator の静的初期化で登録される）。</summary>
+        public static readonly IModifierHandler Handler = new SubdivisionHandler();
+
         /// <summary>親 1 つと子 1 つのつながり。</summary>
         public sealed class Link
         {
@@ -54,9 +63,6 @@ namespace Poly_Ling.Ops
             public SubdivisionStencil Stencil;
         }
 
-        private static readonly ConditionalWeakTable<ModelContext, List<Link>> _links
-            = new ConditionalWeakTable<ModelContext, List<Link>>();
-
         private static readonly ConditionalWeakTable<MeshContext, Cache> _cache
             = new ConditionalWeakTable<MeshContext, Cache>();
 
@@ -64,36 +70,32 @@ namespace Poly_Ling.Ops
         // つながりを引く
         // ================================================================
 
+        /// <summary>評価器の項目から、つながりを作る。サブディビジョンでない・揃っていなければ null。</summary>
+        private static Link ToLink(ModifierEvaluator.Entry e)
+        {
+            if (e?.Step == null) return null;
+            if (!string.Equals(e.Step.Action, Action, System.StringComparison.Ordinal)) return null;
+
+            var cage  = e.Input(CageKey);
+            var child = e.FirstOutput;
+            if (cage?.MeshObject == null || child?.MeshObject == null) return null;
+
+            int level = SubdivisionOps.LevelMin;
+            if (int.TryParse(e.Step.GetArg(LevelKey, "1"), System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int lv))
+                level = Mathf.Clamp(lv, SubdivisionOps.LevelMin, SubdivisionOps.LevelMax);
+
+            return new Link { Group = e.Group, Step = e.Step, Cage = cage, Child = child, Level = level };
+        }
+
         /// <summary>モデルのグループから、親と子のつながりを全部引く。</summary>
         public static List<Link> CollectLinks(ModelContext model)
         {
             var list = new List<Link>();
-            if (model?.ObjectGroups == null || model.MeshContextList == null) return list;
-
-            foreach (var g in model.ObjectGroups)
+            foreach (var e in ModifierEvaluator.CollectEntries(model))
             {
-                if (g?.Steps == null) continue;
-                foreach (var s in g.Steps)
-                {
-                    if (s == null || !s.IsExecutable) continue;
-                    if (!string.Equals(s.Action, Action, System.StringComparison.Ordinal)) continue;
-
-                    var cageIds = s.GetMeshRefIds(CageKey);
-                    ulong cageId = cageIds.Count > 0 ? cageIds[0] : 0UL;
-                    ulong childId = s.FirstOutputId;
-                    if (cageId == 0UL || childId == 0UL) continue;
-
-                    var cage  = FindById(model, cageId);
-                    var child = FindById(model, childId);
-                    if (cage?.MeshObject == null || child?.MeshObject == null) continue;
-
-                    int level = SubdivisionOps.LevelMin;
-                    if (int.TryParse(s.GetArg(LevelKey, "1"), System.Globalization.NumberStyles.Integer,
-                            System.Globalization.CultureInfo.InvariantCulture, out int lv))
-                        level = Mathf.Clamp(lv, SubdivisionOps.LevelMin, SubdivisionOps.LevelMax);
-
-                    list.Add(new Link { Group = g, Step = s, Cage = cage, Child = child, Level = level });
-                }
+                var l = ToLink(e);
+                if (l != null) list.Add(l);
             }
             return list;
         }
@@ -114,14 +116,6 @@ namespace Poly_Ling.Ops
             return null;
         }
 
-        private static MeshContext FindById(ModelContext model, ulong id)
-        {
-            var list = model.MeshContextList;
-            for (int i = 0; i < list.Count; i++)
-                if (list[i] != null && list[i].ObjectId == id) return list[i];
-            return null;
-        }
-
         // ================================================================
         // 控え
         // ================================================================
@@ -138,35 +132,35 @@ namespace Poly_Ling.Ops
                 Signature = SubdivisionOps.TopologySignature(cage.MeshObject),
                 Stencil   = stencil,
             });
+            // 評価器の入力の署名も今の値で控える（控えのキーは出力の先頭＝子）。
+            ModifierEvaluator.Prime(child, new[] { cage });
         }
 
         /// <summary>子の控えを捨てる（解除したとき）。</summary>
         public static void Forget(MeshContext child)
         {
-            if (child != null) _cache.Remove(child);
+            if (child == null) return;
+            _cache.Remove(child);
+            ModifierEvaluator.Forget(child);
         }
 
         // ================================================================
-        // GPU バッファを作り直す入口から
+        // 処理器
         // ================================================================
 
-        /// <summary>
-        /// 全部の子を親に合わせる。面構成が変わっていれば作り直し、
-        /// 変わっていなければ位置と法線だけ書き直す。
-        /// </summary>
-        public static void RefreshModel(ModelContext model)
+        private sealed class SubdivisionHandler : IModifierHandler
         {
-            if (model == null) return;
+            public string Action => SubdivisionSync.Action;
 
-            var links = CollectLinks(model);
-            _links.Remove(model);
-            _links.Add(model, links);
-            if (links.Count == 0) return;
-
-            int materialCount = model.MaterialCount;
-
-            foreach (var l in links)
+            /// <summary>
+            /// 子を親に合わせる。面構成が変わっていれば作り直し、
+            /// 変わっていなければ位置と法線だけ書き直す（入力の署名の変化に関わらず毎回）。
+            /// </summary>
+            public void Refresh(ModelContext model, ModifierEvaluator.Entry entry, bool inputsChanged)
             {
+                var l = ToLink(entry);
+                if (l == null) return;
+
                 // 子は親の編集にいつも追随しているので、「ソースが変わったのに出力が古い」
                 // 状態は残らない。ダイジェストを持たせると親を動かすたびに要更新と出るため、
                 // 空（ObjectGroupOps.IsStale が「変わっていない」と扱う値）にしておく。
@@ -188,7 +182,7 @@ namespace Poly_Ling.Ops
                             out var result, out var stencil, out string err))
                     {
                         Debug.LogWarning($"[Subdivision] {l.Child.Name}: 作り直せません: {err}");
-                        continue;
+                        return;
                     }
                     SubdivisionOps.ReplaceContents(l.Child.MeshObject, result);
                     _cache.Remove(l.Child);
@@ -200,7 +194,7 @@ namespace Poly_Ling.Ops
                 else
                 {
                     var pos = c.Stencil.Apply(CagePositions(l.Cage));
-                    if (pos == null) continue;
+                    if (pos == null) return;
                     var verts = l.Child.MeshObject.Vertices;
                     for (int i = 0; i < pos.Length; i++) verts[i].Position = pos[i];
                     l.Child.MeshObject.RecalculateSmoothNormals();
@@ -209,7 +203,7 @@ namespace Poly_Ling.Ops
 
                 // 面は UnityMesh から描かれる。中身・法線を変えたので作り直す。
                 // 描画提出と同じフレームで走り得る入口なので遅延破棄にする。
-                var mesh = l.Child.MeshObject.ToUnityMesh(materialCount);
+                var mesh = l.Child.MeshObject.ToUnityMesh(model.MaterialCount);
                 mesh.name = l.Child.Name;
                 mesh.hideFlags = HideFlags.HideAndDontSave;
                 l.Child.ReplaceUnityMeshDeferred(mesh);
@@ -218,36 +212,43 @@ namespace Poly_Ling.Ops
                 // 保存しない表示設定なので、つながりを最初に見たときに立てる。
                 if (first) l.Cage.HideFaceShading = true;
             }
-        }
 
-        // ================================================================
-        // 頂点ドラッグ中
-        // ================================================================
-
-        /// <summary>
-        /// 親の頂点を動かしている最中に、子の位置を書き直す。
-        /// 面構成が変わっていそうなとき（頂点数が控えと違う）は何もしない
-        /// （作り直しは RefreshModel が受け持つ）。
-        /// </summary>
-        /// <param name="upload">位置を書き直した子を GPU へ上げる口。</param>
-        public static void SyncFromCage(ModelContext model, MeshContext cage, System.Action<MeshContext> upload)
-        {
-            if (model == null || cage?.MeshObject == null) return;
-            if (!_links.TryGetValue(model, out var links) || links == null) return;
-
-            foreach (var l in links)
+            /// <summary>
+            /// 親の頂点を動かしている最中に、子の位置を書き直す。
+            /// 面構成が変わっていそうなとき（頂点数が控えと違う）は何もしない
+            /// （作り直しは Refresh が受け持つ）。
+            /// </summary>
+            public void SyncDrag(ModelContext model, ModifierEvaluator.Entry entry, MeshContext movedInput,
+                                 System.Action<MeshContext> upload)
             {
-                if (!ReferenceEquals(l.Cage, cage)) continue;
-                if (!_cache.TryGetValue(l.Child, out var c)) continue;
-                if (c.Stencil.InputCount != cage.MeshObject.VertexCount) continue;
-                if (c.Stencil.OutputCount != l.Child.MeshObject.VertexCount) continue;
+                var l = ToLink(entry);
+                if (l == null || !ReferenceEquals(l.Cage, movedInput)) return;
+                if (!_cache.TryGetValue(l.Child, out var c)) return;
+                if (c.Stencil.InputCount != l.Cage.MeshObject.VertexCount) return;
+                if (c.Stencil.OutputCount != l.Child.MeshObject.VertexCount) return;
 
-                var pos = c.Stencil.Apply(CagePositions(cage));
-                if (pos == null) continue;
+                var pos = c.Stencil.Apply(CagePositions(l.Cage));
+                if (pos == null) return;
                 var verts = l.Child.MeshObject.Vertices;
                 for (int i = 0; i < pos.Length; i++) verts[i].Position = pos[i];
                 l.Child.MeshObject.InvalidatePositionCache();
                 upload?.Invoke(l.Child);
+            }
+
+            /// <summary>
+            /// 解除（「適用」）：子を普通のメッシュにする。ReleaseSubdivision（子を残す）と同じ後始末。
+            /// 控えを捨て、親の面の塗りを戻し、子のロックを外す。
+            /// </summary>
+            public void Release(ModelContext model, ModifierEvaluator.Entry entry)
+            {
+                var cage  = entry?.Input(CageKey);
+                var child = entry?.FirstOutput;
+                if (child != null)
+                {
+                    Forget(child);
+                    child.IsLocked = false;
+                }
+                if (cage != null) cage.HideFaceShading = false;
             }
         }
 

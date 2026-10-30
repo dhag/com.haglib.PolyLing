@@ -31,9 +31,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // モーフ基準データ用一時バッファ
             var morphBasePositions = new List<Vector3>();
             var morphBaseUVs = new List<Vector2>();
+            var morphBaseNormals = new List<Vector3>();   // mbn 行（無い旧ファイルは法線なし）
             string morphName = "";
             int morphPanel = 3;
             bool hasMorphBase = false;
+            DateTime? morphCreatedAt = null;   // morphCreatedAt 行（無い旧ファイルは読込時刻のまま）
 
             // skinKind 行の有無。無い（旧形式）ときだけ頂点ウェイトから求め直す。
             bool sawSkinKind = false;
@@ -84,9 +86,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "isFolding":
                         mc.IsFolding = ParseBool(cols, 1);
                         break;
+                    case "modifierOutputEdited":
+                        // 項目の出力の未確定（段 F）。行が無ければ 0（未記録）のまま。
+                        mc.ModifierForwardSig = ParseBool(cols, 1)
+                            ? MeshContext.ModifierForwardSigEditedMark : 0UL;
+                        break;
                     case "objectId":
                         // 旧形式のファイルにはこの行が無い。その場合 0 のままで、
-                        // ModelContext.Add/Insert または ObjectIdAllocator.EnsureIds が新IDを振る。
+                        // ModelContext の一覧へ入れる道（Admit）か ResolveDuplicates が新IDを振る。
                         if (cols.Length > 1 && ulong.TryParse(cols[1], out var __oid))
                         {
                             mc.ObjectId = __oid;
@@ -108,6 +115,16 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         {
                             meshObject.SetSkinKind(__sk);
                             sawSkinKind = true;
+                        }
+                        break;
+                    case "skinBakeMatrix":
+                        // スキンド化のときに焼いた ローカル→バインド の行列（段 10）。索引 0..15 の順。
+                        if (cols.Length >= 17)
+                        {
+                            var __m = new Matrix4x4();
+                            for (int __k = 0; __k < 16; __k++) __m[__k] = ParseFloat(cols, 1 + __k);
+                            meshObject.SkinBakeMatrix    = __m;
+                            meshObject.HasSkinBakeMatrix = true;
                         }
                         break;
                     case "mirrorType":
@@ -147,6 +164,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "mirrorBranchRoot":
                         mc.IsMirrorBranchRoot = ParseBool(cols, 1);
+                        break;
+                    case "mirrorBranchSameSense":
+                        mc.MirrorBranchSameSense = ParseBool(cols, 1);
                         break;
                     case "boneTransform":
                         mc.BoneTransform = ReadBoneTransform(cols);
@@ -249,6 +269,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "morphPanel":
                         morphPanel = ParseInt(cols, 1, 3);
                         break;
+                    case "morphCreatedAt":
+                        // 規約4：.mfproj の morphBaseData.createdAt と揃える
+                        if (cols.Length > 1 && DateTime.TryParse(UnescapeCsv(cols[1]), CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out var mca))
+                            morphCreatedAt = mca;
+                        break;
                     case "mb":
                         morphBasePositions.Add(new Vector3(
                             ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)));
@@ -256,6 +282,21 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "mbuv":
                         morphBaseUVs.Add(new Vector2(ParseFloat(cols, 2), ParseFloat(cols, 3)));
+                        break;
+                    case "mbn":
+                        morphBaseNormals.Add(new Vector3(
+                            ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)));
+                        break;
+                    case "workAxis":
+                        // workAxis,ox,oy,oz,qx,qy,qz,qw,length,isVisible（作業軸オブジェクトだけが持つ。
+                        // 規約4：.mfproj の meshDTOList[].workAxis・バイナリ PLRS v5 と揃える）
+                        mc.WorkAxis = ModelSerializer.FromWorkAxisData(new WorkAxisDTO
+                        {
+                            origin    = new[] { ParseFloat(cols, 1), ParseFloat(cols, 2), ParseFloat(cols, 3) },
+                            rotation  = new[] { ParseFloat(cols, 4), ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7, 1f) },
+                            length    = ParseFloat(cols, 8),
+                            isVisible = ParseBool(cols, 9, true),
+                        });
                         break;
                     case "ss":
                         ReadSelectionSet(cols, mc);
@@ -337,8 +378,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     MorphName = morphName,
                     Panel = morphPanel,
                     BasePositions = morphBasePositions.ToArray(),
-                    BaseUVs = morphBaseUVs.Count > 0 ? morphBaseUVs.ToArray() : null
+                    BaseUVs = morphBaseUVs.Count > 0 ? morphBaseUVs.ToArray() : null,
+                    BaseNormals = morphBaseNormals.Count > 0 ? morphBaseNormals.ToArray() : null
                 };
+                if (morphCreatedAt.HasValue) mc.MorphBaseData.CreatedAt = morphCreatedAt.Value;
             }
 
             // 描画オブジェクトの種別。

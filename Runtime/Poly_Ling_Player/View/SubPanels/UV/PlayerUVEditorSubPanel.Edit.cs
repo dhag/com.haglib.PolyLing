@@ -44,25 +44,12 @@ namespace Poly_Ling.Player
             // マグネット影響頂点（非選択で半径内）
             if (_uvMagnet.Enabled && selPos.Count > 0)
             {
-                var tested = new HashSet<long>();
-                foreach (var face in mo.Faces)
+                foreach (var id in EnumerateShownUVVertices(mo))
                 {
-                    if (face == null) continue;
-                    if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
-                    for (int ci = 0; ci < face.VertexCount; ci++)
-                    {
-                        int vi = face.VertexIndices[ci];
-                        if (vi < 0 || vi >= mo.VertexCount) continue;
-                        int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                        long key = ((long)vi << 32) | (uint)ui;
-                        if (!tested.Add(key)) continue;
-                        var id = new UVVertexId(vi, ui);
-                        if (_dragStartUVs.ContainsKey(id)) continue;
-                        var v = mo.Vertices[vi];
-                        if (ui < 0 || ui >= v.UVs.Count) continue;
-                        float wt = _uvMagnet.WeightFor(v.UVs[ui], selPos);
-                        if (wt > 0f) { _dragStartUVs[id] = v.UVs[ui]; _uvMagnetW[id] = wt; }
-                    }
+                    if (_dragStartUVs.ContainsKey(id)) continue;
+                    var uv = mo.Vertices[id.VertexIndex].UVs[id.UVIndex];
+                    float wt = _uvMagnet.WeightFor(uv, selPos);
+                    if (wt > 0f) { _dragStartUVs[id] = uv; _uvMagnetW[id] = wt; }
                 }
             }
             _interaction = Interaction.MovingVertex;
@@ -193,7 +180,7 @@ namespace Poly_Ling.Player
                 }
                 if (_uvMagnet.Enabled && selPos.Count > 0)
                 {
-                    foreach (var id in CollectAllUVVertices(mo))
+                    foreach (var id in CollectShownUVVertices(mo))
                     {
                         if (_uvHandleStart.ContainsKey(id)) continue;
                         if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
@@ -206,7 +193,7 @@ namespace Poly_Ling.Player
             }
             else
             {
-                foreach (var id in CollectAllUVVertices(mo))
+                foreach (var id in CollectShownUVVertices(mo))
                 {
                     if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                     var v = mo.Vertices[id.VertexIndex];
@@ -395,16 +382,8 @@ namespace Poly_Ling.Player
         {
             var mo = GetMeshObject();
             if (mo == null) return;
-            foreach (var face in mo.Faces)
-            {
-                if (face == null) continue;
-                for (int ci = 0; ci < face.VertexCount; ci++)
-                {
-                    int vi = face.VertexIndices[ci];
-                    int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                    _selected.Add(new UVVertexId(vi, ui));
-                }
-            }
+            foreach (var id in EnumerateShownUVVertices(mo))
+                _selected.Add(id);
             UpdateInfo(mo); RefreshAnchorAuto(); _canvas.MarkDirtyRepaint();
         }
 
@@ -434,7 +413,7 @@ namespace Poly_Ling.Player
                 Mathf.Approximately(su, 1f) && Mathf.Approximately(sv, 1f) &&
                 Mathf.Approximately(deg, 0f)) { SetStatus("変換パラメータが初期値です"); return; }
 
-            var targets = _selected.Count > 0 ? new HashSet<UVVertexId>(_selected) : CollectAllUVVertices(mo);
+            var targets = _selected.Count > 0 ? new HashSet<UVVertexId>(_selected) : CollectShownUVVertices(mo);
             RefreshAnchorAuto();          // 自動モードなら重心に更新
             var pivot   = _anchor;        // 可変アンカーを基準に使用
 
@@ -454,7 +433,7 @@ namespace Poly_Ling.Player
                 }
                 if (_uvMagnet.Enabled && selPos.Count > 0)
                 {
-                    foreach (var id in CollectAllUVVertices(mo))
+                    foreach (var id in CollectShownUVVertices(mo))
                     {
                         if (weights.ContainsKey(id)) continue;
                         if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
@@ -519,20 +498,57 @@ namespace Poly_Ling.Player
             if (_scaleAxisDeg != null) _scaleAxisDeg.value = 0f;
         }
 
-        private static HashSet<UVVertexId> CollectAllUVVertices(MeshObject mo)
+        // ================================================================
+        // マテリアル絞り込み（表示中マテリアルの判定と UV 頂点の列挙はここだけに置く）
+        // ================================================================
+
+        /// <summary>面が表示中マテリアルに属するか。マテリアル一覧が空なら全面を表示中とみなす。</summary>
+        private bool IsFaceInShownMaterial(Face face)
         {
-            var r = new HashSet<UVVertexId>();
+            if (face == null) return false;
+            if (_matsWithVerts.Count == 0) return true;
+            int li = Mathf.Clamp(_selectedMatListIndex, 0, _matsWithVerts.Count - 1);
+            return face.MaterialIndex == _matsWithVerts[li];
+        }
+
+        /// <summary>
+        /// 表示中マテリアルの面に属する UV 頂点を、面の順に重複なく列挙する。
+        /// 頂点番号・UV 番号が範囲外のものは除く。描画・ヒットテスト・選択・移動・変換はすべてこれを通す。
+        /// </summary>
+        private IEnumerable<UVVertexId> EnumerateShownUVVertices(MeshObject mo)
+        {
+            if (mo == null) yield break;
+            var seen = new HashSet<long>();
             foreach (var face in mo.Faces)
             {
-                if (face == null) continue;
+                if (!IsFaceInShownMaterial(face)) continue;
                 for (int ci = 0; ci < face.VertexCount; ci++)
                 {
                     int vi = face.VertexIndices[ci];
+                    if (vi < 0 || vi >= mo.VertexCount) continue;
                     int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                    r.Add(new UVVertexId(vi, ui));
+                    if (ui < 0 || ui >= mo.Vertices[vi].UVs.Count) continue;
+                    long key = ((long)vi << 32) | (uint)ui;
+                    if (!seen.Add(key)) continue;
+                    yield return new UVVertexId(vi, ui);
                 }
             }
-            return r;
+        }
+
+        /// <summary>表示中マテリアルの UV 頂点の集合。</summary>
+        private HashSet<UVVertexId> CollectShownUVVertices(MeshObject mo)
+            => new HashSet<UVVertexId>(EnumerateShownUVVertices(mo));
+
+        /// <summary>選択とホバーから、表示中マテリアルに属さない UV 頂点を外す（マテリアル切替時）。</summary>
+        private void DropHiddenFromSelection()
+        {
+            var mo = GetMeshObject();
+            if (mo == null) { _selected.Clear(); _hovered = null; return; }
+            var shown = CollectShownUVVertices(mo);
+            _selected.RemoveWhere(id => !shown.Contains(id));
+            if (_hovered.HasValue && !shown.Contains(_hovered.Value)) _hovered = null;
+            UpdateInfo(mo);
+            RefreshAnchorAuto();
         }
 
         private static Vector2 ComputeUVPivot(MeshObject mo, HashSet<UVVertexId> targets)
@@ -608,7 +624,7 @@ namespace Poly_Ling.Player
             if (_anchorManual) return;
             var mo = GetMeshObject();
             if (mo == null) return;
-            var targets = _selected.Count > 0 ? _selected : CollectAllUVVertices(mo);
+            var targets = _selected.Count > 0 ? _selected : CollectShownUVVertices(mo);
             _anchor = ComputeUVPivot(mo, targets);
             RefreshAnchorFields();
         }
@@ -625,7 +641,7 @@ namespace Poly_Ling.Player
         {
             var mo = GetMeshObject();
             if (mo == null) return;
-            var targets = _selected.Count > 0 ? _selected : CollectAllUVVertices(mo);
+            var targets = _selected.Count > 0 ? _selected : CollectShownUVVertices(mo);
 
             if (preset == AnchorPreset.Centroid)
             {

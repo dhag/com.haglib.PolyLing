@@ -63,8 +63,10 @@ namespace Poly_Ling.UnityClip
         /// 受信したマッスル値（HumanTrait.MuscleName の並び）を当てる。ライブ受信用。
         /// valid[i] が false のマッスルは「トラック無し」と同じ扱いにする（その骨を当てない）。
         /// 計算はクリップのマッスル経路（ApplyMuscleValues）と同じ。path トラックは無い。
+        /// absentRest は届かなかった dof を正準 T ポーズの値で解くか（クリップの absentMuscles="rest" と同じ）。
         /// </summary>
-        public void ApplyMuscleFrame(ModelContext model, float[] values, bool[] valid, float timeSec)
+        public void ApplyMuscleFrame(ModelContext model, float[] values, bool[] valid, float timeSec,
+                                     bool absentRest = false)
         {
             if (model == null || values == null) return;
             if (_mappedModel != model || _mapping == null) BuildMapping(model);
@@ -86,7 +88,7 @@ namespace Poly_Ling.UnityClip
                     v = 0f;
                     return false;
                 },
-                false, timeSec);
+                absentRest, timeSec);
 
             FinishFrame(model);
         }

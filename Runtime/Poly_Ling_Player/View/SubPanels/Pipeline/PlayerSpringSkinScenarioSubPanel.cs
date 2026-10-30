@@ -21,9 +21,10 @@
 //     （MeshFilterToSkinnedConverter.cs の Phase 4）。先に塗っても消える。
 //
 //   よって塗る契機はスキンド化の直後 1 か所に集約してある。
-//   はしごのグループへ「自動更新」を立てておくと、スキンド化のあとに
-//   PlayerCommandDispatcher.RunAutoUpdateGroups が流し直して塗る。
+//   スキンド化のあとに、オブジェクトグループの評価器が依存の順に流し直して塗る
+//   （PlayerCommandDispatcher.ReevaluateAfterSkinning。作り直し整備計画 段 5）。
 //   フリルのグループも同じ流れで、はしごのウェイトを引き継ぐ。
+//   「自動更新」を立てる段は残しているが、評価器はその値を見ない。
 //
 // 【取り付け先】
 //   はしごの階層親をそのまま使う。まだボーンでなくてよい。

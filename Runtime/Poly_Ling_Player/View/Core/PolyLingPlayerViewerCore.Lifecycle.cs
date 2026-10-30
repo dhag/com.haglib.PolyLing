@@ -105,12 +105,20 @@ namespace Poly_Ling.Player
                         // Player では ModelContext.OnListChanged / OnReorderCompleted に
                         // 購読者が居ないため、ここで再構築しないとシーンもリストも
                         // 古い並びのまま残り、描画がインデックス不整合になる。
-                        bool needsRebuild = lastRecord is MeshListChangeRecord
-                                         || lastRecord is MeshAttributesBatchChangeRecord
-                                         || lastRecord is MultiMeshVertexSnapshotRecord
-                                         || lastRecord is MultiMeshTopologySnapshotRecord
-                                         || lastRecord is MeshReorderChangeRecord;
-                        bool isReorder    = lastRecord is MeshReorderChangeRecord;
+                        //
+                        // 作り直すかは、記録の種類ではなく「描画バッファが今のモデルと合っているか」で決める
+                        // （作り直し整備計画 段 A）。以前は記録の種類を並べて決めており、並びから漏れた
+                        // MorphCreateRecord の Undo では作り直さずに古いバッファが残った。
+                        // 位置だけを戻した記録の GPU への反映は、Undo コマンドの終わりの
+                        // SettleWorldPositions が受け持つ（段 B）。
+                        // 並び替えの判定はパネルへの知らせ方にだけ使う。
+                        bool isReorder    = false;
+                        var executed = _editOps.UndoController.MeshListStack.LastExecutedRecords;
+                        if (executed == null || executed.Count == 0)
+                            executed = lastRecord != null ? new[] { lastRecord } : System.Array.Empty<Poly_Ling.UndoSystem.IUndoRecord<ModelContext>>();
+                        foreach (var rec in executed)
+                            if (rec is MeshReorderChangeRecord) isReorder = true;
+                        bool needsRebuild = !_viewportManager.BuffersMatchModel(model);
                         UnityEngine.Debug.Log(
                             $"[UndoDbg]   lastRecord={lastRecord?.GetType().Name ?? "<null>"}, " +
                             $"needsRebuild={needsRebuild}");
@@ -203,9 +211,16 @@ namespace Poly_Ling.Player
                     $"sameAsCurrent={ReferenceEquals(targetModel, ActiveProject?.CurrentModel)}");
 
                 // ── 頂点移動の復元
+                // 複数メッシュの記録は、索引を記録のモデル（PendingTargetModel）で引く
+                // （頂点編集の履歴は書き込み先が替わっても消さないので、今の
+                // ParentModelContext は記録のモデルと違うことがある。作り直し整備計画 段 12）。
+                var pendingModel = ctx.PendingTargetModel ?? targetModel;
+                ctx.PendingTargetModel = null;
+
                 var pending = ctx.PendingMeshMoveEntries;
                 if (pending != null && pending.Length > 0)
                 {
+                    targetModel = pendingModel;
                     int totalV = 0; foreach (var e in pending) totalV += e.Indices?.Length ?? 0;
                     UnityEngine.Debug.Log(
                         $"[UndoDbg]   restore vertex move: entries={pending.Length}, totalVerts={totalV}");
@@ -248,7 +263,7 @@ namespace Poly_Ling.Player
                         $"[UndoDbg]   restore selection (multi): entries={selEntries.Length}");
                     foreach (var e in selEntries)
                     {
-                        var mc = targetModel.GetMeshContext(e.MeshContextIndex);
+                        var mc = pendingModel.GetMeshContext(e.MeshContextIndex);
                         if (mc?.Selection == null || e.New == null) continue;
                         mc.Selection.RestoreFromSnapshot(e.New);
                     }
@@ -269,21 +284,54 @@ namespace Poly_Ling.Player
                 // SelectionChangeRecord 経由。復元先は ActiveMeshContext 固定。
                 // 記録側も ActiveMeshContext だけを変更する処理に限ること
                 // （AdvancedSelectToolHandler / PlayerCommandDispatcher.PartsSetApply）。
+                // 戻し先は記録が控えた相手（CurrentSelectionTarget）。控えが無い記録だけ
+                // ActiveMeshContext（段 12）。画面の選択は今の ActiveMeshContext のもので塗り直す。
                 var snapshot = ctx.CurrentSelectionSnapshot;
+                var selTarget = ctx.CurrentSelectionTarget;
+                ctx.CurrentSelectionTarget = null;
                 if (snapshot != null)
                 {
                     UnityEngine.Debug.Log(
                         $"[UndoDbg]   restore selection: V={snapshot.Vertices?.Count ?? 0}, " +
-                        $"E={snapshot.Edges?.Count ?? 0}");
+                        $"E={snapshot.Edges?.Count ?? 0}, target={selTarget?.Name ?? "<active>"}");
+                    var restoreMc = selTarget ?? targetModel.ActiveMeshContext;
+                    restoreMc?.Selection?.RestoreFromSnapshot(snapshot);
                     var firstMc = targetModel.ActiveMeshContext;
                     if (firstMc?.Selection != null)
                     {
-                        firstMc.Selection.RestoreFromSnapshot(snapshot);
                         _selectionOps?.SetSelectionState(firstMc.Selection);
                         _renderer?.SetSelectionState(firstMc.Selection);
                     }
                     ctx.CurrentSelectionSnapshot = null;
                     NotifyPanels(ChangeKind.Selection);
+                }
+
+                // ── スナップショット・面追加の記録が書いた相手の作り直し（段 12）
+                // 記録は自分の書き込み先へ書き、その相手を AppliedMeshContexts で渡してくる。
+                // 書き込み先は今の選択と違うことがあるので、下の逆引き（ctx.MeshObject から）
+                // ではなく、この相手の表面メッシュを作り直す。
+                if (ctx.AppliedMeshContexts.Count > 0)
+                {
+                    var applied = new List<MeshContext>(ctx.AppliedMeshContexts);
+                    ctx.AppliedMeshContexts.Clear();
+                    ModelContext rebuildModel = null;
+                    foreach (var amc in applied)
+                    {
+                        if (amc?.MeshObject == null) continue;
+                        var amModel = amc.ParentModelContext ?? targetModel;
+                        UnityEngine.Debug.Log(
+                            $"[UndoDbg]   restore snapshot: target={amc.Name}, model={amModel?.Name ?? "<null>"}");
+                        amc.ReplaceUnityMesh(amc.MeshObject.ToUnityMesh(amModel.MaterialCount));
+                        MirrorBranchOps.RebakeDerivedMirrorNormals(
+                            amModel.MeshContextList, amModel.MaterialCount);
+                        rebuildModel ??= amModel;
+                    }
+                    if (rebuildModel != null)
+                    {
+                        _viewportManager.EnterUndoApplied(ActiveProject, rebuildModel);
+                        NotifyPanels(ChangeKind.Attributes);
+                    }
+                    return;
                 }
 
                 // ── トポロジー／ボーンウェイト／UV／マテリアル変更の復元
@@ -400,6 +448,7 @@ namespace Poly_Ling.Player
             // 対の解除は Dispose 内。
             PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd, CommandActor.Mcp());
             PolyLingCommandGateway.ModelState = () => _commandDispatcher.CaptureModelState();
+            PolyLingCommandGateway.CurrentModelIndex = () => ActiveProject?.CurrentModelIndex ?? -1;
 
             // ビルド版で MCP サーバの要求を受ける（Editor では何もしない）。対の停止は Dispose 内。
             PolyLingPlayerControlServer.Start();
@@ -830,6 +879,7 @@ namespace Poly_Ling.Player
             PolyLingPlayerControlServer.Stop();
             PolyLingCommandGateway.Dispatch = null;
             PolyLingCommandGateway.ModelState = null;
+            PolyLingCommandGateway.CurrentModelIndex = null;
         }
     }
 }

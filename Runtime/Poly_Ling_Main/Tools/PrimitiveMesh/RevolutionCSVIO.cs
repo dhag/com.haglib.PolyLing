@@ -15,6 +15,7 @@ namespace Poly_Ling.Revolution
     {
         public List<Vector3> Profile;
         public int   RadialSegments;
+        public float CornerSplitAngle;
         public bool  CloseTop, CloseBottom, CloseLoop, Spiral;
         public float PivotY;
         public int   SpiralTurns;
@@ -37,6 +38,7 @@ namespace Poly_Ling.Revolution
             {
                 Profile        = new List<Vector3>(),
                 RadialSegments = currentParams.RadialSegments,
+                CornerSplitAngle = currentParams.CornerSplitAngle,
                 CloseTop       = currentParams.CloseTop,
                 CloseBottom    = currentParams.CloseBottom,
                 CloseLoop      = currentParams.CloseLoop,
@@ -106,6 +108,7 @@ namespace Poly_Ling.Revolution
                 {
                     w.WriteLine("# Revolution Profile");
                     w.WriteLine($"$radialSegments={p.RadialSegments}");
+                    w.WriteLine($"$cornerSplitAngle={p.CornerSplitAngle.ToString(CultureInfo.InvariantCulture)}");
                     w.WriteLine($"$closeTop={p.CloseTop}");
                     w.WriteLine($"$closeBottom={p.CloseBottom}");
                     w.WriteLine($"$closeLoop={p.CloseLoop}");
@@ -142,6 +145,10 @@ namespace Poly_Ling.Revolution
             switch (key)
             {
                 case "radialsegments": if (int.TryParse(val, out int rs))   result.RadialSegments = rs; break;
+                case "cornersplitangle":
+                    if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float csa))
+                        result.CornerSplitAngle = csa;
+                    break;
                 case "closetop":       if (bool.TryParse(val, out bool ct)) result.CloseTop  = ct; break;
                 case "closebottom":    if (bool.TryParse(val, out bool cb)) result.CloseBottom = cb; break;
                 case "closeloop":      if (bool.TryParse(val, out bool cl)) result.CloseLoop = cl; break;

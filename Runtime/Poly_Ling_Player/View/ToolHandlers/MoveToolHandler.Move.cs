@@ -380,19 +380,45 @@ namespace Poly_Ling.Player
         /// 作業空間の平面制約中（対象は代理だけ）。移動量は平面内なので、ローカルの Z 成分は
         /// 行列の丸めだけの値になる。0 にしてローカル Z を保つ（EditSpacePlane.ToLocalPlanarDelta）。
         /// </param>
-        private static Func<int, Vector3, Vector3> MakeWorldToLocal(MeshContext mc, bool showBindPose, bool planar)
+        /// <param name="localBasis">
+        /// Local 指定のコマンド移動のとき、その基準の行列（_localMoveBasis）。このとき受け取る量は
+        /// ワールド量ではなく基準の行列のローカル量。頂点の行列が基準の行列と完全に同じなら
+        /// そのまま返し（往復の端数を乗せない）、違う頂点だけワールドを経て変換する。
+        /// null なら受け取る量はワールド量（マウス・World 指定）。
+        /// </param>
+        /// <param name="planeNormal">平面制約の法線。localBasis があるときの変換で、ワールド量を平面へ射影する。</param>
+        private static Func<int, Vector3, Vector3> MakeWorldToLocal(
+            MeshContext mc, bool showBindPose, bool planar,
+            Matrix4x4? localBasis = null, Vector3? planeNormal = null)
         {
             var cache = new Dictionary<int, Matrix4x4>();
-            return (vertexIndex, worldDelta) =>
+            var same  = new Dictionary<int, bool>();
+            return (vertexIndex, delta) =>
             {
+                if (localBasis.HasValue)
+                {
+                    if (!same.TryGetValue(vertexIndex, out bool isSame))
+                    {
+                        isSame = mc.VertexMatrix(vertexIndex, showBindPose).Equals(localBasis.Value);
+                        same[vertexIndex] = isSame;
+                    }
+                    if (isSame)
+                    {
+                        if (planar) delta.z = 0f;
+                        return delta;
+                    }
+                    delta = localBasis.Value.MultiplyVector(delta);
+                    if (planeNormal.HasValue) delta = Vector3.ProjectOnPlane(delta, planeNormal.Value);
+                }
+
                 if (!cache.TryGetValue(vertexIndex, out var inv))
                 {
                     inv = mc.VertexMatrix(vertexIndex, showBindPose).inverse;
                     cache[vertexIndex] = inv;
                 }
                 return planar
-                    ? EditSpacePlane.ToLocalPlanarDelta(worldDelta, inv)
-                    : inv.MultiplyVector(worldDelta);
+                    ? EditSpacePlane.ToLocalPlanarDelta(delta, inv)
+                    : inv.MultiplyVector(delta);
             };
         }
 
@@ -405,7 +431,9 @@ namespace Poly_Ling.Player
 
             // 表示の姿勢。正典は ProjectContext.ShowBindPose。
             bool showBindPose = _project?.ShowBindPose ?? false;
-            bool planar = GetToolContext?.Invoke()?.EditSpacePlane.HasValue ?? false;
+            var esPlane = GetToolContext?.Invoke()?.EditSpacePlane;
+            bool planar = esPlane.HasValue;
+            Vector3? planeNormal = planar ? esPlane.Value.Normal : (Vector3?)null;
 
             foreach (var kv in _affectedVertices)
             {
@@ -413,7 +441,7 @@ namespace Poly_Ling.Player
                 if (mc?.MeshObject == null) continue;
 
                 var startPos = (Vector3[])mc.MeshObject.Positions.Clone();
-                var toLocal  = MakeWorldToLocal(mc, showBindPose, planar);
+                var toLocal  = MakeWorldToLocal(mc, showBindPose, planar, _localMoveBasis, planeNormal);
 
                 IVertexTransform t;
                 if (UseMagnet)

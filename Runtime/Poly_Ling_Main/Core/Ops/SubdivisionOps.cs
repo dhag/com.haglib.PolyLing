@@ -148,39 +148,9 @@ namespace Poly_Ling.Ops
         /// 親の面構成・UV・材質の署名。頂点位置は含まない。
         /// 子を作り直すかどうか（位置の書き換えだけで済むか）の判定に使う。
         /// </summary>
+        /// <remarks>線分（3 頂点未満の面）は細分化の対象外なので混ぜない。本体は MeshSignature.Topology。</remarks>
         public static ulong TopologySignature(MeshObject cage)
-        {
-            if (cage == null) return 0UL;
-
-            ulong h = 14695981039346656037UL;
-            void Mix(int v) { unchecked { h ^= (uint)v; h *= 1099511628211UL; } }
-
-            Mix(cage.VertexCount);
-            for (int fi = 0; fi < cage.FaceCount; fi++)
-            {
-                var f = cage.Faces[fi];
-                if (f == null || f.VertexCount < 3) continue;
-                Mix(f.VertexCount);
-                Mix(f.MaterialIndex);
-                for (int i = 0; i < f.VertexCount; i++)
-                {
-                    int vi = f.VertexIndices[i];
-                    Mix(vi);
-                    int slot = (f.UVIndices != null && i < f.UVIndices.Count) ? f.UVIndices[i] : 0;
-                    Mix(slot);
-                    if (vi >= 0 && vi < cage.VertexCount)
-                    {
-                        var uvs = cage.Vertices[vi].UVs;
-                        if (uvs != null && slot >= 0 && slot < uvs.Count)
-                        {
-                            Mix(BitConverter.SingleToInt32Bits(uvs[slot].x));
-                            Mix(BitConverter.SingleToInt32Bits(uvs[slot].y));
-                        }
-                    }
-                }
-            }
-            return h;
-        }
+            => MeshSignature.Topology(cage, 3);
 
         // ================================================================
         // 1 回ぶん

@@ -96,23 +96,12 @@ namespace Poly_Ling.Player
 
             float bestSq = HitRadius * HitRadius;
             UVVertexId? best = null;
-            var tested = new HashSet<long>();
 
-            foreach (var face in mo.Faces)
+            foreach (var id in EnumerateShownUVVertices(mo))
             {
-                if (face == null) continue;
-                for (int ci = 0; ci < face.VertexCount; ci++)
-                {
-                    int vi = face.VertexIndices[ci];
-                    if (vi < 0 || vi >= mo.VertexCount) continue;
-                    int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                    long key = ((long)vi << 32) | (uint)ui;
-                    if (!tested.Add(key)) continue;
-                    var v = mo.Vertices[vi];
-                    if (ui < 0 || ui >= v.UVs.Count) continue;
-                    float dsq = ((UVToCanvas(v.UVs[ui], rect)) - pos).sqrMagnitude;
-                    if (dsq < bestSq) { bestSq = dsq; best = new UVVertexId(vi, ui); }
-                }
+                var uv = mo.Vertices[id.VertexIndex].UVs[id.UVIndex];
+                float dsq = (UVToCanvas(uv, rect) - pos).sqrMagnitude;
+                if (dsq < bestSq) { bestSq = dsq; best = id; }
             }
             return best;
         }
@@ -170,7 +159,7 @@ namespace Poly_Ling.Player
                 var face = faces[fi];
                 if (face == null || face.VertexCount < 3) continue;
                 // 選択中マテリアルの面のみ描画
-                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
+                if (!IsFaceInShownMaterial(face)) continue;
 
                 bool hasSel = false;
                 for (int ci = 0; ci < face.VertexCount; ci++)
@@ -196,31 +185,18 @@ namespace Poly_Ling.Player
             }
 
             // 頂点ドット
-            var drawn = new HashSet<long>();
-            for (int fi = 0; fi < faces.Count; fi++)
+            foreach (var id in EnumerateShownUVVertices(mo))
             {
-                var face = faces[fi];
-                if (face == null) continue;
-                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
-                for (int ci = 0; ci < face.VertexCount; ci++)
-                {
-                    int vi = face.VertexIndices[ci];
-                    if (vi < 0 || vi >= verts.Count) continue;
-                    int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                    long key = ((long)vi << 32) | (uint)ui;
-                    if (!drawn.Add(key)) continue;
-                    Vector2 uv = (ui >= 0 && ui < verts[vi].UVs.Count) ? verts[vi].UVs[ui] : Vector2.zero;
-                    var id = new UVVertexId(vi, ui);
-                    bool sel  = _selected.Contains(id);
-                    bool hov  = _hovered.HasValue && _hovered.Value == id;
-                    Color col = sel ? VertexSelColor : (hov ? VertexHoverColor : VertexColor);
-                    float r   = sel ? VertexSelDotR : VertexDotR;
-                    var pt = UVToCanvas(uv, rect);
-                    p.fillColor = col;
-                    p.BeginPath();
-                    p.Arc(pt, r, 0f, 360f);
-                    p.Fill();
-                }
+                Vector2 uv = verts[id.VertexIndex].UVs[id.UVIndex];
+                bool sel  = _selected.Contains(id);
+                bool hov  = _hovered.HasValue && _hovered.Value == id;
+                Color col = sel ? VertexSelColor : (hov ? VertexHoverColor : VertexColor);
+                float r   = sel ? VertexSelDotR : VertexDotR;
+                var pt = UVToCanvas(uv, rect);
+                p.fillColor = col;
+                p.BeginPath();
+                p.Arc(pt, r, 0f, 360f);
+                p.Fill();
             }
         }
 
@@ -444,24 +420,11 @@ namespace Poly_Ling.Player
 
             if (!_marqueeAdditive) _selected.Clear();
 
-            var tested = new HashSet<long>();
-            foreach (var face in mo.Faces)
+            // 表示中マテリアルのみ対象（ワイヤフレーム描画と同じ列挙）
+            foreach (var id in EnumerateShownUVVertices(mo))
             {
-                if (face == null) continue;
-                // 表示中マテリアルのみ対象（ワイヤフレーム描画と整合）
-                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
-                for (int ci = 0; ci < face.VertexCount; ci++)
-                {
-                    int vi = face.VertexIndices[ci];
-                    if (vi < 0 || vi >= mo.VertexCount) continue;
-                    int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
-                    long key = ((long)vi << 32) | (uint)ui;
-                    if (!tested.Add(key)) continue;
-                    var v = mo.Vertices[vi];
-                    if (ui < 0 || ui >= v.UVs.Count) continue;
-                    if (_marquee.Contains(UVToCanvas(v.UVs[ui], rect)))
-                        _selected.Add(new UVVertexId(vi, ui));
-                }
+                if (_marquee.Contains(UVToCanvas(mo.Vertices[id.VertexIndex].UVs[id.UVIndex], rect)))
+                    _selected.Add(id);
             }
             UpdateInfo(mo);
             RefreshAnchorAuto();

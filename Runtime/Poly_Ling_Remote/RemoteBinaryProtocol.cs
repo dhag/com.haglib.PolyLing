@@ -25,9 +25,11 @@
 // ■ PLRM フォーマット（S→C ModelMeta）
 // [Header 8B+]
 //   Magic      : 4B "PLRM"
-//   Version    : 1B (現在 6。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
+//   Version    : 1B (現在 12。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
 //                4 で ObjectGroup の項目列、5 で ObjectGroup / Step の意味情報、
-//                6 で参照段（RefName / ExpansionPolicy）。読みは 3 / 4 / 5 も受ける)
+//                6 で参照段（RefName / ExpansionPolicy）、7 で使う作業軸、8 で材質の拡張、
+//                9 でモデル単位の付帯、10 でグループモーフの子、11 でシナリオの引数、
+//                12 で末尾に表情の作成日時。読みは 3 以降を受ける)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
 //   ModelName  : string
@@ -37,7 +39,9 @@
 // ■ PLRS フォーマット（S→C MeshSummary）
 // [Header 10B+]
 //   Magic      : 4B "PLRS"
-//   Version    : 1B (現在 4。4 で末尾にモーフのミラー適用を追加。旧版は既定値で読む)
+//   Version    : 1B (現在 8。4 で末尾にモーフのミラー適用、5 で作業軸の値、6 でポーズ層・IK リンク・
+//                剛体・ジョイント、7 でメッシュ単位の付帯、8 で末尾にモーフ基準データの作成日時を追加。
+//                旧版は既定値で読む)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
 //   MeshIndex  : 2B (int16)
@@ -196,7 +200,10 @@ namespace Poly_Ling.Remote
         // 追加の欄（CSV の mesh 行と揃えるため。2026-09-30 追加）
         //   All には含めない。含めるとこれらを知らない読み手（ブラウザのクライアント等）が
         //   本文を読み違える。丸ごと・断片のファイル保存とプロジェクト転送だけが Complete で送る。
-        /// <summary>2 本目以降の法線（頂点ごとに [4B 本数] + 本数×12B）。1 本目は Normals 欄。</summary>
+        /// <summary>
+        /// 2 本目以降の法線（頂点ごとに [4B 本数] + 本数×12B）。1 本目は Normals 欄。
+        /// 本数 -1 は「法線を 1 本も持たない」（Normals 欄の値は仮で、読み手は捨てる。2026-10-31 段 H）。
+        /// </summary>
         NormalsExtra      = 0x4000,
         /// <summary>ミラー側ウェイト（頂点ごとに [1B 有無] + 有なら 32B）。</summary>
         MirrorBoneWeights = 0x8000,

@@ -80,7 +80,7 @@ namespace Poly_Ling.Data
         // ----------------------------------------------------------------
         // ObjectId  : リスト内の位置（MasterIndex）に依存しない安定識別子。
         //             追加・削除・並べ替えを跨いで同一オブジェクトを指す。
-        //             0 は「未割当」。ObjectIdAllocator.EnsureIds で遅延割当される。
+        //             0 は「未割当」。一覧へ入れるとき ModelContext.Admit が振る（段 C）。
         //             複製（Duplicate）は別オブジェクトなので新IDを振る。
         //             Undo/Redo のスナップショット復元は同一オブジェクトなのでIDを保つ。
         // EditorName: 現在の編集者名。空文字は「担当者なし（誰でも編集可）」。
@@ -111,6 +111,25 @@ namespace Poly_Ling.Data
 
         /// <summary>折りたたみ状態（MQO互換）</summary>
         public bool IsFolding { get; set; } = false;
+
+        // ================================================================
+        // モディファイアの出力の来歴（作り直し整備計画 段 F）
+        // ----------------------------------------------------------------
+        // ModifierForwardSig : このオブジェクトがオブジェクトグループの項目の出力のとき、
+        //   最後に作り直し（正方向）で書いた中身の署名（ModifierEvaluator.OutputContentSig）。
+        //   今の中身の署名と違えば、出力が手で編集されて未確定（ModifierEvaluator.IsOutputEdited）。
+        //   0 は未記録（読み込み・作成の直後。次に見たときに今の中身を記録する）。
+        //   1 は「未確定で読み込んだ」印（どの中身の署名とも一致しない値として扱う）。
+        //   MeshContextCloneOps.CopyState が写すので、一覧のスナップショットの Undo・Redo で
+        //   中身と一緒に戻る（確定の Undo で未確定に戻る）。頂点編集の Undo は位置だけを戻し、
+        //   この値は編集の前後で変わらない。保存は未確定かどうかの真偽だけを書く。
+        // ================================================================
+
+        /// <summary>出力を最後に作り直しで書いた中身の署名（0=未記録、1=未確定で読み込んだ）。</summary>
+        public ulong ModifierForwardSig { get; set; } = 0UL;
+
+        /// <summary>未確定で読み込んだ印（ModifierForwardSig）。</summary>
+        public const ulong ModifierForwardSigEditedMark = 1UL;
 
         // ================================================================
         // モーフ基準データ（Phase: Morph対応）

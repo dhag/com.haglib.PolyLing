@@ -137,6 +137,10 @@ namespace Poly_Ling.Player
         private Vector2       _p2dBgOffset = Vector2.zero;
         private float         _p2dBgScale  = 8f;    // 画像高さ(ワールド単位)
         private Vector2       _p2dBgOrigin = Vector2.zero; // 拡大縮小の原点（画像px, 既定=中心）
+        // ループ一覧の入れ物と、最後に作ったときの内容（ループ数・点数・穴フラグ・選択）
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dLoopListEl;
+        private string        _p2dLoopListSig;
         [UiControl(Ignore = true)]
         private Slider        _p2dBgScaleSlider;
         [UiControl(Ignore = true)]
@@ -261,15 +265,15 @@ namespace Poly_Ling.Player
             var p2dLassoToggle = new Toggle(T("LassoMode")) { value = _p2dLassoMode };
             p2dLassoToggle.style.marginLeft = 4;
             p2dLassoToggle.RegisterValueChangedCallback(ev => _p2dLassoMode = ev.newValue);
-            p2dViewRow.Add(p2dLassoToggle);
+            p2dViewRow.Add(RowTarget.Add("LassoMode", p2dLassoToggle, T("LassoMode").Text));
             var p2dGizmoTog = new Toggle(T("ShowGizmo")) { value = _p2dShowGizmo };
             p2dGizmoTog.style.marginLeft = 8;
             p2dGizmoTog.RegisterValueChangedCallback(ev => { _p2dShowGizmo = ev.newValue; RefreshP2dCanvas(); });
-            p2dViewRow.Add(p2dGizmoTog);
+            p2dViewRow.Add(RowTarget.Add("ShowGizmo", p2dGizmoTog, T("ShowGizmo").Text));
             var p2dVertTog = new Toggle(T("ShowVertices")) { value = _p2dShowVerts };
             p2dVertTog.style.marginLeft = 8;
             p2dVertTog.RegisterValueChangedCallback(ev => { _p2dShowVerts = ev.newValue; RefreshP2dCanvas(); });
-            p2dViewRow.Add(p2dVertTog);
+            p2dViewRow.Add(RowTarget.Add("ShowVertices", p2dVertTog, T("ShowVertices").Text));
             pe.Add(p2dViewRow);
 
             BuildP2dAnchorTransformUI(pe);
@@ -426,24 +430,12 @@ namespace Poly_Ling.Player
             BuildP2dLoopBooleanRow(loopFold);
 
             // ── ループ一覧（穴フラグ切替） ─────────────────────────────────
-            for (int i = 0; i < _p2dLoops.Count; i++)
-            {
-                int li = i;
-                var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
-                var selBtn = new Button(() =>
-                {
-                    _p2dSelLoop = li; _p2dSel.Clear(); _p2dSelPt = -1; RefreshP2dCanvas(); RefreshP2dPointUI();
-                })
-                { text = $"Loop {i} ({_p2dLoops[i].Points.Count}pt)" };
-                selBtn.style.flexGrow = 1; selBtn.style.fontSize = 9; selBtn.style.height = 18;
-                selBtn.style.backgroundColor = (i == _p2dSelLoop)
-                    ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
-                    : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
-                var holeTog = new Toggle(T("IsHole")) { value = _p2dLoops[i].IsHole };
-                holeTog.RegisterValueChangedCallback(e => { _p2dLoops[li].IsHole = e.newValue; D(); RefreshP2dCanvas(); });
-                row.Add(selBtn); row.Add(holeTog);
-                loopFold.Add(row);
-            }
+            // 一覧は RefreshP2dLoopList が作る。ループの増減・点数・穴フラグ・選択が変わると、
+            // キャンバスの再描画（RefreshP2dCanvas）から作り直される。
+            _p2dLoopListEl  = new VisualElement();
+            _p2dLoopListSig = null;
+            loopFold.Add(_p2dLoopListEl);
+            RefreshP2dLoopList(building: true);
 
             // ── 選択点スライダー ───────────────────────────────────────────
             _p2dPtRow = new VisualElement(); _p2dPtRow.style.marginBottom = 4;
@@ -468,7 +460,9 @@ namespace Poly_Ling.Player
                     P2dCommit("点X編集");
                 });
                 var xRow = new VisualElement(); xRow.style.flexDirection = FlexDirection.Row; xRow.style.marginBottom = 2;
-                xRow.Add(ML("X")); xRow.Add(xSl); xRow.Add(xFf);
+                xRow.Add(ML("X"));
+                xRow.Add(RowTarget.Add("point.x", xSl, "選んだ点の X"));
+                xRow.Add(RowTarget.Add("point.xValue", xFf, "選んだ点の X（数値入力）"));
                 _p2dPtRow.Add(xRow);
                 _p2dPtXSlider = xSl; _p2dPtXField = xFf;
             }
@@ -493,7 +487,9 @@ namespace Poly_Ling.Player
                     P2dCommit("点Y編集");
                 });
                 var yRow = new VisualElement(); yRow.style.flexDirection = FlexDirection.Row; yRow.style.marginBottom = 2;
-                yRow.Add(ML("Y")); yRow.Add(ySl); yRow.Add(yFf);
+                yRow.Add(ML("Y"));
+                yRow.Add(RowTarget.Add("point.y", ySl, "選んだ点の Y"));
+                yRow.Add(RowTarget.Add("point.yValue", yFf, "選んだ点の Y（数値入力）"));
                 _p2dPtRow.Add(yRow);
                 _p2dPtYSlider = ySl; _p2dPtYField = yFf;
             }
@@ -521,12 +517,12 @@ namespace Poly_Ling.Player
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
             }
 
-            p2dCsvFold.Add(PlayerIoUiKit.PathRow(csvTf, LoadP2dCsv));
+            p2dCsvFold.Add(PR("profileCsv", csvTf, LoadP2dCsv, "断面 CSV"));
             if (string.IsNullOrEmpty(_p2dCsvPath)) _p2dCsvPath = RecentPaths.Get(P2dCsvKey);
             if (!string.IsNullOrEmpty(_p2dCsvPath)) csvTf.SetValueWithoutNotify(_p2dCsvPath);
 
-            p2dCsvFold.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadP2dCsv));
-            p2dCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            p2dCsvFold.Add(WB("profileCsv.load", T("LoadCSV"), LoadP2dCsv, UiSafety.UserOnly, "断面 CSV を読み込む（ファイルを選ぶ）"));
+            p2dCsvFold.Add(WB("profileCsv.save", T("SaveCSV"), () =>
             {
                 if (_p2dLoops == null) return;
 
@@ -559,7 +555,7 @@ namespace Poly_Ling.Player
                     System.IO.File.WriteAllText(_p2dCsvPath, sb.ToString());
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
-            }));
+            }, UiSafety.UserOnly, "断面 CSV を保存する（保存先を選ぶ）"));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             var p2dIoFold = FoldSection(pe, T("MeshProfileIO"), false);
@@ -584,7 +580,7 @@ namespace Poly_Ling.Player
             _p2dEdgeFrontSeg  = IR(T("FrontSegments"), Profile2DParams.EdgeSegmentsMin, Profile2DParams.EdgeSegmentsMax, () => _p2dP.SegmentsFront, v => { _p2dP.SegmentsFront = v; D(); UpdateP2dEdgeVis(); });
             _p2dEdgeFrontSize = SR(T("EdgeSize"), Profile2DParams.EdgeSizeMin, Profile2DParams.EdgeSizeMax, () => _p2dP.EdgeSizeFront, v => { _p2dP.EdgeSizeFront = v; D(); });
             _p2dEdgeBackSeg   = IR(T("BackSegments"), Profile2DParams.EdgeSegmentsMin, Profile2DParams.EdgeSegmentsMax, () => _p2dP.SegmentsBack, v => { _p2dP.SegmentsBack = v; D(); UpdateP2dEdgeVis(); });
-            _p2dEdgeBackSize  = SR(T("EdgeSize"), Profile2DParams.EdgeSizeMin, Profile2DParams.EdgeSizeMax, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); });
+            _p2dEdgeBackSize  = SR(EdgeSizeBackLx, Profile2DParams.EdgeSizeMin, Profile2DParams.EdgeSizeMax, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); });
             _p2dEdgeInward    = TR(T("EdgeInward"), () => _p2dP.EdgeInward, v => { _p2dP.EdgeInward = v; D(); });
             c.Add(_p2dEdgeLabel); c.Add(_p2dEdgeFrontSeg); c.Add(_p2dEdgeFrontSize);
             c.Add(_p2dEdgeBackSeg); c.Add(_p2dEdgeBackSize); c.Add(_p2dEdgeInward);
@@ -616,7 +612,7 @@ namespace Poly_Ling.Player
             var opField = new EnumField(_p2dBoolOp);
             opField.style.width = 130;
             opField.RegisterValueChangedCallback(e => _p2dBoolOp = (Boolean2DOpKind)e.newValue);
-            row.Add(opField);
+            row.Add(RowTarget.Add("LoopBooleanOp", opField, "ループのブーリアンの種類"));
 
             List<string> LoopNames()
             {
@@ -638,7 +634,7 @@ namespace Poly_Ling.Player
                 otherField.choices = LoopNames();
                 if (keep >= otherField.choices.Count) otherField.SetValueWithoutNotify(null);
             }, TrickleDown.TrickleDown);
-            row.Add(otherField);
+            row.Add(RowTarget.Add("LoopBooleanOther", otherField, "ループのブーリアンの相手"));
 
             SB(row, T("LoopBooleanRun"), RunP2dLoopBoolean);
             parent.Add(row);
@@ -700,13 +696,14 @@ namespace Poly_Ling.Player
             // 画像の高さ = _p2dBgScale ワールド単位（アスペクト維持）
             float s = (_p2dBgScale * baseScale) / bh;
 
-            // 画像中心をワールド点 _p2dBgOffset に合わせる（P2dWorldToCanvas の zoom=1,offset=0 相当）
+            // 画像の原点（_p2dBgOrigin, 画像px・Y下向き）をワールド点 _p2dBgOffset に合わせ、
+            // 拡大縮小も原点を中心に行う（P2dWorldToCanvas の zoom=1,offset=0 相当）
             float ccx = cw * 0.5f + _p2dBgOffset.x * baseScale;
             float ccy = ch * 0.5f - _p2dBgOffset.y * baseScale;
-            _p2dBgEl.style.left   = ccx - bw * 0.5f; _p2dBgEl.style.top = ccy - bh * 0.5f;
+            _p2dBgEl.style.left   = ccx - _p2dBgOrigin.x; _p2dBgEl.style.top = ccy - _p2dBgOrigin.y;
             _p2dBgEl.style.width  = bw; _p2dBgEl.style.height = bh;
             _p2dBgEl.style.transformOrigin = new TransformOrigin(
-                new Length(bw * 0.5f, LengthUnit.Pixel), new Length(bh * 0.5f, LengthUnit.Pixel), 0f);
+                new Length(_p2dBgOrigin.x, LengthUnit.Pixel), new Length(_p2dBgOrigin.y, LengthUnit.Pixel), 0f);
             _p2dBgEl.style.scale   = new Scale(new Vector3(s, s, 1f));
             _p2dBgEl.style.opacity = _p2dBgAlpha;
             _p2dBgEl.style.backgroundSize = new StyleBackgroundSize(

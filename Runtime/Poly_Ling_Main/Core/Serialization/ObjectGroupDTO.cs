@@ -189,6 +189,7 @@ namespace Poly_Ling.Serialization
             }
 
             Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(s);
+            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(s);
             return s;
         }
     }

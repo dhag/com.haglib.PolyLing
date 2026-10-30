@@ -67,7 +67,7 @@ namespace Poly_Ling.Player
             });
             c.Add(_textFontDrop);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("TextFontReload"), () =>
+            c.Add(WB("TextFontReload", T("TextFontReload"), () =>
             {
                 PlyFontLibrary.Clear();
                 RefreshTextFontEntries();
@@ -78,7 +78,7 @@ namespace Poly_Ling.Player
                 }
                 D();
                 RefreshTextInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── フォント置き場（複数指定可） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -93,7 +93,7 @@ namespace Poly_Ling.Player
             _textFontDirList = new VisualElement();
             c.Add(_textFontDirList);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("TextFontDirAdd"), () =>
+            c.Add(WB("TextFontDirAdd", T("TextFontDirAdd"), () =>
             {
                 var dirs = PlyFontLibrary.GetDirs();
                 if (dirs.Count >= PlyFontLibrary.MaxDirs) return;
@@ -104,13 +104,13 @@ namespace Poly_Ling.Player
 
                 dirs.Add(sel);
                 ApplyTextFontDirs(dirs);
-            }));
+            }, UiSafety.UserOnly, "フォント置き場のフォルダを足す（フォルダを選ぶ）"));
 
-            c.Add(PlayerIoUiKit.WideBtn(T("TextFontDirReset"), () =>
+            c.Add(WB("TextFontDirReset", T("TextFontDirReset"), () =>
             {
                 PlyFontLibrary.ResetDirs();
                 AfterTextFontDirsChanged();
-            }));
+            }, UiSafety.Destructive, "フォント置き場を既定に戻す（足したフォルダを消す）"));
 
             RebuildTextFontDirRows();
 
@@ -129,7 +129,7 @@ namespace Poly_Ling.Player
             edit.style.whiteSpace = WhiteSpace.Normal;
             edit.style.marginBottom = 2;
             edit.RegisterValueChangedCallback(e => { _textP.Text = e.newValue; D(); });
-            c.Add(edit);
+            c.Add(RowTarget.Add("TextString", edit, T("TextString").Text));
 
             var editHint = new Label(T("TextStringHint"));
             editHint.style.fontSize = 10;
@@ -177,7 +177,7 @@ namespace Poly_Ling.Player
                                v => { _textP.EdgeSizeFront = v; D(); }),
                 BackSeg   = IR(T("BackSegments"), TextMeshParams.EdgeSegmentsMin, TextMeshParams.EdgeSegmentsMax, () => _textP.SegmentsBack,
                                v => { _textP.SegmentsBack = v; D(); RefreshTextSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), TextMeshParams.EdgeSizeMin, TextMeshParams.EdgeSizeMax, () => _textP.EdgeSizeBack,
+                BackSize  = SR(EdgeSizeBackLx, TextMeshParams.EdgeSizeMin, TextMeshParams.EdgeSizeMax, () => _textP.EdgeSizeBack,
                                v => { _textP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _textP.EdgeInward,
                                v => { _textP.EdgeInward = v; D(); }),

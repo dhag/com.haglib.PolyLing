@@ -615,15 +615,12 @@ namespace Poly_Ling.Ops
             }
 
             // Phase 2: リスト再構築
-            var oldList = new List<MeshContext>(model.MeshContextList);
-            model.MeshContextList.Clear();
+            // 一覧へ入れる道（ReplaceMeshContexts）を通し、作ったボーンに ObjectId を振る（段 C）。
+            var newList = new List<MeshContext>(boneCount + model.MeshContextList.Count);
             for (int i = 0; i < boneCount; i++)
-            {
-                model.MeshContextList.Add(boneContexts[i]);
-                boneContexts[i].ParentModelContext = model;
-            }
-            model.MeshContextList.AddRange(oldList);
-            model.InvalidateTypedIndices();
+                newList.Add(boneContexts[i]);
+            newList.AddRange(model.MeshContextList);
+            model.ReplaceMeshContexts(newList);
 
             for (int i = boneCount; i < model.MeshContextList.Count; i++)
             {
@@ -705,6 +702,11 @@ namespace Poly_Ling.Ops
                 if (meshObj.VertexCount > 0)
                     foreach (var vertex in meshObj.Vertices)
                         vertex.Position = originalWorld.MultiplyPoint3x4(vertex.Position);
+
+                // 焼いた行列を控える（段 10）。ローカルで読む入力（原型・断面）は、作り直しのときに
+                // この逆で元のローカルへ戻して読む（ModifierSpace.LocalView）。
+                meshObj.HasSkinBakeMatrix = true;
+                meshObj.SkinBakeMatrix    = originalWorld;
 
                 meshCtx.BoneTransform.Position          = Vector3.zero;
                 meshCtx.BoneTransform.Rotation          = Vector3.zero;

@@ -239,29 +239,18 @@ namespace Poly_Ling.Data
             int count = System.Math.Min(positions.Length, Vertices.Count);
             for (int i = 0; i < count; i++)
                 Vertices[i].Position = positions[i];
-            // キャッシュも同時更新（再構築を避ける）
-            if (positions.Length == Vertices.Count)
-            {
-                _positionCache = (Vector3[])positions.Clone();
-                _positionCacheDirty = false;
-            }
-            else
-            {
-                _positionCacheDirty = true;
-            }
         }
 
         /// <summary>
-        /// Positionキャッシュを無効化
-        /// Vertices[i].Positionを直接変更した後に呼ぶこと
+        /// 何もしない。Positions は読むたびに今の位置を写すので、控えを捨てる必要が無い
+        /// （作り直し整備計画 段 B。MeshObject.cs の Positions の注記）。
         /// </summary>
         public void InvalidatePositionCache()
         {
-            _positionCacheDirty = true;
         }
 
         /// <summary>
-        /// Positionキャッシュを再構築
+        /// 今の Vertices[i].Position を配列へ写す（配列は使い回す）。
         /// </summary>
         private void RebuildPositionCache()
         {
@@ -270,7 +259,6 @@ namespace Poly_Ling.Data
                 _positionCache = new Vector3[count];
             for (int i = 0; i < count; i++)
                 _positionCache[i] = Vertices[i].Position;
-            _positionCacheDirty = false;
         }
     }
 }

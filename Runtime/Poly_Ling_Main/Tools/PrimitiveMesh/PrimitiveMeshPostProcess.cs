@@ -138,6 +138,9 @@ namespace Poly_Ling.PrimitiveMesh
             foreach (var v in mo.Vertices)
                 v.Position -= offset;
 
+            // 逆方向の控え（ModifierFrameTrace）へ、掛けた平行移動を写す。
+            Poly_Ling.Ops.ModifierFrameTrace.Transformed(mo, Matrix4x4.Translate(-offset));
+
             // Vertex.Position を直接書き換えたので位置キャッシュを無効化する（MeshObject.cs:822）。
             mo.InvalidatePositionCache();
         }

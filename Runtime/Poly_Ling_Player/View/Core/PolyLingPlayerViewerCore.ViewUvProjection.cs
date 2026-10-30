@@ -56,8 +56,8 @@ namespace Poly_Ling.Player
                 targets.Add(idx);
             }
 
-            // 表示位置の鮮度をそろえる（TryGetMeshWorldPositions の注記。1 回だけ）。
-            _viewportManager.UpdateTransform();
+            // 表示位置の鮮度をそろえる（CPU の位置を送ってから変換する。1 回だけ。段 B）。
+            _viewportManager.SettleWorldPositions(ActiveProject);
 
             var panelPts = new Dictionary<int, Vector2[]>();
             foreach (int idx in targets)

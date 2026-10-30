@@ -30,12 +30,7 @@ namespace Poly_Ling.Context
             if (meshContext == null)
                 throw new ArgumentNullException(nameof(meshContext));
 
-            // 協働編集用の安定ID。未割当(0)のときだけ発行する。
-            // Undo/Redo の復元は既にIDを持った実体を挿し戻すので、ここでは変化しない。
-            if (meshContext.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
-                meshContext.ObjectId = Poly_Ling.Data.ObjectIdAllocator.Next();
-
-            meshContext.ParentModelContext = this;
+            Admit(meshContext);
             MeshContextList.Add(meshContext);
             InvalidateTypedIndices();
             IsDirty = true;
@@ -51,12 +46,7 @@ namespace Poly_Ling.Context
             if (index < 0 || index > MeshContextList.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            // 複製で作られた新規 MeshContext は ObjectId==0 なのでここで新IDを得る。
-            // Undo/Redo の挿し戻しは既存IDを保つ（＝担当や参照が維持される）。
-            if (meshContext.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
-                meshContext.ObjectId = Poly_Ling.Data.ObjectIdAllocator.Next();
-
-            meshContext.ParentModelContext = this;
+            Admit(meshContext);
             MeshContextList.Insert(index, meshContext);
             InvalidateTypedIndices();
             IsDirty = true;
@@ -84,6 +74,72 @@ namespace Poly_Ling.Context
             {
                 set.AdjustIndicesOnInsert(index);
             }
+        }
+
+        // ================================================================
+        // 一覧へ入れる道（段 C）
+        //
+        // ObjectId を振るのはここ（Admit）だけ。一覧へ入れる書き込みは Add・Insert・
+        // ReplaceMeshContexts・SetMeshContextAt のどれかを通す。MeshContextList へ直に
+        // Add・AddRange・[i]= すると採番を通らず、ObjectId が 0 のまま残る。
+        // 例外はリモートの受信側（RemoteProjectReceiver ほか）。ID はサーバだけが振り、
+        // 受信側は送り手の ID をそのまま持つ（ObjectIdAllocator の設計）。
+        // ================================================================
+
+        /// <summary>一覧へ入れる MeshContext に、未割当なら ObjectId を振り、親のモデルを張る。</summary>
+        private void Admit(MeshContext meshContext)
+        {
+            if (meshContext == null) return;
+            // 協働編集用の安定ID。未割当(0)のときだけ発行する。
+            // Undo/Redo の復元は既にIDを持った実体を挿し戻すので、ここでは変化しない。
+            if (meshContext.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
+                meshContext.ObjectId = Poly_Ling.Data.ObjectIdAllocator.Next();
+            meshContext.ParentModelContext = this;
+        }
+
+        /// <summary>
+        /// 一覧をまるごと入れ替える（並べ替え・Undo の戻し・一括スキンド化）。
+        /// 索引参照・選択・IsDirty は呼び出し側の責任。items は一覧そのものを渡してもよい（先に写す）。
+        /// </summary>
+        public void ReplaceMeshContexts(IEnumerable<MeshContext> items)
+        {
+            var copy = items != null ? new List<MeshContext>(items) : new List<MeshContext>();
+            foreach (var mc in copy) Admit(mc);
+            MeshContextList.Clear();
+            MeshContextList.AddRange(copy);
+            InvalidateTypedIndices();
+        }
+
+        /// <summary>index の要素を差し替える。索引参照・選択・IsDirty は呼び出し側の責任。</summary>
+        public void SetMeshContextAt(int index, MeshContext meshContext)
+        {
+            if (meshContext == null)
+                throw new ArgumentNullException(nameof(meshContext));
+            if (index < 0 || index >= MeshContextList.Count)
+                throw new ArgumentOutOfRangeException(nameof(index));
+            Admit(meshContext);
+            MeshContextList[index] = meshContext;
+            InvalidateTypedIndices();
+        }
+
+        /// <summary>
+        /// 一覧の ObjectId の点検（段 C の見張り）。0 のもの・重複するものがあれば説明、無ければ null。
+        /// </summary>
+        public string CheckObjectIds()
+        {
+            var seen = new HashSet<ulong>();
+            var bad = new List<string>();
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var mc = MeshContextList[i];
+                if (mc == null) continue;
+                if (mc.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
+                    bad.Add($"[{i}]「{mc.Name}」が 0");
+                else if (!seen.Add(mc.ObjectId))
+                    bad.Add($"[{i}]「{mc.Name}」が重複 {mc.ObjectId}");
+                if (bad.Count >= 5) break;
+            }
+            return bad.Count == 0 ? null : string.Join("、", bad);
         }
 
         /// <summary>挿入時のインデックス調整ヘルパー</summary>

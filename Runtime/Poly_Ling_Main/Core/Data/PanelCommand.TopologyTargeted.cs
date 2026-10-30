@@ -279,9 +279,17 @@ namespace Poly_Ling.Data
     ///   開始側は 上(+Y)→下、同じなら 手前(-Z)→奥、同じなら 左(-X)→右 で決める。
     /// </summary>
     [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup,    // PlayerCommandDispatcher.EditTools.cs
+        Inverse = ModifierInverseMethod.RibbonCenters,
+        InverseKeeps = "辺の面構成・頂点 ID・ウェイト、帯の幅、辺の辞書",
+        InverseLoses = "帯の幅と向きの変化（左右の中点の移動だけを辺の頂点へ戻す）、先端・タグの動き")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
+        // 書くのは「グループとして残す」かつ辞書名が空のとき、選択辺を辞書として保存する場合だけ
+        // （PlayerCommandDispatcher.EditTools.cs）。グループの項目は辞書名を持つので読むだけ（段 D）。
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "placement.keepAsGroup=true&edgeSetName=",
+                 MeshRefSpace = PLMeshRefSpace.Model,   // GPU のワールド座標で読む（EdgeRibbonFaceToolHandler）
                  Description = "対象の描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -348,9 +356,12 @@ namespace Poly_Ling.Data
     [PLResult("groupName", PLResultKind.Text,    Description = "作ったオブジェクトグループの名前")]
     [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
     [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
+    [PLModifier(Capture = PLGroupCapture.ViaSteps)]   // 帯面＋パイプを項目にする（PlayerCommandDispatcher.EdgePipe.cs）
     public class CreateEdgePipeCommand : PanelCommand
     {
+        // 書くのは辞書名が空のとき、選択辺を辞書として保存する場合だけ（PlayerCommandDispatcher.EdgePipe.cs。段 D）。
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "edgeSetName=",
                  Description = "辺を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[] MasterIndices { get; }
@@ -439,9 +450,17 @@ namespace Poly_Ling.Data
     ///   向きは作ったときのカメラに固定される。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup,    // PlayerCommandDispatcher.VertexBillboard.cs
+        Inverse = ModifierInverseMethod.VertexFrames,
+        InverseKeeps = "入力の面構成・頂点 ID・ウェイト、配置元、引数",
+        InverseLoses = "部品の回転・倍率・歪み（全部品で共通の向き・倍率で置くため）")]
     public class CreateVertexBillboardPlaceCommand : PanelCommand
     {
+        // 書くのは「グループとして残す」かつ辞書名が空かつ対象が頂点のとき、選択頂点を辞書として保存する場合だけ
+        // （PlayerCommandDispatcher.VertexBillboard.cs）。グループの項目は読むだけ（段 D）。
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "placement.keepAsGroup=true&vertexSetName=&target=Vertices",
+                 MeshRefSpace = PLMeshRefSpace.Model,   // GPU のワールド座標・WorldMatrix で読む（VertexBillboardPlaceToolHandler）
                  Description = "頂点を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[] MasterIndices { get; }
@@ -454,6 +473,7 @@ namespace Poly_Ling.Data
         public string VertexSetName { get; }
 
         [PLParam(TextKey = "PlaceSourceIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 MeshRefSpace = PLMeshRefSpace.Local,
                  Description = "配置元オブジェクトの masterIndex 配列", Required = true)]
         public int[] SourceMasterIndices { get; }
 

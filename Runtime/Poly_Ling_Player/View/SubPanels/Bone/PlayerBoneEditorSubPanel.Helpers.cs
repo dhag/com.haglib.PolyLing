@@ -306,11 +306,9 @@ namespace Poly_Ling.Player
                 var indices = GetTargetIndices();
                 if (indices.Length == 0) return;
                 int modelIdx = GetModelIndex?.Invoke() ?? 0;
-                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices)
-                {
-                    Mode       = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
-                    OriginOnly = IsOriginOnlyActive(),
-                });
+                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices,
+                    GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                    IsOriginOnlyActive()));
                 SendCommand(new SetBoneTransformValueCommand(modelIdx, indices, field, e.newValue));
                 SendCommand(new EndBoneTransformSliderDragCommand(modelIdx, "TRS変更"));
                 OnRepaint?.Invoke();
@@ -324,11 +322,9 @@ namespace Poly_Ling.Player
             if (_trsDragOpen) return;
             var indices = GetTargetIndices();
             if (indices.Length == 0) return;
-            SendCommand(new BeginBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, indices)
-            {
-                Mode       = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
-                OriginOnly = IsOriginOnlyActive(),
-            });
+            SendCommand(new BeginBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, indices,
+                GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                IsOriginOnlyActive()));
             _trsDragOpen = true;
         }
 

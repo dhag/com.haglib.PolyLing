@@ -43,9 +43,18 @@ namespace Poly_Ling.Player
 
                 // ── モデル削除
                 case DeleteModelCommand c:
-                    project.RemoveModelAt(c.ModelIndex);
+                {
+                    // 外した実体は Clear せず、Undo の記録が持つ（作り直し整備計画 6 章）。
+                    // 以前は RemoveModelAt で消すだけで、Undo に積んでいなかった。
+                    var removed = project.DetachModelAt(c.ModelIndex);
+                    if (removed != null && _undoController != null)
+                    {
+                        _undoController.SetProjectContext(project);
+                        _undoController.RecordModelRemove(c.ModelIndex, removed, project.CurrentModelIndex);
+                    }
                     _rebuildModelList();
                     return true;
+                }
 
                 // ── メッシュ追加（空メッシュ）
                 case AddMeshCommand _:
@@ -475,6 +484,18 @@ namespace Poly_Ling.Player
                         var ctx = model.GetMeshContext(idx);
                         if (ctx == null) continue;
                         ctx.IsMirrorBranchRoot = c.Value;
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+
+                // ── ミラー分岐：ミラー側も同じ向きに動かす
+                case SetMirrorBranchSameSenseCommand c:
+                    if (model == null) { Fail("no current model"); return true; }
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        if (ctx == null) continue;
+                        ctx.MirrorBranchSameSense = c.Value;
                     }
                     _notifyPanels(ChangeKind.Attributes);
                     return true;

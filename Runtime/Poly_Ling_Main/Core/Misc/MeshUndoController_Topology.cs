@@ -222,12 +222,18 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// 面追加操作を記録（頂点と面をまとめて1つの操作として）
         /// </summary>
+        /// <param name="target">
+        /// 面を足した描画オブジェクト（書き込み先）。Undo・Redo はここへ書き戻す。
+        /// null なら記録の時点の解決先を控える（MeshUndoStack.OnRecording。段 12）。
+        /// </param>
         public void RecordAddFaceOperation(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices,
-            List<LineGroup> lineGroupsBefore = null, List<LineGroup> lineGroupsAfter = null)
+            List<LineGroup> lineGroupsBefore = null, List<LineGroup> lineGroupsAfter = null,
+            MeshContext target = null)
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             
             var record = new AddFaceOperationRecord(face, faceIndex, addedVertices, lineGroupsBefore, lineGroupsAfter);
+            if (target != null) record.Target = MeshUndoTarget.Of(target, _meshContext.ParentModelContext);
             string desc;
             if (face != null)
             {

@@ -276,12 +276,13 @@ namespace Poly_Ling.Player
                 pick.Index = pick.Dropdown.index - 1;   // 先頭は「(未選択)」
                 D();
             });
-            c.Add(pick.Dropdown);
+            c.Add(RowTarget.Add("meshSource", pick.Dropdown, sectionLabel));
 
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 4;
-            SB(row, T("PlaceRefresh"), () => RefreshMeshSourcePick(pick));
+            // ID は複数選択側・鉄塔の「一覧を再取得」と重ならないよう分ける。
+            SB(row, new Lx("meshSource.refresh", T("PlaceRefresh").Text), () => RefreshMeshSourcePick(pick));
             c.Add(row);
 
             RefreshMeshSourcePick(pick);
@@ -325,7 +326,7 @@ namespace Poly_Ling.Player
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 4;
-            SB(row, T("PlaceRefresh"), () => RefreshMeshSourceMultiPick(pick));
+            SB(row, new Lx("meshSourceMulti.refresh", T("PlaceRefresh").Text), () => RefreshMeshSourceMultiPick(pick));
             c.Add(row);
 
             RefreshMeshSourceMultiPick(pick);

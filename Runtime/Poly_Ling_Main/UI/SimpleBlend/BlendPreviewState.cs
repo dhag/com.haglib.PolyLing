@@ -227,7 +227,7 @@ namespace Poly_Ling.UI
         ///   0 として捨てると係数の総和が 1 未満になり、頂点が原点方向へ縮む。
         ///
         /// 【座標系】
-        ///   混ぜ合わせはワールド空間で行い、宛先の頂点格納空間へ戻す。
+        ///   混ぜ合わせはバインド姿勢のワールド空間で行い、宛先の頂点格納空間へ戻す（段 E）。
         ///   非スキンドの頂点はローカル、スキンドの頂点はバインド空間にあり、
         ///   生の Position をそのまま混ぜると WorldMatrix の違う相手や
         ///   スキンド↔非スキンドの組でずれる。別モデルのソースも同じ理由で
@@ -266,7 +266,9 @@ namespace Poly_Ling.UI
                 if (!e.IsUsable) continue;
                 srcMeshes[k] = e.Context.MeshObject;
                 resolvers[k] = new BlendVertexResolver(mo, srcMeshes[k], matchMode);
-                mats[k]      = dstCtx.WorldToVertexMatrix * e.Context.VertexToWorldMatrix;
+                // バインド姿勢のワールドで混ぜる（ポーズを含まない。モデル空間で読む入力の決まり。段 E）。
+                // ポーズ込みの行列だと、ポーズを付けたまま作り直したとき結果がポーズで変わる。
+                mats[k]      = dstCtx.BindWorldToVertexMatrix * e.Context.VertexToBindWorldMatrix;
                 identity[k]  = mats[k].isIdentity;
                 weights[k]   = e.Weight * scale;
             }

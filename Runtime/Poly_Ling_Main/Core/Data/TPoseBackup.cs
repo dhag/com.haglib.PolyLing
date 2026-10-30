@@ -46,6 +46,18 @@ namespace Poly_Ling.Data
         public Dictionary<int, Vector3[]> VertexPositions = new();
 
         /// <summary>
+        /// モーフメッシュ別の基準位置バックアップ（MorphBaseData.BasePositions の写し）。
+        /// 焼き込み（TPoseConverter.BakeSkinnedVertices）は基準位置も焼くので、戻すときに要る。
+        /// </summary>
+        public Dictionary<int, Vector3[]> MorphBasePositions = new();
+
+        /// <summary>
+        /// 剛体・ジョイント別の位置と回転（RigidBodyData / JointData の Position, Rotation。2 要素）。
+        /// 焼き込みは関連ボーンの動きで剛体・ジョイントも動かすので、戻すときに要る。
+        /// </summary>
+        public Dictionary<int, Vector3[]> PhysicsPoses = new();
+
+        /// <summary>
         /// ボーン別のローカル位置バックアップ（MeshContextインデックス→Position）
         /// </summary>
         public Dictionary<int, Vector3> BonePositions = new();
@@ -73,6 +85,8 @@ namespace Poly_Ling.Data
             WorldMatrices   = Remap(WorldMatrices,   remap);
             BindPoses       = Remap(BindPoses,       remap);
             VertexPositions = Remap(VertexPositions, remap);
+            MorphBasePositions = Remap(MorphBasePositions, remap);
+            PhysicsPoses    = Remap(PhysicsPoses,    remap);
             BonePositions   = Remap(BonePositions,   remap);
             BoneUseLocal    = Remap(BoneUseLocal,    remap);
             BonePoses       = Remap(BonePoses,       remap);

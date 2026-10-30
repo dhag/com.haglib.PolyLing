@@ -47,6 +47,14 @@ namespace Poly_Ling.Data
         public static Func<ModelStateSnapshot> ModelState;
 
         /// <summary>
+        /// カレントのモデルの番号を返す入口。パネル側（PolyLingPlayerViewerCore.Lifecycle.cs）が
+        /// Dispatch と対で設定・解除する。MCP の call で modelIndex が省かれたか負のとき、
+        /// 0 ではなくカレントのモデルを対象にするために使う（PolyLingControlProtocol.HandleCall）。
+        /// モデルが無ければ -1。
+        /// </summary>
+        public static Func<int> CurrentModelIndex;
+
+        /// <summary>
         /// コマンドを実行する。メインスレッドから呼ぶこと。
         /// 未登録・null・例外はすべて CommandResult.Fail で返し、外へ投げない。
         /// </summary>

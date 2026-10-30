@@ -4,6 +4,7 @@
 
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
@@ -110,27 +111,85 @@ namespace Poly_Ling.UndoSystem
         public SelectionSnapshot ExtendedSelection;
 
         /// <summary>
-        /// 捕獲元の MeshContext。復元先の取り違えを防ぐために持つ。
+        /// 捕獲元（書き込み先）。復元先の取り違えを防ぐために持つ。
         ///
         /// MeshUndoContext を経由する ApplyTo は、既定では
         /// ResolvedMeshContext（先頭の選択メッシュ）へ書き戻す。捕獲時と適用時で
         /// 選択が違えば別メッシュへ書き込むため、ここに実体を控えて優先する。
+        ///
+        /// 参照だけでなくモデルと ObjectId も控え、適用時に今のモデルの一覧から引き直す
+        /// （一覧のスナップショットの Undo が描画オブジェクトを複製に置き換えるため。
+        /// MeshUndoTarget の冒頭を参照。作り直し整備計画 段 12）。
         /// </summary>
-        public MeshContext SourceMeshContext;
+        public MeshUndoTarget Source;
+
+        /// <summary>捕獲元の描画オブジェクト（控えたときの参照）。</summary>
+        public MeshContext SourceMeshContext => Source.Context;
 
         /// <summary>
-        /// メッシュデータの書き戻し先を決めて書く。
+        /// メッシュデータ・選択・材質を書き戻す。
         ///
-        /// 捕獲元（SourceMeshContext）が判っていればそこへ直接書く。
-        /// 判らない場合だけ ctx 経由＝適用時の ResolvedMeshContext へ落とす。
-        /// ctx 経由に一本化すると、捕獲時と適用時で選択が違ったときに
-        /// 別メッシュへ復元してしまう。
+        /// 捕獲元が控えてあれば、今のモデルの一覧から引き直してそこへ書く。
+        /// 引き直せなければ（オブジェクトが消えた）何も書かない。別のオブジェクトへ書かない。
+        /// 控えが無い場合だけ ctx 経由＝適用時の ResolvedMeshContext へ落とす。
+        /// 材質は書き込み先のモデルへ戻す（ctx.ParentModelContext は今のモデルで、
+        /// 捕獲したモデルと違うことがある）。
+        /// 書いた相手は ctx.AppliedMeshContexts へ入れ、後処理が表面メッシュを作り直す。
         /// </summary>
-        private void WriteMeshObjectTo(MeshUndoContext ctx)
+        private bool WriteTo(MeshUndoContext ctx)
         {
+            MeshContext target;
+            ModelContext model;
+            if (Source.IsSet)
+            {
+                target = Source.Resolve();
+                if (target == null)
+                {
+                    Debug.LogWarning(
+                        $"[MeshObjectSnapshot] 書き戻し先が見つかりません（ObjectId={Source.ObjectId}）。書き戻しません。");
+                    return false;
+                }
+                model = target.ParentModelContext ?? Source.Model;
+            }
+            else
+            {
+                target = ctx.ResolvedMeshContext;
+                model  = ctx.ParentModelContext;
+            }
+
             var clone = MeshObject?.Clone();
-            if (SourceMeshContext != null) SourceMeshContext.MeshObject = clone;
-            else                           ctx.MeshObject               = clone;
+            if (target != null) target.MeshObject = clone;
+            else                ctx.MeshObject    = clone;
+            if (target != null && !ctx.AppliedMeshContexts.Contains(target))
+                ctx.AppliedMeshContexts.Add(target);
+
+            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
+
+            if (model != null)
+            {
+                if (Materials != null)
+                {
+                    model.Materials = new List<Material>(Materials);
+                    model.CurrentMaterialIndex = CurrentMaterialIndex;
+                }
+                if (DefaultMaterials != null)
+                    model.DefaultMaterials = new List<Material>(DefaultMaterials);
+                model.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
+                model.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+            }
+            else
+            {
+                if (Materials != null)
+                {
+                    ctx.Materials = new List<Material>(Materials);
+                    ctx.CurrentMaterialIndex = CurrentMaterialIndex;
+                }
+                if (DefaultMaterials != null)
+                    ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
+                ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
+                ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+            }
+            return true;
         }
 
         /// <summary>
@@ -140,7 +199,7 @@ namespace Poly_Ling.UndoSystem
         {
             return new MeshObjectSnapshot
             {
-                SourceMeshContext = mc,
+                Source = MeshUndoTarget.Of(mc, ctx.ParentModelContext),
                 MeshObject = mc.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -209,7 +268,7 @@ namespace Poly_Ling.UndoSystem
         {
             return new MeshObjectSnapshot
             {
-                SourceMeshContext = ctx.ResolvedMeshContext,
+                Source = MeshUndoTarget.Of(ctx.ResolvedMeshContext, ctx.ParentModelContext),
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -245,7 +304,7 @@ namespace Poly_Ling.UndoSystem
         {
             MeshObjectSnapshot snapshot = new MeshObjectSnapshot
             {
-                SourceMeshContext = ctx.ResolvedMeshContext,
+                Source = MeshUndoTarget.Of(ctx.ResolvedMeshContext, ctx.ParentModelContext),
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -272,23 +331,8 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void ApplyTo(MeshUndoContext ctx)
         {
-            WriteMeshObjectTo(ctx);
-            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
-
-            // マテリアル復元
-            if (Materials != null)
-            {
-                ctx.Materials = new List<Material>(Materials);
-                ctx.CurrentMaterialIndex = CurrentMaterialIndex;
-            }
-
-            // デフォルトマテリアル復元
-            if (DefaultMaterials != null)
-            {
-                ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
-            }
-            ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
-            ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+            // メッシュデータ・選択・材質（書き込み先のモデルへ）
+            WriteTo(ctx);
 
             // ExtendedSelection は復元しない（後方互換）
         }
@@ -310,21 +354,8 @@ namespace Poly_Ling.UndoSystem
         public void ApplyTo(MeshUndoContext ctx, SelectionState selectionState)
         {
             // === 既存処理（メッシュデータ、レガシー選択、マテリアル） ===
-            WriteMeshObjectTo(ctx);
-            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
-
-            if (Materials != null)
-            {
-                ctx.Materials = new List<Material>(Materials);
-                ctx.CurrentMaterialIndex = CurrentMaterialIndex;
-            }
-
-            if (DefaultMaterials != null)
-            {
-                ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
-            }
-            ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
-            ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+            // 書き込み先が見つからなければ選択も戻さない（別のオブジェクトの選択になる）。
+            if (!WriteTo(ctx)) return;
 
             // ================================================================
             // 【フェーズ1追加】拡張選択の復元

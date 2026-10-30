@@ -17,10 +17,11 @@ namespace Poly_Ling.Data
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Topology | PLCommandEffect.Hierarchy,
         Description = "メッシュを親（ケージ）として Catmull-Clark で細分化した滑らかな子を作る。子は親の子に置かれ、親の頂点編集・面の増減・移動に追随する。")]
     [PLUiRoute("サブディビジョン", "leftPane.fold.Topology", "leftPane.subdivisionBtn", "subdivision.level", "subdivision.create")]
+    [PLModifier(Capture = PLGroupCapture.Always, FollowsDrag = true)]   // 新しく子を作るとき（PlayerCommandDispatcher.Subdivision.cs）。ドラッグ中はステンシルで追随
     public class SubdivideMeshCommand : PanelCommand
     {
         [PLParam(Description = "細分化する親（ケージ）の masterIndex", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int CageMasterIndex { get; }
 
         [PLParam(Description = "細分化の回数", Min = 1, Max = 4, Step = 1)]

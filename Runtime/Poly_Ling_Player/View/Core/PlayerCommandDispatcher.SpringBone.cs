@@ -517,7 +517,11 @@ namespace Poly_Ling.Player
                     // （前者は書き込み先が先頭の選択メッシュになる）。
                     const string sblWeightLabel = "Paint Ladder Spring Weights";
                     MeshObjectSnapshot sblMeshBefore = null;
-                    if (c.PaintWeights && _undoController != null)
+                    // 記録を止めているとき（オブジェクトグループの作り直し・依存の評価）は書き込み先も設定しない。
+                    // SetMeshObjectFor は頂点編集の履歴を消す（MeshUndoController.SetMeshObjectFor）ので、
+                    // 梯子の編集の直後に評価がこの項目を流すと、その編集の Undo が消える（段 5。段 4 の
+                    // PrimitiveMeshReplaceExisting と同じ扱い）。
+                    if (c.PaintWeights && _undoController != null && !_undoController.IsRecordingSuspended)
                     {
                         _undoController.MeshUndoContext.ParentModelContext = model;
                         _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
@@ -578,18 +582,22 @@ namespace Poly_Ling.Player
                         sblPair.Build(model.MeshContextList);
 
                     var sblMirrors = new List<MeshContext>();
-                    if (sblMeshBefore != null && sblResult.WeightedVertexCount > 0)
+                    if (c.PaintWeights && sblResult.WeightedVertexCount > 0)
                     {
                         // ミラー側へ写してから実体側の after を取る。後に回すと
                         // Redo で実体側頂点の MirrorBoneWeight が古い値に戻る。
+                        // 写すのは記録を止めているとき（作り直し）も行う。記録だけを止める。
                         SyncSkinWeightToMirrors(model, sblSource, sblMirrors, sblWeightLabel);
 
-                        _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
-                        var sblMeshAfter = _undoController.CaptureMeshObjectSnapshotOf(sblSource);
-                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                            _undoController, sblMeshBefore, sblMeshAfter, sblWeightLabel));
+                        if (sblMeshBefore != null)
+                        {
+                            _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
+                            var sblMeshAfter = _undoController.CaptureMeshObjectSnapshotOf(sblSource);
+                            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                                _undoController, sblMeshBefore, sblMeshAfter, sblWeightLabel));
+                        }
                     }
-                    _undoController?.ClearTargetMeshContext();
+                    if (sblMeshBefore != null) _undoController?.ClearTargetMeshContext();
 
                     model.OnListChanged?.Invoke();
                     RecordMeshListSnapshot(sblBefore, model, sblResult.Message);
@@ -740,6 +748,12 @@ namespace Poly_Ling.Player
                     var backup = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.ConvertToTPose(model.MeshContextList, mapping, backup);
                     model.TPoseBackup = backup;
+
+                    // ConvertToTPose は WorldMatrix と BindPose だけを書き、BindWorldMatrix と
+                    // 逆行列のキャッシュは書かない（書くのは ComputeWorldMatrices だけ）。
+                    // ここで通さないと、次に誰かが通すまでバインド階層が変換前の姿勢のまま残る
+                    // （残件解決計画 段 5、2026-10-28 実測）。
+                    model.ComputeWorldMatrices();
 
                     var afterState = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, afterState);

@@ -574,11 +574,8 @@ namespace Poly_Ling.Player
             //
             // ここで欲しいのは「オブジェクトごと動かす」ので、
             // Mode = BoneOnlyRebind / OriginOnly = false（どちらも既定値）を明示して送る。
-            var begin = new BeginBoneTransformSliderDragCommand(mi, target)
-            {
-                Mode       = BoneMoveMode.BoneOnlyRebind,
-                OriginOnly = false,
-            };
+            var begin = new BeginBoneTransformSliderDragCommand(mi, target,
+                BoneMoveMode.BoneOnlyRebind, false);
             SendLogged(begin);
 
             void Set(SetBoneTransformValueCommand.Field f, float value)

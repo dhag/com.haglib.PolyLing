@@ -79,7 +79,7 @@ namespace Poly_Ling.Player
                 BackSeg   = IR(T("BackSegments"), ZodiacSignMeshGenerator.ZodiacSignParams.EdgeSegmentsMin,
                                ZodiacSignMeshGenerator.ZodiacSignParams.EdgeSegmentsMax, () => _zodiacP.SegmentsBack,
                                v => { _zodiacP.SegmentsBack = v; D(); RefreshZodiacSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), ZodiacSignMeshGenerator.ZodiacSignParams.EdgeSizeMin,
+                BackSize  = SR(EdgeSizeBackLx, ZodiacSignMeshGenerator.ZodiacSignParams.EdgeSizeMin,
                                ZodiacSignMeshGenerator.ZodiacSignParams.EdgeSizeMax, () => _zodiacP.EdgeSizeBack,
                                v => { _zodiacP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _zodiacP.EdgeInward,

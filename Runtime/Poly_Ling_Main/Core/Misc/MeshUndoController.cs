@@ -334,7 +334,9 @@ namespace Poly_Ling.UndoSystem
             }
 
             _meshContext.SelectedVertices.Clear();
-            _vertexEditStack.Clear();
+            // 頂点編集の履歴は消さない（作り直し整備計画 段 12）。
+            // 積んだ記録はどれも自分の書き込み先（MeshUndoTarget）を持ち、
+            // Undo・Redo の時点の解決先ではなく記録したときの相手へ書き戻す。
         }
 
         /// <summary>SetMeshObject の書き込み本体（解決先へ書く）。</summary>
@@ -374,7 +376,7 @@ namespace Poly_Ling.UndoSystem
             _meshContext.TargetMesh          = targetMesh ?? targetContext.UnityMesh;
             _meshContext.OriginalPositions   = (Vector3[])targetContext.MeshObject.Positions.Clone();
             _meshContext.SelectedVertices?.Clear();
-            _vertexEditStack.Clear();
+            // 頂点編集の履歴は消さない（SetMeshObject と同じ。作り直し整備計画 段 12）。
         }
 
         /// <summary>明示指定を解除し、既定の解決（先頭の選択メッシュ）へ戻す。</summary>

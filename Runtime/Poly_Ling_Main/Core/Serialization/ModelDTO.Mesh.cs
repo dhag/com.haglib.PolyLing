@@ -103,6 +103,12 @@ namespace Poly_Ling.Serialization
         /// <summary>折りたたみ状態（MQO互換）</summary>
         public bool isFolding = false;
 
+        /// <summary>
+        /// オブジェクトグループの項目の出力で、手の編集が確定も破棄もされていない（未確定）か（段 F）。
+        /// 読み込みでは true のとき MeshContext.ModifierForwardSig を未確定の印（1）、false のとき 0 にする。
+        /// </summary>
+        public bool modifierOutputEdited = false;
+
         // ================================================================
         // 協働編集（安定オブジェクトID と 担当者名）
         //
@@ -151,6 +157,12 @@ namespace Poly_Ling.Serialization
         /// WorldMatrix が二重に掛かって位置が飛ぶ。
         /// </summary>
         public int? skinKind = null;
+
+        /// <summary>
+        /// スキンド化のときに焼いた ローカル→バインド の行列（MeshObject.SkinBakeMatrix。段 10）。
+        /// Matrix4x4 の索引 0..15 の並び。null = 控え無し。
+        /// </summary>
+        public float[] skinBakeMatrix = null;
 
         // ================================================================
         // ミラー設定
@@ -240,6 +252,11 @@ namespace Poly_Ling.Serialization
         /// ミラー分岐のルートか（ヒエラルキーエクスポートで枝を二分する）
         /// </summary>
         public bool isMirrorBranchRoot = false;
+
+        /// <summary>
+        /// ミラー分岐のミラー側も実体側と同じ向きに動かすか（MeshObject.MirrorBranchSameSense）
+        /// </summary>
+        public bool mirrorBranchSameSense = false;
 
         // ================================================================
         // 永続化拡張（DTO単一真実源化）：従来CSV直書きでのみ保持していた
@@ -596,6 +613,8 @@ namespace Poly_Ling.Serialization
         public bool   excludeFromExport = false;
         public bool   ignorePoseInArmature = false;
         public bool   isMirrorBranchRoot = false;
+        /// <summary>ミラー側も実体側と同じ向きに動かすか（MeshObject.MirrorBranchSameSense）。</summary>
+        public bool   mirrorBranchSameSense = false;
         public bool   preserveNormals = false;
         public MorphBaseDataDTO  morphBaseData;
         public BoneTransformDTO  exportSettingsDTO;
@@ -759,6 +778,9 @@ namespace Poly_Ling.Serialization
 
         /// <summary>描画オブジェクトの種別（0=MeshFilter, 1=Skinned）。null=旧データ→再計算。</summary>
         public int? skinKind = null;
+
+        /// <summary>スキンド化のときに焼いた行列（MeshDTO.skinBakeMatrix と同じ。段 10）。null = 控え無し。</summary>
+        public float[] skinBakeMatrix = null;
 
         public List<VertexDTO> vertices = new List<VertexDTO>();
         public List<FaceDTO>   faces    = new List<FaceDTO>();

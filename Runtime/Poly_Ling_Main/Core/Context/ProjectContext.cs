@@ -248,6 +248,59 @@ namespace Poly_Ling.Context
             return true;
         }
 
+        // ================================================================
+        // 外す・入れ替える（Undo が実体を持ち直す。作り直し整備計画 6 章）
+        //   RemoveModelAt は外した実体を Clear(true) で空にする。Undo の記録（モデルの追加・削除・
+        //   置き換え）は外した実体そのものを持ち、Undo・Redo で同じ実体を入れ直す。こうすると
+        //   頂点編集の記録（MeshUndoTarget）・評価器の控え・DTO に入らないもの（SourceDocument など）が
+        //   そのまま当たる。外した実体は記録が持つ間メモリに残り、記録が捨てられても UnityMesh は
+        //   破棄しない（Undo の記録に捨てるときの口が無いため。終了まで残す）。
+        // ================================================================
+
+        /// <summary>
+        /// index のモデルを一覧から外す。RemoveModelAt と違い Clear しない（実体を持ち直せるように）。
+        /// </summary>
+        /// <returns>外した実体。範囲外なら null</returns>
+        public ModelContext DetachModelAt(int index)
+        {
+            if (index < 0 || index >= Models.Count)
+                return null;
+
+            var model = Models[index];
+            Models.RemoveAt(index);
+            IsDirty = true;
+            MarkModified();
+
+            if (_currentModelIndex >= Models.Count)
+                _currentModelIndex = Models.Count - 1;
+            else if (_currentModelIndex > index)
+                _currentModelIndex--;
+
+            OnModelsChanged?.Invoke();
+            return model;
+        }
+
+        /// <summary>
+        /// index のモデルを newModel で入れ替える。外した実体は Clear しない（DetachModelAt と同じ）。
+        /// カレントは変えない（呼び出し側が SelectModel / CurrentModelIndex で決める）。
+        /// </summary>
+        /// <returns>外した実体。範囲外なら null</returns>
+        public ModelContext ReplaceModelAt(int index, ModelContext newModel)
+        {
+            if (newModel == null)
+                throw new ArgumentNullException(nameof(newModel));
+            if (index < 0 || index >= Models.Count)
+                return null;
+
+            var old = Models[index];
+            if (ReferenceEquals(old, newModel)) return old;
+            Models[index] = newModel;
+            IsDirty = true;
+            MarkModified();
+            OnModelsChanged?.Invoke();
+            return old;
+        }
+
         /// <summary>モデルを取得</summary>
         public ModelContext GetModel(int index)
         {

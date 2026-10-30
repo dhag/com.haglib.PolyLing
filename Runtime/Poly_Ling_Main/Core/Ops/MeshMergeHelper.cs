@@ -206,6 +206,9 @@ namespace Poly_Ling.Ops
                 }
 
                 meshObject.RemoveVerticesWithMap(verticesToRemove, map);
+
+                // 逆方向の控え（ModifierFrameTrace）も同じ表で付け替える。
+                ModifierFrameTrace.Remapped(meshObject, map);
             }
             UnityEngine.Debug.Log($"[PL/Timing] Merge groups={mergeGroups.Count} removed={verticesToRemove.Count} split={__tSplit}ms degenerate={__tDegen}ms closedPairs={__tMark - __tSplit - __tDegen}ms removeVertices={__sw.ElapsedMilliseconds - __tMark}ms"); // TEMP-TIMING
 

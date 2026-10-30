@@ -78,6 +78,9 @@ namespace Poly_Ling.Ops
                 }
                 dst.AddFace(nf);
             }
+
+            // 逆方向の控え（ModifierFrameTrace）が src の頂点を指していれば dst へ付け替える。
+            ModifierFrameTrace.Moved(src, dst, baseIdx);
         }
 
         /// <summary>

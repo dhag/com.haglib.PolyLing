@@ -764,6 +764,13 @@ namespace Poly_Ling.Player
             Refresh();
         }
 
+        /// <summary>プレビュー中なら取り消して法線を戻す（Undo・Redo の前に Viewer が呼ぶ）。</summary>
+        public void CancelIfActive()
+        {
+            if (!_preview.IsActive) return;
+            OnCancelClicked();
+        }
+
         private void EndPreview()
         {
             if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }

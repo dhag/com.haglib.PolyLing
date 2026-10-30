@@ -344,6 +344,86 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
+        // 同じ向き（MirrorBranchSameSense）
+        // ================================================================
+        //
+        // 鏡像の向き S·R·S では、ミラー軸以外の 2 軸まわりのローカル回転が
+        // 実体側と逆向きに動く（S·Rot(a,θ)·S = Rot(−S·a, θ) で、−S·a が a の鏡像と
+        // 一致するのはミラー軸の成分だけ）。そこでミラー側の向きを鏡像から
+        // ミラー軸まわりに 180° 回す（F）。3x3 で F·S = −I なので、
+        // 枝の中の子のローカルは F·(S·L·S)·F = 回転は実体側と同じ・位置は符号反転、
+        // 枝の起点のローカルは (S·L·S)·F になる。頂点・法線・モーフ差分には F を掛ける。
+
+        /// <summary>
+        /// 分岐の中か（parentIndices をたどって MirrorBranchSameSense の立った分岐ルートに至るか）。
+        /// </summary>
+        public static bool IsInSameSenseBranch(ModelContext model, int[] parentIndices, int index)
+        {
+            if (model == null) return false;
+            int n = model.MeshContextCount;
+            int cur = index;
+            for (int step = 0; step <= n && cur >= 0 && cur < n; step++)
+            {
+                var mc = model.GetMeshContext(cur);
+                if (mc == null) return false;
+                if (mc.IsMirrorBranchRoot) return mc.MirrorBranchSameSense;
+                int p = (parentIndices != null && cur < parentIndices.Length)
+                    ? parentIndices[cur]
+                    : mc.HierarchyParentIndex;
+                if (p == cur) return false;
+                cur = p;
+            }
+            return false;
+        }
+
+        /// <summary>ミラー軸（1=X / 2=Y / 4=Z）まわり 180° の回転 F。</summary>
+        public static Quaternion SameSenseFlipRotation(int mirrorAxis)
+        {
+            switch (mirrorAxis)
+            {
+                case 2:  return new Quaternion(0f, 1f, 0f, 0f);
+                case 4:  return new Quaternion(0f, 0f, 1f, 0f);
+                default: return new Quaternion(1f, 0f, 0f, 0f);
+            }
+        }
+
+        /// <summary>
+        /// ベクトルに F を掛ける（ミラー軸以外の 2 成分の符号反転）。
+        /// mirrorAxis が 0 のときは何もしない（F なし）。
+        /// </summary>
+        public static Vector3 SameSenseFlip(int mirrorAxis, Vector3 v)
+        {
+            switch (mirrorAxis)
+            {
+                case 0:  return v;
+                case 2:  return new Vector3(-v.x,  v.y, -v.z);
+                case 4:  return new Vector3(-v.x, -v.y,  v.z);
+                default: return new Vector3( v.x, -v.y, -v.z);
+            }
+        }
+
+        /// <summary>ミラー軸の値を 1 / 2 / 4 に揃える（2・4 以外は X。MirrorLocalTRS と同じ扱い）。</summary>
+        public static int NormalizeMirrorAxis(int mirrorAxis)
+            => mirrorAxis == 2 || mirrorAxis == 4 ? mirrorAxis : 1;
+
+        /// <summary>
+        /// 鏡像化を済ませたローカル姿勢へ F を掛ける。
+        /// parentAxis：親が F 付きのミラー側ならその軸（左から F⁻¹ = F）。違えば 0。
+        /// selfAxis  ：自分が F 付きのミラー側ならその軸（右から F）。違えば 0。
+        /// スケールは対角なので F と可換で、変えなくてよい。
+        /// </summary>
+        public static void ApplySameSenseFlip(
+            int parentAxis, int selfAxis, ref Vector3 localPos, ref Quaternion localRot)
+        {
+            if (parentAxis != 0)
+            {
+                localPos = SameSenseFlip(parentAxis, localPos);
+                localRot = SameSenseFlipRotation(parentAxis) * localRot;
+            }
+            if (selfAxis != 0) localRot = localRot * SameSenseFlipRotation(selfAxis);
+        }
+
+        // ================================================================
         // ミラー側の姿勢補正
         // ================================================================
 

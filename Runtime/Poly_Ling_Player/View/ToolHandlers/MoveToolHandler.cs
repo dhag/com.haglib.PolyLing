@@ -307,6 +307,12 @@ namespace Poly_Ling.Player
         // 1 か所で足りる。
         private HashSet<int> _targetOverride;
 
+        // Local 指定のコマンド移動の基準の行列（MasterIndices[0] の表示の行列）。
+        // 値があるあいだ、ApplyDelta へ渡す量はワールド量ではなくこの行列のローカル量。
+        // ExecuteFromCommand(MoveSelectedVerticesCommand) だけが立て、終わりに戻す。
+        // BeginMove が MakeWorldToLocal へ渡す。
+        private Matrix4x4? _localMoveBasis;
+
         private AxisGizmo          _axisGizmo      = new AxisGizmo();
 
         /// <summary>

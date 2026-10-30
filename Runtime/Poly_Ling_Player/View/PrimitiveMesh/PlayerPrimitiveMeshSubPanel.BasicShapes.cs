@@ -175,8 +175,9 @@ namespace Poly_Ling.Player
             c.Add(SR(T("Width"), PlaneMeshGenerator.PlaneParams.SizeMin, PlaneMeshGenerator.PlaneParams.SizeMax, () => _planeP.Width,  v => { _planeP.Width  = v; D(); }));
             c.Add(SR(T("Height"), PlaneMeshGenerator.PlaneParams.SizeMin, PlaneMeshGenerator.PlaneParams.SizeMax, () => _planeP.Height, v => { _planeP.Height = v; D(); }));
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("Width"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
-            c.Add(IR(T("Height"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
+            // ID がサイズの SR（"Width" / "Height"）と重ならないよう、分割数は別の ID にする。
+            c.Add(IR(new Lx("WidthSegments", T("Width").Text), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
+            c.Add(IR(new Lx("HeightSegments", T("Height").Text), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
             c.Add(DD(T("Orientation"), new List<string> { T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") },
                 () => (int)_planeP.Orientation, i => { _planeP.Orientation = (PlaneOrientation)i; D(); }));
             c.Add(TR(T("FaceFront"),   () => _planeP.FaceFront,   v => { _planeP.FaceFront   = v; D(); }));

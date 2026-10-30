@@ -96,6 +96,13 @@ namespace Poly_Ling.HierarchyIO
 
         private HierarchyBuildResult _result;
 
+        /// <summary>
+        /// 向きに F（ミラー軸まわり 180°）を掛けたミラー側 Transform
+        /// （MirrorBranchSameSense の枝。MirrorBranchOps の「同じ向き」の説明）。
+        /// 子のローカルを決めるとき、親がこれに入っているかを見る。
+        /// </summary>
+        private readonly Dictionary<Transform, int> _sameSenseMirror = new Dictionary<Transform, int>();
+
         /// <param name="options">生成設定。null なら既定値。</param>
         /// <param name="persistMesh">
         /// 生成した Mesh を共有アセット化するフック。null なら素通し。
@@ -178,6 +185,7 @@ namespace Poly_Ling.HierarchyIO
         {
             var result = new HierarchyBuildResult();
             _result = result;
+            _sameSenseMirror.Clear();
 
             if (model == null) return result;
 
@@ -519,10 +527,21 @@ namespace Poly_Ling.HierarchyIO
 
             MeshContext trsSource = realPeer ?? mc;
 
+            // 同じ向き（MirrorBranchSameSense）の枝のミラー側か。非スキンドのミラー枝だけが対象。
+            //   parentAxis … 親が F 付きならその軸、selfAxis … 自分に F を掛けるならその軸（無ければ 0）。
+            int parentAxis = 0, selfAxis = 0;
+            if (mirror && !isSkinned)
+            {
+                _sameSenseMirror.TryGetValue(parentTf, out parentAxis);
+                if (MirrorBranchOps.IsInSameSenseBranch(model, parentIndices, index))
+                    selfAxis = MirrorBranchOps.NormalizeMirrorAxis(trsSource.MirrorAxis);
+            }
+
             if (isJoint)
             {
                 // 関節はレンダラを持たない。姿勢のみ設定する。
                 ApplyJointTransform(go, mc, trsSource, hasMeshParent, mirror);
+                ApplySameSenseTransform(go.transform, parentAxis, selfAxis);
                 return;
             }
 
@@ -578,8 +597,104 @@ namespace Poly_Ling.HierarchyIO
                 }
             }
 
+            // F を掛けるメッシュは自分専用にする（実体側と同じ Unity メッシュを使い回す経路があるため）。
+            //   ブレンドシェイプは AttachStaticMesh が載せ直すので、写しからは外しておく。
+            if (selfAxis != 0 && meshForGo != null && ReferenceEquals(meshForGo, unityMesh))
+            {
+                var own = UnityEngine.Object.Instantiate(unityMesh);
+                own.name = string.IsNullOrEmpty(goName) ? unityMesh.name : goName;
+                own.ClearBlendShapes();
+                meshForGo = own;
+            }
+
             AttachStaticMesh(go, mc, meshForGo, model, hasMeshParent, mirror, trsSource,
-                             index, shapeSource, mirrorDelta, vertexOffset);
+                             index, shapeSource, mirrorDelta, vertexOffset, selfAxis);
+            ApplySameSenseTransform(go.transform, parentAxis, selfAxis);
+        }
+
+        /// <summary>
+        /// 鏡像化を済ませたローカル姿勢へ F を掛け、F 付きなら表に登録する
+        /// （MirrorBranchOps の「同じ向き」の説明）。
+        /// </summary>
+        private void ApplySameSenseTransform(Transform t, int parentAxis, int selfAxis)
+        {
+            if (t == null || (parentAxis == 0 && selfAxis == 0)) return;
+
+            var pos = t.localPosition;
+            var rot = t.localRotation;
+            MirrorBranchOps.ApplySameSenseFlip(parentAxis, selfAxis, ref pos, ref rot);
+            t.localPosition = pos;
+            t.localRotation = rot;
+
+            if (selfAxis != 0) _sameSenseMirror[t] = selfAxis;
+        }
+
+        /// <summary>
+        /// Unity メッシュの頂点・法線・接線・ブレンドシェイプ差分に F を掛ける。
+        /// F は回転なので巻き順と接線の w はそのまま。
+        /// </summary>
+        private static void ApplySameSenseToMesh(Mesh mesh, int axis)
+        {
+            if (mesh == null || axis == 0) return;
+
+            var v = mesh.vertices;
+            for (int i = 0; i < v.Length; i++) v[i] = MirrorBranchOps.SameSenseFlip(axis, v[i]);
+            mesh.vertices = v;
+
+            var n = mesh.normals;
+            if (n != null && n.Length == v.Length)
+            {
+                for (int i = 0; i < n.Length; i++) n[i] = MirrorBranchOps.SameSenseFlip(axis, n[i]);
+                mesh.normals = n;
+            }
+
+            var t = mesh.tangents;
+            if (t != null && t.Length == v.Length)
+            {
+                for (int i = 0; i < t.Length; i++)
+                {
+                    var d = MirrorBranchOps.SameSenseFlip(axis, new Vector3(t[i].x, t[i].y, t[i].z));
+                    t[i] = new Vector4(d.x, d.y, d.z, t[i].w);
+                }
+                mesh.tangents = t;
+            }
+
+            int shapeCount = mesh.blendShapeCount;
+            if (shapeCount > 0)
+            {
+                int vc = mesh.vertexCount;
+                var names   = new string[shapeCount];
+                var weights = new List<float>[shapeCount];
+                var dvs     = new List<Vector3[]>[shapeCount];
+                var dns     = new List<Vector3[]>[shapeCount];
+                var dts     = new List<Vector3[]>[shapeCount];
+                for (int s = 0; s < shapeCount; s++)
+                {
+                    names[s]   = mesh.GetBlendShapeName(s);
+                    weights[s] = new List<float>();
+                    dvs[s] = new List<Vector3[]>(); dns[s] = new List<Vector3[]>(); dts[s] = new List<Vector3[]>();
+                    int frames = mesh.GetBlendShapeFrameCount(s);
+                    for (int f = 0; f < frames; f++)
+                    {
+                        var dv = new Vector3[vc]; var dn = new Vector3[vc]; var dt = new Vector3[vc];
+                        mesh.GetBlendShapeFrameVertices(s, f, dv, dn, dt);
+                        for (int i = 0; i < vc; i++)
+                        {
+                            dv[i] = MirrorBranchOps.SameSenseFlip(axis, dv[i]);
+                            dn[i] = MirrorBranchOps.SameSenseFlip(axis, dn[i]);
+                            dt[i] = MirrorBranchOps.SameSenseFlip(axis, dt[i]);
+                        }
+                        weights[s].Add(mesh.GetBlendShapeFrameWeight(s, f));
+                        dvs[s].Add(dv); dns[s].Add(dn); dts[s].Add(dt);
+                    }
+                }
+                mesh.ClearBlendShapes();
+                for (int s = 0; s < shapeCount; s++)
+                    for (int f = 0; f < weights[s].Count; f++)
+                        mesh.AddBlendShapeFrame(names[s], weights[s][f], dvs[s][f], dns[s][f], dts[s][f]);
+            }
+
+            mesh.RecalculateBounds();
         }
 
         // ================================================================
@@ -746,7 +861,7 @@ namespace Poly_Ling.HierarchyIO
             }
         }
 
-        private static void CloneBoneToMirror(
+        private void CloneBoneToMirror(
             int boneIndex, Transform src, Transform mirrorParent, int mirrorAxis,
             Dictionary<int, Transform> boneTransformMap,
             Dictionary<int, List<int>> boneKids,
@@ -765,6 +880,10 @@ namespace Poly_Ling.HierarchyIO
             go.transform.localPosition    = pos;
             go.transform.localEulerAngles = rot;
             go.transform.localScale       = src.localScale;
+
+            // 同じ向きの枝の中なら、ボーンも親と同じ F を掛ける（枝の中の子と同じ規則）。
+            if (_sameSenseMirror.TryGetValue(mirrorParent, out int sameSenseAxis))
+                ApplySameSenseTransform(go.transform, sameSenseAxis, sameSenseAxis);
 
             mirrorTransformByIndex[boneIndex] = go.transform;
 
@@ -1072,7 +1191,7 @@ namespace Poly_Ling.HierarchyIO
             GameObject go, MeshContext mc, Mesh unityMesh, ModelContext model,
             bool hasMeshParent, bool mirror = false, MeshContext trsSource = null,
             int index = -1, MeshObject shapeSource = null, bool mirrorDelta = false,
-            Vector3 vertexOffset = default)
+            Vector3 vertexOffset = default, int sameSenseAxis = 0)
         {
             var src = trsSource ?? mc;
 
@@ -1087,6 +1206,7 @@ namespace Poly_Ling.HierarchyIO
                 Materials    = (Material[])materials.Clone(),
                 MirrorDelta  = mirrorDelta,
                 MirrorAxis   = MirrorBranchOps.ResolveMirrorAxis(mc),
+                SameSenseAxis = sameSenseAxis,
             };
             _result.MeshSourceOf[go.transform] = source;
 
@@ -1101,6 +1221,9 @@ namespace Poly_Ling.HierarchyIO
 
                 // ブレンドシェイプはアセット化より前に載せる（アセットへ焼き込むため）。
                 AppendMorphTargets(model, index, source, unityMesh, go.transform);
+
+                // 同じ向きの枝のミラー側は、向きに掛けた F の分だけ形状を逆に回す（差分も含む）。
+                ApplySameSenseToMesh(unityMesh, sameSenseAxis);
 
                 // 共有アセット化するかどうかは呼び出し側の決定（規約 1）。
                 mf.sharedMesh = PersistMesh(unityMesh);

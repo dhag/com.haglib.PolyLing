@@ -83,6 +83,19 @@ namespace Poly_Ling.Player
             childHint.style.marginBottom = 2;
             c.Add(childHint);
 
+            // ── はしごのウェイトを引き継ぐ（段 I）──
+            c.Add(TR(T("BeltInheritWeights"), () => _placeP.InheritBeltWeights,
+                v => { _placeP.InheritBeltWeights = v; D(); }));
+
+            var placeInheritHint = new Label(
+                "取り込み元のはしごに塗ってあるボーンウェイトを、置いた部品へ配ります。"
+                   + "部品 1 個の全頂点が、その段の左右の点のウェイトを半々に混ぜた 1 つの値になります（部品は曲がらずに段と一緒に動きます）。"
+                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。");
+            placeInheritHint.style.fontSize     = 10;
+            placeInheritHint.style.whiteSpace   = WhiteSpace.Normal;
+            placeInheritHint.style.marginBottom = 2;
+            c.Add(placeInheritHint);
+
             // ── 割り当て方式 ──
             c.Add(SL(T("PlaceMode")));
             var modeChoices = new List<string>
@@ -96,7 +109,7 @@ namespace Poly_Ling.Player
                 RefreshPlaceSeedVis();
                 D();
             });
-            c.Add(modeDd);
+            c.Add(RowTarget.Add("PlaceMode", modeDd, T("PlaceMode").Text));
 
             _placeSeedRow = new VisualElement();
             _placeSeedRow.style.flexDirection = FlexDirection.Row;
@@ -105,7 +118,7 @@ namespace Poly_Ling.Player
             var seedField = new IntegerField { value = _placeP.RandomSeed };
             seedField.style.flexGrow = 1;
             seedField.RegisterValueChangedCallback(ev => { _placeP.RandomSeed = ev.newValue; D(); });
-            _placeSeedRow.Add(seedField);
+            _placeSeedRow.Add(RowTarget.Add("PlaceSeed", seedField, T("PlaceSeed").Text));
             c.Add(_placeSeedRow);
             RefreshPlaceSeedVis();
 
@@ -139,11 +152,11 @@ namespace Poly_Ling.Player
             stackHint.style.marginBottom = 2;
             bc.Add(stackHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(WB("ImportBelt", T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_placeBelts, _placeStack.Enabled);
                 RefreshPlaceInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── 自動検索 ──
             BuildMeshSourceRow(bc, _placeAutoPick, T("AutoDetectSource"));
@@ -154,11 +167,11 @@ namespace Poly_Ling.Player
             autoHint.style.marginBottom = 2;
             bc.Add(autoHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(WB("AutoDetectBelts", T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_placeBelts, _placeAutoPick.Current, _placeStack.Enabled);
                 RefreshPlaceInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             _placeInfoLabel = new Label(PlaceInfoText());
             _placeInfoLabel.style.fontSize   = 10;
@@ -200,7 +213,7 @@ namespace Poly_Ling.Player
                 RefreshPlaceScaleVis();
                 D();
             });
-            c.Add(modeDd);
+            c.Add(RowTarget.Add("PlaceScaleMode", modeDd, T("PlaceScaleMode").Text));
 
             _placeScaleHint = new Label();
             _placeScaleHint.style.fontSize     = 10;
@@ -236,8 +249,8 @@ namespace Poly_Ling.Player
                 D();
             });
 
-            row.Add(sl);
-            row.Add(nf);
+            row.Add(RowTarget.Add("PlaceScale", sl, "配置スケール"));
+            row.Add(RowTarget.Add("PlaceScaleValue", nf, "配置スケール（数値入力）"));
             c.Add(row);
 
             RefreshPlaceScaleVis();
@@ -325,7 +338,7 @@ namespace Poly_Ling.Player
                 D();
             });
 
-            row.Add(slider);
+            row.Add(RowTarget.Add("PlaceRoll", slider, T("PlaceRoll").Text + "（90° 単位の段数 0〜3）"));
             row.Add(degLabel);
             c.Add(row);
         }

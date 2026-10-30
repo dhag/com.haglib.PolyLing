@@ -88,6 +88,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnClearUnderlay       = ExecuteClearUnderlay;
             _commandDispatcher.OnQueryUnderlay       = ExecuteQueryUnderlay;
             _commandDispatcher.OnEditSpaceCommand    = ExecuteEditSpaceCommand;
+            _commandDispatcher.OnEditSpaceWriteTargets = EditSpaceWriteTargets;
             _commandDispatcher.OnDetachVertices      = ExecuteDetachVertices;
             _commandDispatcher.OnComputeViewUvs      = ComputeViewUvs;
             _commandDispatcher.OnCameraCommand       = ExecuteCameraCommand;
@@ -149,8 +150,15 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSetActiveWorkAxis    = ExecuteSetActiveWorkAxis;
             _commandDispatcher.OnRecallWorkAxis      = ExecuteRecallWorkAxis;
             _commandDispatcher.CommandGate           = EditSpaceBlockReason;
-            _commandDispatcher.OnUndo                = () => _editOps != null && _editOps.PerformUndo();
-            _commandDispatcher.OnRedo                = () => _editOps != null && _editOps.PerformRedo();
+            _commandDispatcher.OnBuildModifierTemplate = BuildModifierTemplate;
+            _commandDispatcher.OnDescribeViewState     = DescribeViewState;
+            // プレビューを元へ戻してから Undo・Redo する（CancelPreviewsBeforeUndo）。
+            _commandDispatcher.OnUndo                = () => { if (_editOps == null) return false; CancelPreviewsBeforeUndo(); return _editOps.PerformUndo(); };
+            _commandDispatcher.OnRedo                = () => { if (_editOps == null) return false; CancelPreviewsBeforeUndo(); return _editOps.PerformRedo(); };
+
+            // 頂点ドラッグを離したら、オブジェクトグループの要評価の項目を流す（作り直し整備計画 段 4）。
+            if (_viewportManager != null)
+                _viewportManager.OnVerticesDragEnded = _commandDispatcher.EvaluateModifiersAfterDrag;
         }
 
         // ================================================================
@@ -178,23 +186,62 @@ namespace Poly_Ling.Player
             var mo = PrimitiveMeshFactory.Build(
                 cmd, forPreview: false,
                 resolvePlaceSources: ResolvePlaceSourcesForCommand,
-                resolveBeltSource:   ResolveBeltSourceForCommand);
+                resolveBeltSource:   ResolveBeltSourceForCommand,
+                resolveSurfacePaste: ResolveSurfacePasteForCommand);
             if (mo == null)
             {
                 if (imageMaterial != null) Object.Destroy(imageMaterial.Texture);
                 if (cmd is ExtractPipeBeltCommand)
                     return $"パイプから梯子を取り出せませんでした（{PipeBeltExtractor.LastMessage}）";
+                if (cmd is CreateSurfacePasteCommand)
+                    return "貼り付ける入力の描画オブジェクトが見つかりません";
                 return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
             }
 
             var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
-            string reason = PlaceGeneratedMesh(
-                mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale,
-                out int createdIndex, imageMaterial);
+            // 梯子を読む生成物は梯子の格納空間にある。新規オブジェクト・既存へ追加では梯子の行列を掛けて置く
+            // （段 10。作り直しの ModifierSpace.TryComputeMatrix と揃える）。書き戻し（ReplaceExisting）は
+            // 作り直しの行列（ModifierSpace.Current）が持つので、ここでは掛けない。
+            _createBeltSource = ResolveCreateBeltSource(cmd);
+            string reason;
+            int createdIndex;
+            try
+            {
+                reason = PlaceGeneratedMesh(
+                    mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale,
+                    out createdIndex, imageMaterial);
+            }
+            finally { _createBeltSource = null; }
             UnityEngine.Debug.Log($"[PL/Timing] Place {cmd.ShapeName} {__sw.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
             if (reason == null) ReportCreatedMesh(createdIndex);
             return reason;
+        }
+
+        /// <summary>
+        /// 作成時に梯子の行列を掛ける相手（段 10）。ExecuteCreatePrimitiveMesh が PlaceGeneratedMesh の間だけ立て、
+        /// PrimitiveMeshCreateNewObject・PrimitiveMeshAddToExisting が読む。null なら掛けない。
+        /// </summary>
+        private MeshContext _createBeltSource;
+
+        /// <summary>
+        /// 梯子を読む生成コマンドで、新規オブジェクトか既存へ追加のとき、梯子の取り込み元を返す。それ以外は null。
+        /// </summary>
+        private MeshContext ResolveCreateBeltSource(CreatePrimitiveMeshCommand cmd)
+        {
+            if (cmd == null) return null;
+            var mode = cmd.Placement.AddMode;
+            if (mode != PrimitiveAddMode.NewObject && mode != PrimitiveAddMode.AddToExisting) return null;
+
+            // 生成物の座標系の入力（梯子の取り込み元、貼り付けの入力など）。作り直しと同じ関数で引く。
+            string key = Poly_Ling.Ops.ModifierSpace.SpaceSourceKey(cmd.GetType());
+            if (key == null) return null;
+            // int の配列（パイプの梯子化の取り込み元）は先頭（ModifierSpace.SpaceSourceKey と同じ）。
+            if (!PanelCommandFactory.ToArgs(cmd).TryGetValue(key, out string v) || string.IsNullOrEmpty(v)) return null;
+            string first = v.Split(',')[0].Trim().Trim('"');
+            if (!int.TryParse(first, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int idx)
+                || idx < 0) return null;
+            return ActiveProject?.CurrentModel?.GetMeshContext(idx);
         }
 
         /// <summary>
@@ -341,10 +388,12 @@ namespace Poly_Ling.Player
         /// 藤壺（配置）の配置元を索引から解決する。
         /// 展開・重複排除・面なしの除外は MeshSourceMultiPick.Resolve が持つ。
         /// </summary>
+        /// 原型はローカルで読む入力（PLParam.MeshRefSpace = Local。段 10）。スキンド化済みのものは
+        /// スキンド化で控えた行列で元のローカルへ戻して渡す（ModifierSpace.LocalView）。
         private List<MeshObject> ResolvePlaceSourcesForCommand(int[] masterIndices, bool includeChildren)
             => MeshSourceMultiPick.Resolve(
                 masterIndices, includeChildren, BuildSubtreeMeshList,
-                idx => ActiveProject?.CurrentModel?.GetMeshContext(idx)?.MeshObject);
+                idx => Poly_Ling.Ops.ModifierSpace.LocalView(ActiveProject?.CurrentModel?.GetMeshContext(idx)?.MeshObject));
 
         /// <summary>
         /// 梯子の取り込み元を索引から引く。はしごのウェイトを引き継ぐときだけ呼ばれる。
@@ -357,6 +406,14 @@ namespace Poly_Ling.Player
         /// </summary>
         private MeshObject ResolveBeltSourceForCommand(int masterIndex)
             => ActiveProject?.CurrentModel?.GetMeshContext(masterIndex)?.MeshObject;
+
+        /// <summary>
+        /// 平面化＋貼り付け（createSurfacePaste）の入力を組む。入力は格納値のまま、
+        /// 参照面はモデル空間（バインド姿勢のワールド。VertexToBindWorldMatrix）へ移した複製にする。
+        /// 入力が引けなければ null。
+        /// </summary>
+        private SurfacePasteInput ResolveSurfacePasteForCommand(int sourceIndex, int referenceIndex)
+            => SurfacePasteOps.ResolveInput(ActiveProject?.CurrentModel, sourceIndex, referenceIndex);   // 逆方向と共有（段 14）
 
         // ================================================================
         // 点指定図形

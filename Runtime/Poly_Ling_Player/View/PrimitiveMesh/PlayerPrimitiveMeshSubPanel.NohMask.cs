@@ -30,8 +30,11 @@ namespace Poly_Ling.Player
 
         // プリセット一覧（先頭の「内蔵（MediaPipe）」は含まない）
         private List<SezannePresetEntry> _sezPresets = new List<SezannePresetEntry>();
+        // 諸元 UI を作るたびに作り直すので、UI 自動操作へは作るときに _uiDynamic へ "SezannePreset" で載せる。
+        [UiControl(Ignore = true)]
         private DropdownField            _sezPresetDd;
-        // MediaPipe 用の諸元をまとめた箱。プリセット選択中は無効表示にする。
+        // MediaPipe 用の諸元をまとめた箱。プリセット選択中は無効表示にする。中のボタンや入力欄は個別に載せる。
+        [UiControl(Ignore = true)]
         private VisualElement            _sezMpBox;
 
         // ================================================================
@@ -48,12 +51,12 @@ namespace Poly_Ling.Player
             _sezPresetDd = new DropdownField(new List<string> { T("SezanneBuiltin") }, 0);
             _sezPresetDd.style.marginBottom = 2;
             _sezPresetDd.RegisterValueChangedCallback(_ => OnSezannePresetChanged());
-            c.Add(_sezPresetDd);
-            c.Add(PlayerIoUiKit.WideBtn(T("SezanneRefresh"), () =>
+            c.Add(RowTarget.Add("SezannePreset", _sezPresetDd, T("SezannePreset").Text));
+            c.Add(WB("SezanneRefresh", T("SezanneRefresh"), () =>
             {
                 SezannePresetLibrary.ClearCache();
                 RefreshSezannePresets();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── MediaPipe 用の諸元 ──
             _sezMpBox = new VisualElement();
@@ -65,22 +68,22 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(_nohP.LandmarksFilePath)) _nohP.LandmarksFilePath = RecentPaths.Get(NohLmKey);
             lmField.SetValueWithoutNotify(_nohP.LandmarksFilePath ?? "");
             lmField.RegisterValueChangedCallback(e => { _nohP.LandmarksFilePath = e.newValue; RecentPaths.Set(NohLmKey, e.newValue); D(); });
-            m.Add(PlayerIoUiKit.PathRow(lmField, () =>
+            m.Add(PR("landmarks", lmField, () =>
             {
                 string path = PlayerIoUiKit.AskLoadPath("Open Landmarks JSON", NohLmKey, _nohP.LandmarksFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) lmField.value = path;
-            }));
+            }, T("Landmarks").Text));
 
             m.Add(PlayerIoUiKit.SectionLabel(T("TrianglesJson")));
             var triField = new TextField();
             if (string.IsNullOrEmpty(_nohP.TrianglesFilePath)) _nohP.TrianglesFilePath = RecentPaths.Get(NohTriKey);
             triField.SetValueWithoutNotify(_nohP.TrianglesFilePath ?? "");
             triField.RegisterValueChangedCallback(e => { _nohP.TrianglesFilePath = e.newValue; RecentPaths.Set(NohTriKey, e.newValue); D(); });
-            m.Add(PlayerIoUiKit.PathRow(triField, () =>
+            m.Add(PR("triangles", triField, () =>
             {
                 string path = PlayerIoUiKit.AskLoadPath("Open Triangles JSON", NohTriKey, _nohP.TrianglesFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) triField.value = path;
-            }));
+            }, T("TrianglesJson").Text));
 
             // 内蔵デフォルト（プリセット）に戻す: パスを空にすると焼き込み済みデータを使用
             var defBtn = new Button(() =>
@@ -88,7 +91,8 @@ namespace Poly_Ling.Player
                 lmField.value  = "";
                 triField.value = "";
             }) { text = T("UseBuiltinDefault") };
-            defBtn.style.marginBottom = 4; m.Add(defBtn);
+            defBtn.style.marginBottom = 4;
+            m.Add(RowTarget.Add("UseBuiltinDefault", defBtn, "ランドマーク・三角形のパスを空にして内蔵デフォルトを使う", UiSafety.SafeWrite));
 
             m.Add(SR(T("Scale"), FaceMeshParams.ScaleMin, FaceMeshParams.ScaleMax, () => _nohP.Scale,      v => { _nohP.Scale      = v; D(); }));
             m.Add(SR(T("DepthScale"), FaceMeshParams.DepthScaleMin, FaceMeshParams.DepthScaleMax, () => _nohP.DepthScale, v => { _nohP.DepthScale = v; D(); }));
@@ -109,8 +113,9 @@ namespace Poly_Ling.Player
             c.Add(saveInfo);
             var saveName = new TextField(T("SezanneSaveName"));
             saveName.style.marginBottom = 2;
-            c.Add(saveName);
-            c.Add(PlayerIoUiKit.WideBtn(T("SezanneSaveBtn"), () => SaveSelectedAsSezannePreset(saveName.value)));
+            c.Add(RowTarget.Add("SezanneSaveName", saveName, T("SezanneSaveName").Text));
+            c.Add(WB("SezanneSaveBtn", T("SezanneSaveBtn"), () => SaveSelectedAsSezannePreset(saveName.value),
+                UiSafety.FileOperation, "選択オブジェクトをセザンヌのプリセットとしてファイルへ保存する"));
 
             // ── 既存メッシュを能面JSON形式で保存（セザンヌとは独立の汎用エクスポート） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -118,7 +123,8 @@ namespace Poly_Ling.Player
             var exportInfo = new Label("選択中の描画オブジェクトを landmarks/triangles JSON で保存");
             exportInfo.style.fontSize = 10; exportInfo.style.whiteSpace = WhiteSpace.Normal; exportInfo.style.marginBottom = 2;
             c.Add(exportInfo);
-            c.Add(PlayerIoUiKit.WideBtn("選択メッシュをJSON保存", ExportSelectedMeshToNohJson));
+            c.Add(WB("ExportMeshJson", "選択メッシュをJSON保存", ExportSelectedMeshToNohJson,
+                UiSafety.UserOnly, "選択メッシュを landmarks/triangles JSON で保存する（保存先を選ぶ）"));
 
             RefreshSezannePresets();
         }

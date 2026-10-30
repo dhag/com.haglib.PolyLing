@@ -190,8 +190,7 @@ namespace Poly_Ling.UndoSystem
 
             // 1. リストを並べ替え（同じオブジェクト参照を使用）
             var prevOrder = new List<MeshContext>(context.MeshContextList);
-            context.MeshContextList.Clear();
-            context.MeshContextList.AddRange(orderedList);
+            context.ReplaceMeshContexts(orderedList);
 
             // 1b. 並べ替えで動いた索引参照を付け替える。
             //     ここで戻すのは親（下の 2. が上書きする）以外の索引参照

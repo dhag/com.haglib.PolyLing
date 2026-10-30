@@ -234,9 +234,37 @@ namespace Poly_Ling.Pipe
                         WeightAt(leftWeights, n - 1), WeightAt(rightWeights, n - 1), 0.5f));
             }
 
+            // 逆方向の控え（ModifierFrameTrace）：輪 i の頂点と先端の要。並べ替えの前に印を付ける。
+            int[] frameTag = null;
+            if (ModifierFrameTrace.Current != null)
+            {
+                frameTag = new int[mo.VertexCount];
+                for (int v = 0; v < frameTag.Length; v++)
+                    frameTag[v] = v < n * m ? v / m : v == startApex ? -1 : v == endApex ? -2 : -3;
+            }
+
             // 旧方式の頂点の並び：始点・断面×段・終点。
+            int[] remap = null;
             if (opt.LegacyVertexOrder && (startApex >= 0 || endApex >= 0))
-                ReorderLegacy(mo, startApex, endApex);
+                remap = ReorderLegacy(mo, startApex, endApex);
+
+            if (frameTag != null)
+            {
+                var ringVerts = new List<int>[n];
+                for (int i = 0; i < n; i++) ringVerts[i] = new List<int>(m);
+                int newStart = -1, newEnd = -1;
+                for (int v = 0; v < frameTag.Length; v++)
+                {
+                    int nv = remap != null ? remap[v] : v;
+                    int tag = frameTag[v];
+                    if (tag >= 0) ringVerts[tag].Add(nv);
+                    else if (tag == -1) newStart = nv;
+                    else if (tag == -2) newEnd = nv;
+                }
+                for (int i = 0; i < n; i++) ModifierFrameTrace.RecordVertices(mo, ringVerts[i], i);
+                if (newStart >= 0) ModifierFrameTrace.RecordVertices(mo, new[] { newStart }, 0, ModifierFrameKind.StartApex);
+                if (newEnd   >= 0) ModifierFrameTrace.RecordVertices(mo, new[] { newEnd },   0, ModifierFrameKind.EndApex);
+            }
 
             // この梯子で作った全頂点へ同じパーツIDを書く（側面・蓋をまとめて1パーツ）。
             if (partsIds != null && mo.VertexCount > 0)
@@ -390,7 +418,8 @@ namespace Poly_Ling.Pipe
         /// 頂点を「始点・断面×段・終点」の順に並べ替える。面の頂点番号も付け替える。
         /// 始点・終点の要が無い側はそのまま（輪の頂点の並びは変えない）。
         /// </summary>
-        private static void ReorderLegacy(MeshObject mo, int startApex, int endApex)
+        /// <returns>元の番号 → 新しい番号。</returns>
+        private static int[] ReorderLegacy(MeshObject mo, int startApex, int endApex)
         {
             int count = mo.Vertices.Count;
             var order = new List<int>(count);
@@ -416,6 +445,7 @@ namespace Poly_Ling.Pipe
                 if (vi == null) continue;
                 for (int j = 0; j < vi.Count; j++) vi[j] = map[vi[j]];
             }
+            return map;
         }
 
         // ================================================================

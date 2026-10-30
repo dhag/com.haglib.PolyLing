@@ -183,6 +183,10 @@ namespace Poly_Ling.Ops
                 // ウェイト破棄と種別変更は同時に行う（ClearAllBoneWeights が両方やる）。
                 mo.ClearAllBoneWeights();
 
+                // スキンド化で控えた行列は意味を失う（頂点はもうローカル。段 10）。
+                mo.HasSkinBakeMatrix = false;
+                mo.SkinBakeMatrix    = Matrix4x4.identity;
+
                 // スキンド用の BindPose は意味を失う。MeshFilter 系の BindPose は
                 // ComputeMeshFilterBindPoses が WorldMatrix.inverse で入れ直す。
                 mc.BindPose = Matrix4x4.identity;
@@ -241,6 +245,7 @@ namespace Poly_Ling.Ops
 
             // 手順 1。
             var worldPositions = new Dictionary<int, Vector3[]>();
+            var bakeMatrices   = new Dictionary<int, Matrix4x4>();   // 焼いた ローカル→バインド（段 10）
 
             foreach (int idx in masterIndices)
             {
@@ -277,6 +282,7 @@ namespace Poly_Ling.Ops
                     buf[v] = toWorld.MultiplyPoint3x4(mo.Vertices[v].Position);
 
                 worldPositions[idx] = buf;
+                bakeMatrices[idx]   = toWorld;
             }
 
             if (worldPositions.Count == 0) return results;
@@ -297,6 +303,10 @@ namespace Poly_Ling.Ops
                     mo.Vertices[v].Position = world[v];
 
                 mo.InvalidatePositionCache();
+
+                // 焼いた行列を控える（段 10。ModifierSpace.LocalView が元のローカルへ戻すのに使う）。
+                mo.HasSkinBakeMatrix = true;
+                mo.SkinBakeMatrix    = bakeMatrices[idx];
 
                 // 手順 3。ミラー側ウェイトは持たせない。左右対のボーンが判るのは
                 // MirrorPair.Build（MirrorBoneIndex 経由）なので、そちらに任せる。

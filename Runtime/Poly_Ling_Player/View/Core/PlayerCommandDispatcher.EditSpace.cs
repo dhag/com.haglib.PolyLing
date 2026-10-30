@@ -19,6 +19,12 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<PanelCommand, ModelContext, CommandDataBuilder, EditSpaceTouched, string> OnEditSpaceCommand;
 
+        /// <summary>
+        /// 作業空間の反映・取消し・閉じるが書く既存の描画オブジェクト（出力の保護の判定に使う。段 8）。
+        /// 作業空間が開いていなければ null（通常の判定）。代理だけを書くものは空の列。
+        /// </summary>
+        public Func<PanelCommand, System.Collections.Generic.IList<MeshContext>> OnEditSpaceWriteTargets;
+
         /// <summary>DispatchCore の分担：作業空間。該当するコマンドなら処理して true を返す。</summary>
         private bool DispatchEditSpace(PanelCommand cmd, ProjectContext project, ModelContext model)
         {
@@ -26,6 +32,7 @@ namespace Poly_Ling.Player
             {
                 case OpenUvEditSpaceCommand _:
                 case OpenProfileEditSpaceCommand _:
+                case OpenGroupProfileEditSpaceCommand _:
                 case SetEditSpacePlaneConstraintCommand _:
                 case SetEditSpacePlateUnderlayCommand _:
                 case ClearEditSpacePlateUnderlayCommand _:

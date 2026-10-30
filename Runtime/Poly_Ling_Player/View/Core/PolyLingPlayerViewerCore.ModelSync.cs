@@ -104,9 +104,16 @@ namespace Poly_Ling.Player
         private void RebuildModelList()
         {
             if (_layoutRoot?.ModelListContainer == null) return;
+            SyncModelSelector(ActiveProject);
+            NotifyPanels(ChangeKind.ListStructure);
+        }
+
+        /// <summary>左ペイン上部のモデル見出しとモデル選択を今のプロジェクトに合わせる（通知はしない）。</summary>
+        private void SyncModelSelector(ProjectContext project)
+        {
+            if (_layoutRoot?.ModelListContainer == null) return;
             _layoutRoot.ModelListContainer.Clear();
 
-            var project = ActiveProject;
             var m = project?.CurrentModel;
             if (m != null)
             {
@@ -129,8 +136,6 @@ namespace Poly_Ling.Player
                 string curVal = (cur >= 0 && cur < choices.Count) ? choices[cur] : (choices.Count > 0 ? choices[0] : "");
                 _layoutRoot.ModelSelectDropdown.SetValueWithoutNotify(curVal);
             }
-
-            NotifyPanels(ChangeKind.ListStructure);
         }
 
         // ================================================================
@@ -557,6 +562,11 @@ namespace Poly_Ling.Player
             if (kind == ChangeKind.ListStructure || kind == ChangeKind.ModelSwitch)
                 _structureNotifyCount++;
             _panelContext.Notify(view, kind);
+
+            // モデル切替は左ペイン上部のモデル選択と見出しにも写す（switchModel コマンドなど
+            // RebuildModelList を通らない経路で切り替えても、表示が前のモデルのまま残らないように）。
+            if (kind == ChangeKind.ModelSwitch)
+                SyncModelSelector(project);
 
             // 作業空間バー（中区画）は下区画のパネルと別に常駐するので、ここで読み直す。
             _editSpaceBar?.Refresh();

@@ -129,7 +129,7 @@ namespace Poly_Ling.Player
                 settings.SourcePMXPath = srcPath;
             }
 
-            return OnExportPmx(path, settings);
+            return OnExportPmx(cmd.ModelIndex, path, settings);
         }
 
         /// <summary>MQO 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
@@ -144,10 +144,6 @@ namespace Poly_Ling.Player
                 return reason;
 
             var settings = cmd.Settings ?? Poly_Ling.MQO.MQOImportSettings.CreateDefault();
-
-            // 置換は未対応（PolyLing_残件.md）。黙って新規読込にしない。
-            if (settings.ImportMode == Poly_Ling.MQO.MQOImportMode.Replace)
-                return "置換（Replace）は未対応です。NewModel か Append を指定してください";
 
             if (!string.IsNullOrEmpty(cmd.BoneWeightCsvPath))
             {
@@ -186,7 +182,7 @@ namespace Poly_Ling.Player
                     cmd.FilePath, out string path, out string reason))
                 return reason;
 
-            return OnExportMqo(
+            return OnExportMqo(cmd.ModelIndex,
                 path,
                 cmd.Settings ?? Poly_Ling.MQO.MQOExportSettings.CreateFromCoordinate(
                     0.01f, flipZ: false, flipX: true));
@@ -224,7 +220,7 @@ namespace Poly_Ling.Player
                     cmd.FilePath, out string path, out string reason))
                 return reason;
 
-            return OnExportObj(
+            return OnExportObj(cmd.ModelIndex,
                 path, cmd.Settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault());
         }
 
@@ -284,7 +280,7 @@ namespace Poly_Ling.Player
                     cmd.FilePath, out string path, out string reason))
                 return reason;
 
-            return OnExportStl(
+            return OnExportStl(cmd.ModelIndex,
                 path, cmd.Settings ?? Poly_Ling.STL.StlExportSettings.CreateDefault());
         }
 
@@ -303,7 +299,7 @@ namespace Poly_Ling.Player
 
             settings.Authors = new List<string>(cmd.Authors ?? System.Array.Empty<string>());
 
-            return OnExportVrm(path, settings);
+            return OnExportVrm(cmd.ModelIndex, path, settings);
         }
 
         /// <summary>
@@ -371,7 +367,7 @@ namespace Poly_Ling.Player
                     return binReason;
             }
 
-            return OnExportGltf(
+            return OnExportGltf(cmd.ModelIndex,
                 path, cmd.Settings ?? Poly_Ling.Gltf.GltfExportSettings.CreateDefault());
         }
 
@@ -398,7 +394,7 @@ namespace Poly_Ling.Player
                 return texReason;
             settings.TextureFolder = texResolved;
 
-            return OnExportFbx(path, settings);
+            return OnExportFbx(cmd.ModelIndex, path, settings);
         }
 
         /// <summary>
@@ -625,7 +621,7 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return "コマンドが null";
 
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(cmd.ModelIndex);
             if (model == null) return "モデルがありません";
 
             if (string.IsNullOrEmpty(cmd.FilePath))    return "FilePath が空です";
@@ -723,7 +719,7 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return "コマンドが null";
 
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(cmd.ModelIndex);
             if (model == null) return "モデルがありません";
 
             if (string.IsNullOrEmpty(cmd.FilePath))   return "FilePath が空です";
@@ -759,9 +755,9 @@ namespace Poly_Ling.Player
             bool ok = Poly_Ling.Motion.BvhCodec.ExportFromModel(model, loaded.Dto, outPath, options, report, out string reason);
 
             // 書き出しはモデルへ実際にフレームを当てる。ポーズ層は ExportFromModel が戻すので、表示を引き直す。
-            // UpdateTransform は規約で新規に呼ばない入口なので、正規入口だけを通す。
+            // 行列表まで作り直す正規入口 SettleWorldPositions を通す（Writes=None のコマンドは終わりの引き直しが走らない）。
             // パネルから撃ったときはパネルが表示中のフレームを当て直す（motionClip の setTime）。
-            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+            _viewportManager.SettleWorldPositions(ActiveProject);
 
             if (!ok) return $"{reason}（出力先: {outPath}）";
             Debug.Log($"[PolyLing] BVH 書き出し: {report.OutputPath} / {report.Summary()}");
@@ -778,7 +774,7 @@ namespace Poly_Ling.Player
             Poly_Ling.Fbx.FbxExportResult Fail(string why) => Poly_Ling.Fbx.FbxExportResult.Failed(why);
 
             if (cmd == null) return Fail("コマンドが null");
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(cmd.ModelIndex);
             if (model == null) return Fail("モデルがありません");
             if (string.IsNullOrEmpty(cmd.FilePath))   return Fail("FilePath が空です");
             if (string.IsNullOrEmpty(cmd.SourcePath)) return Fail("SourcePath が空です");
@@ -826,7 +822,7 @@ namespace Poly_Ling.Player
             var result = Poly_Ling.Fbx.PLFbxBridge.Exporter.ExportMotion(model, loaded.Dto, outPath, settings, motion);
 
             // 書き出しはモデルへ実際にフレームを当てる。ポーズ層は標本化が戻すので、表示を引き直す（BVH と同じ正規入口）。
-            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+            _viewportManager.SettleWorldPositions(ActiveProject);
 
             if (result.Success)
                 Debug.Log($"[PolyLing] FBX モーション書き出し: {outPath} / {result.Summary()}");
@@ -941,19 +937,15 @@ namespace Poly_Ling.Player
             var model = Poly_Ling.Serialization.ModelBundle.ToModel(cmd.Model);
             if (model == null) return "届いたモデルを組み立てられません";
 
-            // 外す前に控える。RemoveModelAt は外したモデルを Clear(true) する。
-            var oldDto = Poly_Ling.Serialization.ModelBundle.BuildDto(project.Models[index]);
-            if (oldDto == null) return $"モデル {index} を控えられません";
-
-            project.RemoveModelAt(index);
-            project.InsertModel(index, model);
+            // 外した実体は Clear せず、Undo の記録が持つ（ModelReplaceRecord）。
+            var oldModel = project.ReplaceModelAt(index, model);
             project.SelectModel(index);
 
             RefreshAfterModelPlaced(project, model, () =>
             {
                 if (_editOps?.UndoController == null) return;
                 _editOps.UndoController.SetProjectContext(project);
-                _editOps.UndoController.RecordModelReplace(index, oldDto, cmd.Model);
+                _editOps.UndoController.RecordModelReplace(index, oldModel, model);
             });
             AdoptCoordinateConvention();
             return null;

@@ -426,6 +426,8 @@ namespace Poly_Ling.Remote
         /// <summary>
         /// 現在のプロジェクト全体を JSON（ProjectDTO）の UTF-8 バイト列にする。ファイルは介さない。
         /// push（SendHierarchyBundle）とクエリ（project_bundle）の共通部。
+        /// 組み方は保存（.mfproj）と同じ ProjectSerializer.FromProjectContext に、
+        /// テクスチャ画像（embeddedTextures。JSON はパスしか持たないため）を足したもの。
         /// </summary>
         private bool TryBuildProjectJson(ProjectContext project,
             out string bundleName, out byte[] bundle, out string error)
@@ -436,14 +438,8 @@ namespace Poly_Ling.Remote
 
             try
             {
-                var dto = Poly_Ling.Serialization.ProjectDTO.Create(project.Name);
-                foreach (var model in project.Models)
-                {
-                    // テクスチャ画像そのものも載せる（JSON はパスしか持たないため）。model_bundle と同じ組み方。
-                    var modelDto = Poly_Ling.Serialization.ModelBundle.BuildDto(model);
-                    if (modelDto == null) continue;
-                    dto.models.Add(modelDto);
-                }
+                var dto = Poly_Ling.Serialization.ProjectSerializer.FromProjectContext(project, embedTextures: true);
+                if (dto == null) { error = "失敗 プロジェクトを組めません"; return false; }
 
                 string json = Poly_Ling.Serialization.ProjectSerializer.ToJson(dto);
                 bundle = Encoding.UTF8.GetBytes(json ?? "");

@@ -42,6 +42,13 @@ namespace Poly_Ling.UndoSystem
         public SelectionSnapshot OldSnapshot;
         public SelectionSnapshot NewSnapshot;
 
+        /// <summary>
+        /// 戻し先（記録した時点の ActiveMeshContext）。記録の時点で MeshUndoStack が詰める。
+        /// 頂点編集の履歴は書き込み先が替わっても消さないので、Undo の時点の
+        /// ActiveMeshContext は別のオブジェクトのことがある（段 12）。
+        /// </summary>
+        public MeshUndoTarget Target;
+
         // WorkPlane連動（AutoUpdate有効時のみ使用）
         public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
         public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
@@ -112,8 +119,22 @@ namespace Poly_Ling.UndoSystem
             NewWorkPlaneSnapshot = newWorkPlane;
         }
 
+        /// <summary>
+        /// 戻し先を引き直して ctx へ渡す。控えてあるのに見つからなければ false
+        /// （オブジェクトが消えた。別のオブジェクトの選択を書き換えない）。
+        /// </summary>
+        private bool PassTarget(MeshUndoContext ctx)
+        {
+            if (!Target.IsSet) { ctx.CurrentSelectionTarget = null; return true; }
+            var mc = Target.Resolve();
+            ctx.CurrentSelectionTarget = mc;
+            return mc != null;
+        }
+
         public override void Undo(MeshUndoContext ctx)
         {
+            if (!PassTarget(ctx)) return;
+
             // レガシーフィールドも更新（後方互換）
             ctx.SelectedVertices = new HashSet<int>(OldSnapshot?.Vertices ?? new HashSet<int>());
 
@@ -129,6 +150,8 @@ namespace Poly_Ling.UndoSystem
 
         public override void Redo(MeshUndoContext ctx)
         {
+            if (!PassTarget(ctx)) return;
+
             ctx.SelectedVertices = new HashSet<int>(NewSnapshot?.Vertices ?? new HashSet<int>());
 
             ctx.CurrentSelectionSnapshot = NewSnapshot?.Clone();
@@ -147,6 +170,8 @@ namespace Poly_Ling.UndoSystem
     public struct MeshSelectionEntry
     {
         public int MeshContextIndex;
+        /// <summary>対象の安定 ID。記録の時点で MeshUndoStack が詰める（0 なら索引のまま。段 12）。</summary>
+        public ulong ObjectId;
         public SelectionSnapshot Old;
         public SelectionSnapshot New;
     }
@@ -168,6 +193,9 @@ namespace Poly_Ling.UndoSystem
     public class MultiMeshSelectionChangeRecord : MeshUndoRecord
     {
         public MeshSelectionEntry[] Entries;
+
+        /// <summary>索引が指すモデル。記録の時点で MeshUndoStack が詰める（段 12）。</summary>
+        public ModelContext Model;
 
         /// <summary>選択変更はLevel 3（選択フラグのみ更新）で済む</summary>
         public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Selection;
@@ -192,6 +220,7 @@ namespace Poly_Ling.UndoSystem
             if (Entries == null || Entries.Length == 0)
                 return;
 
+            var model = Model;
             var applied = new MeshSelectionEntry[Entries.Length];
             for (int i = 0; i < Entries.Length; i++)
             {
@@ -200,17 +229,20 @@ namespace Poly_Ling.UndoSystem
                 // 受け側は New だけを見て復元すればよい。
                 applied[i] = new MeshSelectionEntry
                 {
-                    MeshContextIndex = e.MeshContextIndex,
+                    // 今の索引へ引き直す。ObjectId が一覧に無ければ -1（受け側が飛ばす）。
+                    MeshContextIndex = MeshUndoTarget.ResolveIndex(model, e.MeshContextIndex, e.ObjectId),
+                    ObjectId         = e.ObjectId,
                     Old              = isUndo ? e.New : e.Old,
                     New              = isUndo ? e.Old : e.New,
                 };
             }
 
             ctx.PendingSelectionEntries = applied;
+            ctx.PendingTargetModel      = model;
 
             ctx.DirtyMeshIndices.Clear();
-            for (int i = 0; i < Entries.Length; i++)
-                ctx.DirtyMeshIndices.Add(Entries[i].MeshContextIndex);
+            for (int i = 0; i < applied.Length; i++)
+                ctx.DirtyMeshIndices.Add(applied[i].MeshContextIndex);
         }
     }
 }

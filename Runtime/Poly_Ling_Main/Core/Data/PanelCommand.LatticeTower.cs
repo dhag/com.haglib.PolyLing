@@ -50,6 +50,9 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets,
         Description = "配置元オブジェクトを塔の軸（原点を通る Y 軸）上の指定の高さへ置く。複数なら結合して置く。鉄塔のデッキに使う。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.TowerDeck,
+        InverseKeeps = "配置元・中心の合わせ方",
+        InverseLoses = "XZ のずれ、Y 軸以外の回転、歪み")]
     public sealed class CreateTowerDeckCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "TowerDeck", Description = "デッキのパラメータ", Required = true)]
@@ -57,7 +60,7 @@ namespace Poly_Ling.Data
 
         /// <summary>配置元の MeshContextList インデックス。</summary>
         [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "TowerDeck";
@@ -82,6 +85,7 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
         Description = "鉄塔を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品を順にその子として作る。先頭は塔体（createLatticeTower）、続いてデッキ（createTowerDeck）を任意の数。部品の並びは 1 件のオブジェクトグループとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createTowerDeck;params.height=1.5;sourceMasterIndices=3）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・グループ化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
+    [PLModifier(Capture = PLGroupCapture.Assembly)]   // PlayerCommandDispatcher.LatticeTower.cs → ExecuteEmptyParentAssembly
     public sealed class CreateTowerAssemblyCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshName", Description = "親オブジェクトの名前。重なるときは番号を付ける", Required = true)]
@@ -114,6 +118,7 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
         Description = "既存の鉄塔へデッキを足す。towerIndex は鉄塔の塔体・デッキ・親のどれか。デッキは鉄塔の親の子として作り、鉄塔のオブジェクトグループの末尾へ項目を足す。")]
+    [PLModifier(Capture = PLGroupCapture.ViaSteps)]   // createTowerDeck を鉄塔のグループへ足す（PlayerCommandDispatcher.LatticeTower.cs）
     public sealed class AddTowerDeckCommand : PanelCommand
     {
         [PLParam(TextKey = "TowerTarget", Description = "鉄塔の塔体・デッキ・親のどれかの索引", Required = true,

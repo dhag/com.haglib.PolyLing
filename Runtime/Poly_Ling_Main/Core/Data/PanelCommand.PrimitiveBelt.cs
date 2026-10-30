@@ -51,7 +51,7 @@ namespace Poly_Ling.Data
     {
         [PLParam(TextKey = "MasterIndex",
                  Description = "取り込み元の描画オブジェクトの masterIndex。省くと現在の編集対象",
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int MasterIndex { get; }
 
         [PLParam(TextKey = "BeltAcquireMethod",
@@ -160,7 +160,7 @@ namespace Poly_Ling.Data
         /// </summary>
         [PLParam(TextKey = "BeltSourceIndex",
                  Description = "梯子の取り込み元オブジェクトの索引。-1 でひも付けなし",
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int BeltSourceIndex { get; }
 
         /// <summary>
@@ -372,6 +372,9 @@ namespace Poly_Ling.Data
     /// TwoProfiles が false のときは A だけを使う。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+        InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
+        InverseLoses = "波形の歪み（段の前後の区間ごとの相似でない変形）、補間した段だけの動き、厚みの変化")]
     public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Frill", Description = "フリルのパラメータ", Required = true)]
@@ -423,6 +426,9 @@ namespace Poly_Ling.Data
 
     /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+        InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
+        InverseLoses = "輪のひしゃげ（相似でない変形）、段の軸まわりのねじれ、補間した段だけの動き、厚みの変化")]
     public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
@@ -482,14 +488,21 @@ namespace Poly_Ling.Data
     [PLUiRoute("パイプの梯子取り出し",
         "leftPane.fold.Primitive", "leftPane.liveAdvancedPrimitiveBtn",
         "primitiveAdvanced.shape.Pipe", "primitiveAdvanced.PipeBeltExtractRun")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, InverseOf = "createPipe",
+        Inverse = ModifierInverseMethod.CopiedVertices,
+        InverseKeeps = "パイプの面構成・頂点 ID・ウェイト、輪のレール以外の頂点、引数",
+        InverseLoses = "開始タグの位置（始点と最初の段から導く）、輪のレール以外の頂点の追随（レールの 2 頂点と始点・終点だけを書く）")]
     public sealed class ExtractPipeBeltCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "PipeBeltExtract", Description = "取り出しのパラメータ", Required = true)]
         public Poly_Ling.PrimitiveMesh.PipeBeltExtractParams Params { get; }
 
         /// <summary>取り込み元（パイプ）の MeshContextList インデックス。</summary>
+        // 生成器はパイプの格納値のまま読み、梯子はパイプの格納空間で出来る（貼り付けの SourceIndex と同じ形）。
+        // 出力へは ModifierSpace の行列 M（先頭のパイプの格納→バインド）で移す。スキンド化のあとも評価できる。
         [PLParam(TextKey = "PipeBeltSourceIndices", Description = "取り込み元（パイプ）のオブジェクトの索引", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Model,
+                 OutputSpaceSource = true)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "PipeBelt";
@@ -512,6 +525,9 @@ namespace Poly_Ling.Data
     /// 索引から MeshObject への解決はディスパッチャ側が行う。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+        InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、配置元、引数",
+        InverseLoses = "部品の歪み、段の向きまわりの傾き、倍率（倍率の決め方が一律のとき）、間引いた段・補間した段だけの動き")]
     public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "PlaceObject", Description = "配置のパラメータ", Required = true)]
@@ -519,7 +535,7 @@ namespace Poly_Ling.Data
 
         /// <summary>配置元の MeshContextList インデックス。</summary>
         [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "PlaceObject";
@@ -553,6 +569,100 @@ namespace Poly_Ling.Data
         {
             Params              = @params;
             SourceMasterIndices = sourceMasterIndices;
+        }
+    }
+
+    /// <summary>
+    /// まつげ等（旧 NCSHAGLIB の LushMaker）。梯子の段（スプラインで補間した段）ごとに原型を置く、藤壺の変種。
+    /// 枠は「底辺＝段、頂点＝次の段の中点」か梯子の面の法線、回転は始点から終点へ補間する。
+    /// 参照面への貼り付けは別の項目（createSurfacePaste）で行う（作り直し整備計画 段 7）。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
+        Description = "まつげ等。梯子の段（スプライン分割で補間した段）ごとに原型を置く。枠（次の段の中点／梯子の面の法線）・置く位置（中点／左／右）・回転（始点→終点の補間）・倍率を引数で選ぶ。旧 NCSHAGLIB の LushMaker の移植で、参照面への貼り付けは createSurfacePaste で別に行う。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.LushFrames,
+        InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、原型、段の補間・置く位置・倍率の引数",
+        InverseLoses = "部品の歪み、段の向き（1 本の向きの変化は回転の引数へ寄せる）、段ごとの回転のうち始点→終点の線形の補間で表せない分、補間した段だけの動き（元の段へ最小二乗で当てはめる）、倍率の変化")]
+    public sealed class CreateLushCommand : CreateBeltPrimitiveCommand
+    {
+        [PLParam(TextKey = "Lush", Description = "まつげのパラメータ", Required = true)]
+        public Poly_Ling.PlaceObject.LushParams Params { get; }
+
+        /// <summary>原型の MeshContextList インデックス。複数なら結合して 1 つの原型にする。</summary>
+        [PLParam(TextKey = "LushSourceIndices", Description = "原型オブジェクトの索引。複数なら結合して 1 つの原型にする", Required = true,
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
+        public int[] SourceMasterIndices { get; }
+
+        public override string ShapeName => "Lush";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateLushCommand(
+            int modelIndex,
+            Poly_Ling.PlaceObject.LushParams @params,
+            int[] sourceMasterIndices,
+            float[] beltLeftPoints, float[] beltRightPoints, int[] beltStarts,
+            bool[] beltClosed, bool[] beltFlipWinding, float[] beltHeightScale,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
+            PrimitivePlacement placement,
+            int beltSourceIndex = -1,
+            Poly_Ling.PrimitiveMesh.BeltAcquireMethod acquireMethod
+                = Poly_Ling.PrimitiveMesh.BeltAcquireMethod.Baked,
+            bool acquireCrossRows = false,
+            string acquireSetName = "",
+            int profileSourceIndex = -1,
+            Poly_Ling.PrimitiveMesh.ProfileAcquireMethod profileAcquire
+                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked,
+            float[] beltStartPoints = null, bool[] beltHasStartPoint = null,
+            float[] beltEndPoints   = null, bool[] beltHasEndPoint   = null)
+            : base(modelIndex, placement,
+                   beltLeftPoints, beltRightPoints, beltStarts,
+                   beltClosed, beltFlipWinding, beltHeightScale, orient, spline,
+                   beltSourceIndex, acquireMethod, acquireCrossRows, acquireSetName,
+                   profileSourceIndex, profileAcquire,
+                   beltStartPoints, beltHasStartPoint, beltEndPoints, beltHasEndPoint)
+        {
+            Params              = @params;
+            SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
+        }
+    }
+
+    /// <summary>
+    /// 平面化＋貼り付け（旧 NCSHAGLIB の「Z を 0 にする」と「福笑い貼り付け」_PasteFlatParts）。
+    /// 入力の頂点を、原点を通り方向に直交する平面へ落とし（任意）、方向に沿って参照面へ貼り付けた複製を作る。
+    /// 参照面を省くと平面化だけを行う。眉・まぶたは「平面化 → パイプ → 貼り付け」の 3 項目の鎖で作る（作り直し整備計画 段 7）。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
+        Description = "平面化＋貼り付け。入力（梯子・パイプなど）の複製を作り、頂点を原点を通り方向に直交する平面へ落とす（flatten）か、そのまま、方向に沿った直線で参照面と交わる点へ移して平面からの高さを足す。交点が無い頂点は動かさない。参照面を -1 にすると平面化だけ。座標はモデル空間（バインド姿勢）で扱う。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.SurfacePaste,
+        InverseKeeps = "入力の面構成・頂点 ID・ウェイト、参照面、引数",
+        InverseLoses = "平面化するとき方向に沿った成分の変化（参照面へ貼り直す）。交点の無い頂点は出力の位置がそのまま入力になる")]
+    public sealed class CreateSurfacePasteCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "SurfacePaste", Description = "平面化＋貼り付けのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.SurfacePasteParams Params { get; }
+
+        [PLParam(TextKey = "SurfacePasteSourceIndex", Description = "貼り付ける入力（梯子・パイプなど）の索引", Required = true,
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Model,
+                 OutputSpaceSource = true)]
+        public int SourceIndex { get; }
+
+        [PLParam(TextKey = "SurfacePasteReferenceIndex", Description = "参照面の索引。-1 で平面化だけ",
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Model)]
+        public int ReferenceIndex { get; }
+
+        public override string ShapeName => "SurfacePaste";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateSurfacePasteCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.SurfacePasteParams @params,
+            int sourceIndex, PrimitivePlacement placement,
+            int referenceIndex = -1)
+            : base(modelIndex, placement)
+        {
+            Params         = @params;
+            SourceIndex    = sourceIndex;
+            ReferenceIndex = referenceIndex;
         }
     }
 

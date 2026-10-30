@@ -76,7 +76,11 @@ namespace Poly_Ling.Context
         // ================================================================
 
         /// <summary>メッシュコンテキストリスト</summary>
-        public List<MeshContext> MeshContextList { get; set; } = new List<MeshContext>();
+        /// <remarks>
+        /// 一覧へ入れる書き込みは Add・Insert・ReplaceMeshContexts・SetMeshContextAt を通す
+        /// （ObjectId の採番が 1 か所。ModelContext.MeshList.cs の「一覧へ入れる道」。段 C）。
+        /// </remarks>
+        public List<MeshContext> MeshContextList { get; private set; } = new List<MeshContext>();
 
         /// <summary>メッシュ数</summary>
         public int Count => MeshContextList?.Count ?? 0;

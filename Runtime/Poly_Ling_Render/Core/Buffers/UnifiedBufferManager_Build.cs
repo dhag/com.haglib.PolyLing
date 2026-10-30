@@ -95,6 +95,59 @@ namespace Poly_Ling.Core
             return expected != _contextToUnifiedMeshIndex.Count;
         }
 
+        // ============================================================
+        // 組んだときの控え（作り直し整備計画 段 A・段 B）
+        // ============================================================
+        //
+        // 統合メッシュ番号ごとに、組んだときの描画オブジェクト・MeshObject・面の構成の署名を控える。
+        // バッファが今のモデルと合っているか（MatchesModel）を、記録の種類やコマンドの種類ではなく
+        // 状態そのものから判定するために使う。BuildFromTypedEntries だけが埋める。
+
+        private readonly List<MeshContext> _builtContexts    = new List<MeshContext>();
+        private readonly List<MeshObject>  _builtMeshObjects = new List<MeshObject>();
+        private readonly List<ulong>       _builtTopology    = new List<ulong>();
+
+        private void ClearBuiltRecord()
+        {
+            _builtContexts.Clear();
+            _builtMeshObjects.Clear();
+            _builtTopology.Clear();
+        }
+
+        private void RecordBuiltMesh(MeshContext mc)
+        {
+            _builtContexts.Add(mc);
+            _builtMeshObjects.Add(mc.MeshObject);
+            _builtTopology.Add(Poly_Ling.Ops.MeshSignature.Topology(mc.MeshObject));
+        }
+
+        /// <summary>
+        /// バッファが今のモデルの描画オブジェクトと合っているか。
+        /// 載せる集合・並び・描画オブジェクトの実体・MeshObject の実体・頂点数・面の構成が
+        /// 組んだときと同じなら true。合っていなければ位置だけを送っても正しくならない
+        /// （作り直しが要る）。頂点の位置は見ない。
+        /// </summary>
+        public bool MatchesModel(ModelContext model)
+        {
+            if (model == null) return _meshCount == 0;
+            if (_builtContexts.Count != _meshCount) return false;
+
+            model.InvalidateTypedIndices();
+            if (NeedsRebuildForMembership(model)) return false;
+
+            for (int u = 0; u < _meshCount; u++)
+            {
+                if (!_unifiedToContextMeshIndex.TryGetValue(u, out int mi)) return false;
+                var mc = model.GetMeshContext(mi);
+                if (mc == null || !ReferenceEquals(mc, _builtContexts[u])) return false;
+                var mo = mc.MeshObject;
+                if (mo == null || !ReferenceEquals(mo, _builtMeshObjects[u])) return false;
+                if ((uint)mo.VertexCount != _meshInfos[u].VertexCount) return false;
+                if (Poly_Ling.Ops.MeshSignature.Topology(mo) != _builtTopology[u]) return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// TypedMeshEntryリストからバッファを構築
         /// MasterIndex（MeshContextList内のインデックス）をマッピングキーとして使用
@@ -153,6 +206,7 @@ namespace Poly_Ling.Core
             // マッピングをクリア
             _contextToUnifiedMeshIndex.Clear();
             _unifiedToContextMeshIndex.Clear();
+            ClearBuiltRecord();
 
             // データ構築
             uint vertexOffset = 0;
@@ -193,6 +247,7 @@ namespace Poly_Ling.Core
 
                 // 頂点データ構築
                 BuildVertexData(meshObject, meshContext, modelIndex, _meshCount, masterIndex, ref vertexOffset);
+                RecordBuiltMesh(meshContext);
 
                 // ライン/エッジデータ構築
                 uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, _meshCount, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
@@ -246,6 +301,7 @@ namespace Poly_Ling.Core
                 Initialize();
 
             ClearData();
+            ClearBuiltRecord();   // この経路はモデルとの照合（MatchesModel）の対象にしない
 
             if (meshContexts == null || meshContexts.Count == 0)
                 return;

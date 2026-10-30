@@ -45,84 +45,25 @@ namespace Poly_Ling.UndoSystem
     /// </summary>
     public class MeshContextSnapshot
     {
-        public string Name;
-        public MeshObject Data;                    // Clone
+        // 【写す項目】（作り直し整備計画 段 A）
+        //   以前はここに欄を並べて独自に写していた。MeshContextCloneOps と写す項目が食い違い
+        //   （こちらは PMXMaterialNames・BoneModelRotation・WorldMatrix を落とし、向こうは
+        //   作業軸の値を落としていた）、欄を足すたびに 2 か所へ手で足す形になっていた。
+        //   中身は MeshContextCloneOps.Clone(StateSnapshot) の控えに一本化する。
+        //   要素の選択だけは CloneOps が写さない（新品と同じにする）ので別に控える。
+
+        /// <summary>中身の控え（MeshContextCloneOps.Clone(StateSnapshot)）。モデルには入れない。</summary>
+        public MeshContext State;
+
+        public string Name => State?.Name;
+        public ulong ObjectId => State?.ObjectId ?? 0UL;
+
         public List<string> MaterialPaths;      // マテリアルはアセットパスで保持
         public List<Material> RuntimeMaterials; // ランタイム専用（アセット化されていないマテリアル）
         public int CurrentMaterialIndex;
-        public BoneTransform BoneTransform;
-        public Vector3[] OriginalPositions;
-
-        // オブジェクト属性
-        public MeshType Type;
-        public int ParentIndex;
-        public int Depth;
-        public bool IsVisible;
-        public bool IsLocked;
-        public bool IsFolding;
-
-        // 協働編集（同一オブジェクトの状態保存なのでIDはそのまま持ち回す）
-        public ulong ObjectId;
-        public string EditorName;
-
-        /// <summary>作業軸オブジェクトの軸値。それ以外は null。</summary>
-        public Poly_Ling.Context.WorkAxisContext WorkAxis;
-
-        // ミラー設定
-        public int MirrorType;
-        public int MirrorAxis;
-        public float MirrorDistance;
-        public int MirrorMaterialOffset;
-
-        // ベイクドミラー設定
-        public int BakedMirrorSourceIndex;
-        public bool HasBakedMirrorChild;
-        /// <summary>ミラー形状が実体側から生成されたものか。落とすと Undo でミラーの扱いが変わる。</summary>
-        public bool MirrorGeometryDerived;
-        /// <summary>切り離したミラー側の ObjectId。落とすと Undo 後に再ミラー化できなくなる。</summary>
-        public ulong DetachedMirrorObjectId;
-
-        // ================================================================
-        // 選択状態（Phase 1追加）
-        // ================================================================
 
         /// <summary>選択状態スナップショット</summary>
         public MeshSelectionSnapshot Selection;
-
-        /// <summary>選択セット（Phase 9追加）</summary>
-        public List<PartsSelectionSet> PartsSelectionSetList;
-
-        // ================================================================
-        // モーフデータ（Phase Morph追加）
-        // ================================================================
-
-        /// <summary>モーフ基準データ</summary>
-        public MorphBaseData MorphBaseData;
-
-        /// <summary>モーフ親メッシュのマスターインデックス</summary>
-        public int MorphParentIndex;
-
-        /// <summary>モーフのミラー適用ポリシー（規約は MorphMirrorPolicy.cs を正典とする）</summary>
-        public MorphMirrorPolicy MorphMirrorPolicy;
-
-        /// <summary>MirrorOf のときの参照先モーフのマスターインデックス</summary>
-        public int MirrorOfMorphIndex;
-
-        /// <summary>エクスポートから除外するか</summary>
-        public bool ExcludeFromExport;
-
-        /// <summary>アーマチャ生成時ボーン生成スキップ</summary>
-        public bool IgnorePoseInArmature;
-
-        // ================================================================
-        // BonePoseData（Phase BonePose追加）
-        // ================================================================
-
-        /// <summary>ボーンポーズデータ</summary>
-        public BonePoseData BonePoseData;
-
-        /// <summary>BindPose（スキニング基準行列）</summary>
-        public Matrix4x4 BindPose;
 
         /// <summary>
         /// MeshContextからスナップショットを作成
@@ -133,55 +74,13 @@ namespace Poly_Ling.UndoSystem
 
             MeshContextSnapshot snapshot = new MeshContextSnapshot
             {
-                Name = meshContext.Name,
-                Data = meshContext.MeshObject?.Clone(),
+                State = Poly_Ling.Ops.MeshContextCloneOps.Clone(
+                    meshContext, Poly_Ling.Ops.MeshContextCloneKind.StateSnapshot),
                 MaterialPaths = new List<string>(),
                 RuntimeMaterials = new List<Material>(),
                 CurrentMaterialIndex = meshContext.CurrentMaterialIndex,
-                BoneTransform = meshContext.BoneTransform != null ? new BoneTransform(meshContext.BoneTransform) : null,
-                OriginalPositions = meshContext.OriginalPositions != null 
-                    ? (Vector3[])meshContext.OriginalPositions.Clone() 
-                    : null,
-                // オブジェクト属性
-                Type = meshContext.Type,
-                ParentIndex = meshContext.ParentIndex,
-                Depth = meshContext.Depth,
-                IsVisible = meshContext.IsVisible,
-                IsLocked = meshContext.IsLocked,
-                IsFolding = meshContext.IsFolding,
-                // 協働編集
-                ObjectId = meshContext.ObjectId,
-                EditorName = meshContext.EditorName,
-                // 作業軸オブジェクトの軸値（値のコピー。参照は持ち回さない）
-                WorkAxis = meshContext.WorkAxis != null
-                    ? new Poly_Ling.Context.WorkAxisContext(meshContext.WorkAxis)
-                    : null,
-                // ミラー設定
-                MirrorType = meshContext.MirrorType,
-                MirrorAxis = meshContext.MirrorAxis,
-                MirrorDistance = meshContext.MirrorDistance,
-                MirrorMaterialOffset = meshContext.MirrorMaterialOffset,
-                // ベイクドミラー設定
-                BakedMirrorSourceIndex = meshContext.BakedMirrorSourceIndex,
-                HasBakedMirrorChild = meshContext.HasBakedMirrorChild,
-                MirrorGeometryDerived = meshContext.MirrorGeometryDerived,
-                DetachedMirrorObjectId = meshContext.DetachedMirrorObjectId,
-                // 選択状態（Phase 1追加）
+                // 選択状態（CloneOps は写さない）
                 Selection = meshContext.CaptureSelection(),
-                // 選択セット（Phase 9追加）
-                PartsSelectionSetList = meshContext.PartsSelectionSetList?.Select(s => s.Clone()).ToList()
-                                ?? new List<PartsSelectionSet>(),
-                // モーフデータ（Phase Morph追加）
-                MorphBaseData = meshContext.MorphBaseData?.Clone(),
-                MorphParentIndex = meshContext.MorphParentIndex,
-                MorphMirrorPolicy = meshContext.MorphMirrorPolicy,
-                MirrorOfMorphIndex = meshContext.MirrorOfMorphIndex,
-                ExcludeFromExport = meshContext.ExcludeFromExport,
-                IgnorePoseInArmature = meshContext.IgnorePoseInArmature,
-                // BonePoseData（Phase BonePose追加）
-                BonePoseData = meshContext.BonePoseData?.Clone(),
-                // BindPose（スキニング基準行列）
-                BindPose = meshContext.BindPose
             };
 
             // マテリアルを安全に保存
@@ -221,43 +120,10 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public MeshContext ToMeshContext()
         {
-            var meshContext = new MeshContext
-            {
-                MeshObject = Data?.Clone(),
-                // 注: Materials はModelContextで管理されるため、ここでは設定しない
-                // MaterialOwnerはModelContext.Add()時に設定される
-                BoneTransform = BoneTransform != null ? new BoneTransform(BoneTransform) : null,
-                OriginalPositions = OriginalPositions != null 
-                    ? (Vector3[])OriginalPositions.Clone() 
-                    : null,
-                // オブジェクト属性
-                Type = Type,
-                ParentIndex = ParentIndex,
-                Depth = Depth,
-                IsVisible = IsVisible,
-                IsLocked = IsLocked,
-                IsFolding = IsFolding,
-                // 協働編集（復元は同一オブジェクトなのでIDを維持する）
-                ObjectId = ObjectId,
-                EditorName = EditorName ?? "",
-                // 作業軸オブジェクトの軸値（値のコピー）
-                WorkAxis = WorkAxis != null
-                    ? new Poly_Ling.Context.WorkAxisContext(WorkAxis)
-                    : null,
-                // ミラー設定
-                MirrorType = MirrorType,
-                MirrorAxis = MirrorAxis,
-                MirrorDistance = MirrorDistance,
-                MirrorMaterialOffset = MirrorMaterialOffset,
-                // ベイクドミラー設定
-                BakedMirrorSourceIndex = BakedMirrorSourceIndex,
-                HasBakedMirrorChild = HasBakedMirrorChild,
-                MirrorGeometryDerived = MirrorGeometryDerived,
-                DetachedMirrorObjectId = DetachedMirrorObjectId
-            };
-
-            // 名前を設定（MeshObjectに反映）
-            meshContext.Name = Name;
+            // 中身は CloneOps の決まりで写す（復元は同一オブジェクトなので ID を維持する）。
+            // 注: Materials は ModelContext で管理されるため、ここでは設定しない。
+            var meshContext = Poly_Ling.Ops.MeshContextCloneOps.Clone(
+                State, Poly_Ling.Ops.MeshContextCloneKind.StateSnapshot) ?? new MeshContext();
 
             // 注: マテリアル情報はModelContextで一元管理されるため、
             // MeshContextSnapshotからのマテリアル復元は行わない
@@ -276,24 +142,6 @@ namespace Poly_Ling.UndoSystem
             {
                 meshContext.RestoreSelection(Selection);
             }
-
-            // 選択セットを復元（Phase 9追加）
-            meshContext.PartsSelectionSetList = PartsSelectionSetList?.Select(s => s.Clone()).ToList()
-                                        ?? new List<PartsSelectionSet>();
-
-            // モーフデータを復元（Phase Morph追加）
-            meshContext.MorphBaseData = MorphBaseData?.Clone();
-            meshContext.MorphParentIndex = MorphParentIndex;
-            meshContext.MorphMirrorPolicy = MorphMirrorPolicy;
-            meshContext.MirrorOfMorphIndex = MirrorOfMorphIndex;
-            meshContext.ExcludeFromExport = ExcludeFromExport;
-            meshContext.IgnorePoseInArmature = IgnorePoseInArmature;
-
-            // BonePoseData復元（Phase BonePose追加）
-            meshContext.BonePoseData = BonePoseData?.Clone();
-
-            // BindPose復元（スキニング基準行列）
-            meshContext.BindPose = BindPose;
 
             return meshContext;
         }
@@ -1347,33 +1195,113 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変換後の MeshContextList（ディープコピー）</summary>
         public List<MeshContext> AfterList;
 
+        // ミラー対の控え（実体・ミラーの ObjectId と軸）。
+        // 一覧のスナップショットは対を持たないので、Undo・Redo の前後で対の集合と対応表を
+        // 作り直すために控える。実体は替えない（段 A）ので、ObjectId から今の実体が引ける。
+        // （段 8 では、実体を複製に置き換えていたため対が古い実体を指したまま残り、
+        //   揺れ鎖の作り直しがミラー側へ流し込めずに鎖を新しく作っていた。）
+        // 記録の時点では対を控えていないので、最初の Undo のときに今（＝後）の対を控え、
+        // 最初の Redo のときに今（＝前）の対を控える。前の対が分からない最初の Undo では
+        // 後の対のうち両方が前の一覧に居るものを使う。
+        private List<(ulong Real, ulong Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> _beforePairIds;
+        private List<(ulong Real, ulong Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> _afterPairIds;
+
         public override void Undo(ModelContext ctx)
         {
             if (ctx == null || BeforeList == null) return;
-            RestoreList(ctx, BeforeList);
+            var current = CaptureMirrorPairIds(ctx);
+            if (_afterPairIds == null) _afterPairIds = current;
+            RestoreList(ctx, BeforeList, _beforePairIds ?? current);
         }
 
         public override void Redo(ModelContext ctx)
         {
             if (ctx == null || AfterList == null) return;
-            RestoreList(ctx, AfterList);
+            var current = CaptureMirrorPairIds(ctx);
+            if (_beforePairIds == null) _beforePairIds = current;
+            RestoreList(ctx, AfterList, _afterPairIds ?? current);
         }
 
-        private static void RestoreList(ModelContext ctx, List<MeshContext> source)
+        private static List<(ulong Real, ulong Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> CaptureMirrorPairIds(ModelContext ctx)
         {
-            ctx.MeshContextList.Clear();
-            foreach (var mc in source)
+            var ids = new List<(ulong, ulong, Poly_Ling.Symmetry.SymmetryAxis)>();
+            if (ctx?.MirrorPairs == null) return ids;
+            foreach (var p in ctx.MirrorPairs)
             {
-                // Clone して追加（Undo/Redo を繰り返しても独立した状態を保つ）
-                var clone = CloneMeshContext(mc);
-                clone.ParentModelContext = ctx;
-                ctx.MeshContextList.Add(clone);
+                ulong r = p?.Real?.ObjectId ?? 0UL;
+                ulong m = p?.Mirror?.ObjectId ?? 0UL;
+                if (r != 0UL && m != 0UL) ids.Add((r, m, p.Axis));
             }
+            return ids;
+        }
+
+        private static void RestoreList(
+            ModelContext ctx, List<MeshContext> source,
+            List<(ulong Real, ulong Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> pairIds)
+        {
+            // オブジェクト・ボーンの選択を ObjectId で控える（段 I）。実体は替えない（段 A）ので、
+            // 戻したあとも一覧に居るものは選び直せる。以前は空にしていたので、Undo のあと
+            // 出力がオブジェクトとして選ばれず、頂点を選んでも選択の色とギズモが出なかった。
+            var meshSelIds = SelectionObjectIds(ctx, ctx.SelectedDrawableMeshIndices);
+            var boneSelIds = SelectionObjectIds(ctx, ctx.SelectedBoneIndices);
+
+            RestoreListInPlace(ctx, source);
+
+            // ミラー対を組み直す。描画オブジェクトの実体は替わらないが、Undo の前後で対の集合と
+            // 対応表（VertexMap）が変わりうるので、控えた ObjectId の組から作り直す。
+            // 片方でも一覧に居ない対は外す。
+            ctx.MirrorPairs ??= new List<MirrorPair>();
+            ctx.MirrorPairs.Clear();
+            if (pairIds != null && pairIds.Count > 0)
+            {
+                var byId = new Dictionary<ulong, MeshContext>();
+                foreach (var mc in ctx.MeshContextList)
+                    if (mc != null && mc.ObjectId != 0UL) byId[mc.ObjectId] = mc;
+                foreach (var (r, m, axis) in pairIds)
+                {
+                    if (!byId.TryGetValue(r, out var real) || !byId.TryGetValue(m, out var mirror)) continue;
+                    var pair = new MirrorPair { Real = real, Mirror = mirror, Axis = axis };
+                    if (pair.Build(ctx.MeshContextList)) ctx.MirrorPairs.Add(pair);
+                    else Debug.LogWarning($"[MeshFilterToSkinnedRecord] ミラー対を組み直せませんでした: '{real.Name}' ↔ '{mirror.Name}'\n{pair.BuildLog}");
+                }
+            }
+
             ctx.InvalidateTypedIndices();
-            ctx.ClearMeshSelection();
-            ctx.ClearBoneSelection();
+            // 控えた選択を今の索引で選び直す（並びは控えの順。一覧に居ないものは外れる）。
+            // 頂点・面の選択は戻さない（CopyState が空にする。中身が変わると番号が別の頂点を指す）。
+            ReselectByObjectIds(ctx, ctx.SelectedDrawableMeshIndices, meshSelIds);
+            ReselectByObjectIds(ctx, ctx.SelectedBoneIndices, boneSelIds);
             ctx.OnListChanged?.Invoke();
             ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        /// <summary>選択の索引の列を ObjectId の列にする（0 の実体は控えない）。</summary>
+        private static List<ulong> SelectionObjectIds(ModelContext ctx, List<int> indices)
+        {
+            var ids = new List<ulong>();
+            if (ctx == null || indices == null) return ids;
+            foreach (int i in indices)
+            {
+                var mc = ctx.GetMeshContext(i);
+                if (mc != null && mc.ObjectId != 0UL) ids.Add(mc.ObjectId);
+            }
+            return ids;
+        }
+
+        /// <summary>選択の索引の列を、控えた ObjectId の今の索引で置き換える。</summary>
+        private static void ReselectByObjectIds(ModelContext ctx, List<int> indices, List<ulong> ids)
+        {
+            if (ctx == null || indices == null) return;
+            indices.Clear();
+            if (ids == null || ids.Count == 0) return;
+            var byId = new Dictionary<ulong, int>();
+            for (int i = 0; i < ctx.MeshContextCount; i++)
+            {
+                var mc = ctx.GetMeshContext(i);
+                if (mc != null && mc.ObjectId != 0UL && !byId.ContainsKey(mc.ObjectId)) byId[mc.ObjectId] = i;
+            }
+            foreach (var id in ids)
+                if (byId.TryGetValue(id, out int idx) && !indices.Contains(idx)) indices.Add(idx);
         }
 
         /// <summary>
@@ -1394,15 +1322,66 @@ namespace Poly_Ling.UndoSystem
             var dst = Poly_Ling.Ops.MeshContextCloneOps.Clone(
                 src, Poly_Ling.Ops.MeshContextCloneKind.StateSnapshot);
 
-            // UnityMesh は MeshObject から再生成
-            if (dst.MeshObject != null && dst.MeshObject.VertexCount > 0)
-            {
-                dst.ReplaceUnityMesh(dst.MeshObject.ToUnityMesh());
-                if (dst.UnityMesh != null) dst.UnityMesh.name = src.Name;
-            }
+            RebuildUnityMesh(dst);
             // マテリアルは ModelContext 一元管理（ParentModelContext へ委譲）のため
             // ここではコピーしない。復元時に RestoreList が ParentModelContext を設定する。
             return dst;
+        }
+
+        /// <summary>UnityMesh を MeshObject から作り直す。頂点が無ければ外す。</summary>
+        private static void RebuildUnityMesh(MeshContext mc)
+        {
+            if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
+            {
+                mc.ReplaceUnityMeshDeferred(mc.MeshObject.ToUnityMesh());
+                if (mc.UnityMesh != null) mc.UnityMesh.name = mc.Name;
+            }
+            else
+            {
+                mc.ReplaceUnityMeshDeferred(null);
+            }
+        }
+
+        /// <summary>
+        /// 控えた一覧へ戻す。描画オブジェクトの実体は替えない（作り直し整備計画 段 A）。
+        ///
+        ///   控えの各オブジェクトについて、今の一覧に同じ ObjectId の実体があれば、その実体へ
+        ///   中身を写す（MeshContextCloneOps.CopyState）。無ければ控えの複製を足す。
+        ///   一覧の並びは控えの順にする。控えに無い実体は一覧から外れる。
+        ///
+        ///   以前は全部を複製で置き換えていたので、実体の参照を持ち続けている所
+        ///   （ミラー対・選択の状態・評価器の控えのグラフ・並び替えの記録・ツールのプレビュー）が
+        ///   置き換え前のオブジェクトを指したまま残った。
+        /// </summary>
+        public static void RestoreListInPlace(ModelContext ctx, List<MeshContext> source)
+        {
+            var live = new Dictionary<ulong, MeshContext>();
+            foreach (var mc in ctx.MeshContextList)
+                if (mc != null && mc.ObjectId != 0UL && !live.ContainsKey(mc.ObjectId))
+                    live[mc.ObjectId] = mc;
+
+            var restored = new List<MeshContext>(source.Count);
+            foreach (var src in source)
+            {
+                if (src == null) { restored.Add(null); continue; }
+
+                MeshContext dst;
+                if (src.ObjectId != 0UL && live.TryGetValue(src.ObjectId, out var existing))
+                {
+                    live.Remove(src.ObjectId);   // 同じ実体を 2 度使わない
+                    Poly_Ling.Ops.MeshContextCloneOps.CopyState(
+                        src, existing, Poly_Ling.Ops.MeshContextCloneKind.StateSnapshot);
+                    RebuildUnityMesh(existing);
+                    dst = existing;
+                }
+                else
+                {
+                    dst = CloneMeshContext(src);
+                }
+                restored.Add(dst);
+            }
+
+            ctx.ReplaceMeshContexts(restored);
         }
 
         /// <summary>
@@ -1519,13 +1498,8 @@ namespace Poly_Ling.UndoSystem
             // MeshContextList を復元
             if (meshList != null)
             {
-                ctx.MeshContextList.Clear();
-                foreach (var mc in meshList)
-                {
-                    var clone = MeshFilterToSkinnedRecord.CloneMeshContext(mc);
-                    clone.ParentModelContext = ctx;
-                    ctx.MeshContextList.Add(clone);
-                }
+                // 実体を替えずに戻す（段 A。MeshFilterToSkinnedRecord と同じ戻し方）。
+                MeshFilterToSkinnedRecord.RestoreListInPlace(ctx, meshList);
                 ctx.InvalidateTypedIndices();
             }
 

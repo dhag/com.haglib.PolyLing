@@ -251,12 +251,15 @@ namespace Poly_Ling.Serialization
         // ================================================================
 
         /// <summary>
-        /// ProjectContextからProjectDataを作成（エクスポート用）
+        /// ProjectContextからProjectDataを作成（エクスポート用）。
+        /// embedTextures を立てると各モデルにテクスチャ画像（embeddedTextures）も載せる
+        /// （リモートの project_bundle / hierarchyBundle 用。ModelBundle.AttachTextures）。
         /// </summary>
         public static ProjectDTO FromProjectContext(
             ProjectContext project,
             List<WorkPlaneContext> workPlanes = null,
-            List<EditorStateDTO> editorStates = null)
+            List<EditorStateDTO> editorStates = null,
+            bool embedTextures = false)
         {
             if (project == null)
                 return null;
@@ -274,11 +277,12 @@ namespace Poly_Ling.Serialization
                 var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState);
                 if (modelDTO != null)
                 {
+                    if (embedTextures) ModelBundle.AttachTextures(modelDTO, model);
                     projectDTO.models.Add(modelDTO);
                 }
             }
 
-            // 作業軸辞書（プロジェクト単位。規約4：CSV/JSON 対称）
+            // 作業軸辞書（プロジェクト単位。規約4：CSV / JSON / バイナリ対称）
             projectDTO.workAxisLibrary = ToWorkAxisLibraryData(project.WorkAxes);
 
             return projectDTO;

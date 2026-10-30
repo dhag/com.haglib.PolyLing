@@ -19,7 +19,9 @@
 //    "rootT":[x,y,z],                     ← HumanPose.bodyPosition（無いこともある）
 //    "rootQ":[x,y,z,w],                   ← HumanPose.bodyRotation（無いこともある）
 //    "bones":{"<HumanBodyBones 名>":[x,y,z,w], …},
-//    "hips":[x,y,z]}
+//    "hips":[x,y,z],
+//    "absentMuscles":"rest"}              ← 任意。駆動されているボーンの届かなかった dof を正準 T ポーズの値で解く。
+//                                           無ければ 0（.plmotion の absentMuscles と同じ意味）
 //                                         ← bones と hips は PolyLing が送るフレーム（再生・MediaPipe 姿勢・
 //                                           外から受けて転送するフレーム）だけが持つ。
 //                                           hips は正準骨格の Hips の正規化位置（レスト位置からの差 ÷ レストの腰の高さ、
@@ -55,6 +57,11 @@ namespace Poly_Ling.Motion
         public Quaternion RootQ = Quaternion.identity;
         public float[]    Muscles = Array.Empty<float>();
         public bool[]     Valid   = Array.Empty<bool>();
+        /// <summary>
+        /// 駆動されているボーンのうち届かなかった dof を正準 T ポーズの値で解くか（"absentMuscles":"rest"）。
+        /// false（既定・欄なし）は 0。.plmotion の absentMuscles と同じ意味。
+        /// </summary>
+        public bool       AbsentRest;
 
         /// <summary>
         /// 正準骨格上の Humanoid ローカル回転（HumanBodyBones の添字。BoneValid が true のものだけ書く）。
@@ -104,6 +111,8 @@ namespace Poly_Ling.Motion
             sb.Append("{\"type\":\"").Append(TypeMuscles).Append('"');
             if (!string.IsNullOrEmpty(f.Source))
                 sb.Append(",\"source\":\"").Append(Escape(f.Source)).Append('"');
+            if (f.AbsentRest)
+                sb.Append(",\"absentMuscles\":\"").Append(MotionClipDTO.AbsentMusclesRest).Append('"');
             sb.Append(",\"seq\":").Append(f.Seq.ToString(inv))
               .Append(",\"time\":").Append(f.Time.ToString("R", inv))
               .Append(",\"muscles\":{");
@@ -182,6 +191,7 @@ namespace Poly_Ling.Motion
                 into.Source = (string)o["source"] ?? "";
                 into.Seq    = o["seq"]  != null ? (uint)o["seq"]  : 0u;
                 into.Time   = o["time"] != null ? (double)o["time"] : 0.0;
+                into.AbsentRest = string.Equals((string)o["absentMuscles"], MotionClipDTO.AbsentMusclesRest, StringComparison.Ordinal);
 
                 into.EnsureCount(count);
                 Array.Clear(into.Muscles, 0, count);

@@ -88,6 +88,13 @@ namespace Poly_Ling.Tools
             public string Error;
 
             public bool Ok => Mesh != null && string.IsNullOrEmpty(Error);
+
+            /// <summary>
+            /// 元の頂点番号 → その頂点から作った新しい頂点の番号（表の殻・ベベル帯・裏の殻）。
+            /// 長さは source の頂点数。対象面に使われない頂点は null。
+            /// 逆方向の控え（ModifierFrameTrace.Expanded）が枠を広げるのに使う（作り直し整備計画 段 15）。
+            /// </summary>
+            public int[][] SourceToVertices;
         }
 
         // ================================================================
@@ -365,6 +372,14 @@ namespace Poly_Ling.Tools
                         result.SideFaceCount++;
                 }
             }
+
+            // ── 11) 元の頂点 → 作った頂点（逆方向の控え用） ─────────────
+            var map = new int[source.Vertices.Count][];
+            for (int li = 0; li < localCount; li++)
+                map[localToSrc[li]] = columns.TryGetValue(li, out int[] colAll)
+                    ? (int[])colAll.Clone()                              // 表・帯・裏
+                    : new[] { frontIdx[li], backIdx[li] };
+            result.SourceToVertices = map;
 
             result.Mesh = mesh;
             result.TargetFaceCount = targets.Count;

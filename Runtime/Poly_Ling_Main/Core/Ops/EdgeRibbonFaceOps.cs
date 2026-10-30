@@ -228,6 +228,9 @@ namespace Poly_Ling.Ops
                     RightWorld = rightWorld
                 };
 
+                // 逆方向（段 14）：左右の中点が元の辺の頂点（ワールド）に当たる。先端・タグは結び付けない。
+                ModifierFrameTrace.RecordSource(dest, new[] { leftIndex, rightIndex }, mo, sourceIndex);
+
                 result.GeneratedVertices += 2;
             }
 

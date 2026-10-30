@@ -235,6 +235,7 @@ namespace Poly_Ling.Player
             _materialDropdown.RegisterValueChangedCallback(_ =>
             {
                 _selectedMatListIndex = _materialDropdown.index;
+                DropHiddenFromSelection();
                 RefreshCanvasBackground(GetMeshContext());
                 _canvas?.MarkDirtyRepaint();
             });

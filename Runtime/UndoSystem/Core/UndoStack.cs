@@ -103,6 +103,15 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public IUndoRecord<TContext> LastExecutedRecord { get; private set; }
 
+        /// <summary>
+        /// 最後の Undo/Redo で実行したレコードの全部（同じグループ ID でまとめて戻した・進めたもの）。
+        /// 並びは実行した順。LastExecutedRecord はこの先頭。
+        /// グループの中に一覧を置き換えるレコードがあるかを見るのに使う（LastExecutedRecord だけでは
+        /// グループの先頭の型しか分からない。作り直し整備計画 段 9）。
+        /// </summary>
+        public IReadOnlyList<IUndoRecord<TContext>> LastExecutedRecords { get; private set; }
+            = Array.Empty<IUndoRecord<TContext>>();
+
         // === コンストラクタ ===
         public UndoStack(string id, string displayName = null, TContext context = default)
         {
@@ -350,6 +359,7 @@ namespace Poly_Ling.UndoSystem
             {
                 // Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Completed. UndoneCount={undoneRecords.Count}, RemainingStack={_undoStack.Count}");
                 LastExecutedRecord = undoneRecords[0];
+                LastExecutedRecords = undoneRecords.ToArray();
                 OnUndoPerformed?.Invoke(undoneRecords[0].Info);
                 return true;
             }
@@ -391,6 +401,7 @@ namespace Poly_Ling.UndoSystem
             if (redoneRecords.Count > 0)
             {
                 LastExecutedRecord = redoneRecords[0];
+                LastExecutedRecords = redoneRecords.ToArray();
                 OnRedoPerformed?.Invoke(redoneRecords[0].Info);
                 return true;
             }

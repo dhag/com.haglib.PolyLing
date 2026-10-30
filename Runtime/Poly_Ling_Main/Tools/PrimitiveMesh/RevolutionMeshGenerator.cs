@@ -36,7 +36,7 @@ namespace Poly_Ling.Revolution
             }
             else
             {
-                md = GenerateRevolution(profile, p.RadialSegments, p.CloseTop, p.CloseBottom, p.CloseLoop, p.Pivot);
+                md = GenerateRevolution(profile, p.RadialSegments, p.CornerSplitAngle, p.CloseTop, p.CloseBottom, p.CloseLoop, p.Pivot);
             }
 
             md.Name = p.MeshName;
@@ -52,10 +52,42 @@ namespace Poly_Ling.Revolution
             => RevolutionProfileEditCore.ToRadial(src);
 
         /// <summary>
+        /// 周方向の角度列（ラジアン）を作る。最後の要素は継ぎ目の列で、先頭 + 2π。
+        /// cornerSplitDeg = 0 のとき: r × step（r = 0..N）。列数 N+1。
+        /// cornerSplitDeg = a > 0 のとき: 各 θ_r を θ_r−a と θ_r+a の 2 本に割る。列数 2N+1。
+        ///   a は隣の稜線と重ならないよう半ステップ未満に制限する。
+        /// </summary>
+        public static float[] BuildRadialAngles(int radialSeg, float cornerSplitDeg)
+        {
+            float step = 2f * Mathf.PI / radialSeg;
+            float a = cornerSplitDeg * Mathf.Deg2Rad;
+            float maxA = step * 0.5f * 0.999f;
+            if (a > maxA) a = maxA;
+
+            if (!(a > 0f))
+            {
+                var plain = new float[radialSeg + 1];
+                for (int r = 0; r <= radialSeg; r++) plain[r] = r * step;
+                return plain;
+            }
+
+            var split = new float[radialSeg * 2 + 1];
+            for (int r = 0; r < radialSeg; r++)
+            {
+                split[r * 2]     = r * step - a;
+                split[r * 2 + 1] = r * step + a;
+            }
+            split[radialSeg * 2] = split[0] + 2f * Mathf.PI;
+            return split;
+        }
+
+        /// <summary>
         /// 通常の回転体メッシュを生成
         /// </summary>
-        public static MeshObject GenerateRevolution(List<Vector2> profile, int radialSeg, bool closeTop, bool closeBottom, bool closeLoop, Vector3 pivot)
+        public static MeshObject GenerateRevolution(List<Vector2> profile, int radialSeg, float cornerSplitDeg, bool closeTop, bool closeBottom, bool closeLoop, Vector3 pivot)
         {
+            float[] angles = BuildRadialAngles(radialSeg, cornerSplitDeg);
+            int segCount = angles.Length - 1;   // 周方向の面の数
             var md = new MeshObject("Revolution");
 
             float minY = float.MaxValue;
@@ -70,9 +102,8 @@ namespace Poly_Ling.Revolution
 
             Vector3 pivotOffset = new Vector3(0, pivot.y * height + (minY + maxY) * 0.5f, 0);
 
-            float angleStep = 2f * Mathf.PI / radialSeg;
             int profileCount = profile.Count;
-            int cols = radialSeg + 1;
+            int cols = segCount + 1;
 
             // 側面の頂点
             for (int p = 0; p < profileCount; p++)
@@ -101,15 +132,15 @@ namespace Poly_Ling.Revolution
 
                 Vector2 normal2D = new Vector2(tangent.y, -tangent.x);
 
-                for (int r = 0; r <= radialSeg; r++)
+                for (int r = 0; r <= segCount; r++)
                 {
-                    float angle = r * angleStep;
+                    float angle = angles[r];
                     float cos = Mathf.Cos(angle);
                     float sin = Mathf.Sin(angle);
 
                     Vector3 pos = new Vector3(cos * radius, y, sin * radius) - pivotOffset;
                     Vector3 normal = new Vector3(cos * normal2D.x, normal2D.y, sin * normal2D.x).normalized;
-                    Vector2 uv = new Vector2((float)r / radialSeg, v);
+                    Vector2 uv = new Vector2((float)r / segCount, v);
 
                     md.Vertices.Add(new Vertex(pos, uv, normal));
                 }
@@ -120,7 +151,7 @@ namespace Poly_Ling.Revolution
             for (int p = 0; p < loopCount; p++)
             {
                 int nextP = (p + 1) % profileCount;
-                for (int r = 0; r < radialSeg; r++)
+                for (int r = 0; r < segCount; r++)
                 {
                     int i0 = p * cols + r;
                     int i1 = i0 + 1;
@@ -139,7 +170,7 @@ namespace Poly_Ling.Revolution
                 md.Vertices.Add(new Vertex(topCenter, new Vector2(0.5f, 0.5f), Vector3.up));
 
                 int topRowStart = (profileCount - 1) * cols;
-                for (int r = 0; r < radialSeg; r++)
+                for (int r = 0; r < segCount; r++)
                 {
                     md.AddTriangle(centerIdx, topRowStart + r + 1, topRowStart + r);
                 }
@@ -152,7 +183,7 @@ namespace Poly_Ling.Revolution
                 Vector3 bottomCenter = new Vector3(0, profile[0].y, 0) - pivotOffset;
                 md.Vertices.Add(new Vertex(bottomCenter, new Vector2(0.5f, 0.5f), Vector3.down));
 
-                for (int r = 0; r < radialSeg; r++)
+                for (int r = 0; r < segCount; r++)
                 {
                     md.AddTriangle(centerIdx, r, r + 1);
                 }
@@ -168,7 +199,10 @@ namespace Poly_Ling.Revolution
         {
             var md = new MeshObject("Spiral");
 
-            int totalRadialSteps = param.RadialSegments * param.SpiralTurns;
+            // 1 巻きぶんの角度列（角分割を含む）を巻き数ぶん繰り返す
+            float[] angles = BuildRadialAngles(param.RadialSegments, param.CornerSplitAngle);
+            int segCount = angles.Length - 1;   // 1 巻きの周方向の面の数
+            int totalRadialSteps = segCount * param.SpiralTurns;
             int profileCount = profile.Count;
 
             float minY = float.MaxValue;
@@ -183,13 +217,11 @@ namespace Poly_Ling.Revolution
 
             Vector3 pivotOffset = new Vector3(0, param.Pivot.y * height + (minY + maxY) * 0.5f, 0);
 
-            float angleStep = 2f * Mathf.PI / param.RadialSegments;
-
             // 頂点生成
             for (int r = 0; r <= totalRadialSteps; r++)
             {
-                float angle = r * angleStep;
-                float yOffset = r * param.SpiralPitch / param.RadialSegments;
+                float angle = SpiralAngle(angles, segCount, r);
+                float yOffset = SpiralYOffset(angle, param.SpiralPitch);
                 float cos = Mathf.Cos(angle);
                 float sin = Mathf.Sin(angle);
 
@@ -253,8 +285,8 @@ namespace Poly_Ling.Revolution
                 profileCenterX /= profileCount;
                 float profileCenterY = (minY + maxY) * 0.5f;
 
-                float endAngle = totalRadialSteps * angleStep;
-                float topYOffset = totalRadialSteps * param.SpiralPitch / param.RadialSegments;
+                float endAngle = SpiralAngle(angles, segCount, totalRadialSteps);
+                float topYOffset = SpiralYOffset(endAngle, param.SpiralPitch);
 
                 Vector3 topCenter = new Vector3(
                     Mathf.Cos(endAngle) * profileCenterX,
@@ -285,11 +317,12 @@ namespace Poly_Ling.Revolution
                 profileCenterX /= profileCount;
                 float profileCenterY = (minY + maxY) * 0.5f;
 
-                float startAngle = 0f;
+                float startAngle = angles[0];
+                float bottomYOffset = SpiralYOffset(startAngle, param.SpiralPitch);
 
                 Vector3 bottomCenter = new Vector3(
                     Mathf.Cos(startAngle) * profileCenterX,
-                    profileCenterY,
+                    profileCenterY + bottomYOffset,
                     Mathf.Sin(startAngle) * profileCenterX
                 ) - pivotOffset;
 
@@ -308,6 +341,18 @@ namespace Poly_Ling.Revolution
 
             return md;
         }
+
+        /// <summary>らせんの r 番目の列の角度。1 巻きの角度列を巻き数ぶん 2π ずつ足して繰り返す。</summary>
+        private static float SpiralAngle(float[] angles, int segCount, int r)
+        {
+            int turn = r / segCount;
+            int idx = r % segCount;
+            return angles[idx] + turn * 2f * Mathf.PI;
+        }
+
+        /// <summary>らせんの上がり幅。角度に比例し、1 巻き（2π）で pitch。</summary>
+        private static float SpiralYOffset(float angle, float pitch)
+            => angle / (2f * Mathf.PI) * pitch;
 
         /// <summary>
         /// メッシュデータの変換（FlipY, FlipZ）

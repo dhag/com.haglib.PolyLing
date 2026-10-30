@@ -27,7 +27,19 @@ namespace Poly_Ling.UI
         /// Undo は 2 系統に分かれる。頂点変更は RecordTopologyChangeCommand
         /// （vertex/topology スタック）、メッシュ追加は RecordMeshContextsAdd
         /// （MeshList スタック）。追加を記録しないと Undo しても増えたメッシュが残る。
+        /// 記録を止めているとき（オブジェクトグループの作り直し）はどちらも積まない。
+        ///
+        /// 【基準（baseCtx）】作り直し整備計画 段 13
+        ///   baseCtx を渡すと、ブレンド前の形（base）を宛先の今の形ではなく baseCtx の
+        ///   頂点の位置・法線から読み、宛先をそれで戻してから混ぜる。バックアップメッシュは作らない。
+        ///   作り直しを何度流しても、混ぜた結果へ重ねて混ぜることがない。
+        ///   面構成は書き込み先のまま。頂点数が宛先と違えば -1 を返す。
         /// </summary>
+        /// <param name="baseCtx">基準。null なら宛先の今の形（preview.Backup）を基準にする。</param>
+        /// <param name="baseIndex">
+        /// 基準になった MeshContext の索引。baseCtx を渡したときはその索引、
+        /// 渡さないときは、宛先を書き換える設定ではバックアップ、複製を作る設定では元の宛先。
+        /// </param>
         /// <returns>書き込み先となった MeshContext の索引。失敗時は -1。</returns>
         public static int ApplyBlend(
             ModelContext model,
@@ -37,8 +49,11 @@ namespace Poly_Ling.UI
             bool selectedVertsOnly,
             BlendMatchMode matchMode,
             bool createNewObject,
-            ToolContext toolCtx)
+            ToolContext toolCtx,
+            MeshContext baseCtx,
+            out int baseIndex)
         {
+            baseIndex = -1;
             if (model == null || preview == null || !preview.IsActive) return -1;
             if (sources == null || sources.Count == 0) return -1;
 
@@ -46,20 +61,41 @@ namespace Poly_Ling.UI
             var destCtx   = model.GetMeshContext(destIndex);
             if (destCtx?.MeshObject == null) return -1;
 
-            var backup       = preview.Backup;
-            var normalBackup = preview.NormalBackup;
+            Vector3[]   backup;
+            Vector3[][] normalBackup;
+            if (baseCtx != null)
+            {
+                var baseMo = baseCtx.MeshObject;
+                if (baseMo == null || baseMo.VertexCount != destCtx.MeshObject.VertexCount) return -1;
+                backup = new Vector3[baseMo.VertexCount];
+                for (int i = 0; i < backup.Length; i++) backup[i] = baseMo.Vertices[i].Position;
+                normalBackup = BlendPreviewState.CaptureNormals(baseMo);
+                baseIndex    = model.IndexOf(baseCtx);
+            }
+            else
+            {
+                backup       = preview.Backup;
+                normalBackup = preview.NormalBackup;
+            }
             if (backup == null) return -1;
 
             var undo        = toolCtx?.UndoController;
+            if (undo != null && undo.IsRecordingSuspended) undo = null;
             var oldSelected = model.CaptureAllSelectedIndices();
             var addedCtxs   = new List<(int Index, MeshContext MeshContext)>();
 
             // ── プレビュー結果を捨て、ブレンド前の状態に戻す。
             //    ここが Undo の「before」であり、複製元でもなければならない。
+            //    基準を渡されたときも、宛先はプレビュー開始時の形（preview.Backup）へ戻す。
+            //    基準で戻すのは書き込み先が決まり Undo の before を取ったあと（下）。
             var destMo = destCtx.MeshObject;
-            int restoreCount = Mathf.Min(backup.Length, destMo.VertexCount);
-            for (int i = 0; i < restoreCount; i++) destMo.Vertices[i].Position = backup[i];
-            BlendPreviewState.RestoreNormals(destMo, normalBackup);
+            var previewBackup = preview.Backup;
+            if (previewBackup != null)
+            {
+                int restoreCount = Mathf.Min(previewBackup.Length, destMo.VertexCount);
+                for (int i = 0; i < restoreCount; i++) destMo.Vertices[i].Position = previewBackup[i];
+            }
+            BlendPreviewState.RestoreNormals(destMo, preview.NormalBackup);
 
             var existingNames = new HashSet<string>();
             for (int i = 0; i < model.MeshContextCount; i++)
@@ -79,14 +115,19 @@ namespace Poly_Ling.UI
                 writeCtx  = CloneContext(destCtx, cloneName);
                 writeIndex = model.Add(writeCtx);
                 addedCtxs.Add((writeIndex, writeCtx));
+                if (baseCtx == null) baseIndex = destIndex;
             }
             else
             {
-                // ── 宛先へ書き込み、ブレンド前の形状をバックアップとして残す
-                string backupName = GenerateUniqueName(destCtx.Name + "_backup", existingNames);
-                var backupCtx  = CloneContext(destCtx, backupName);
-                int backupIdx  = model.Add(backupCtx);
-                addedCtxs.Add((backupIdx, backupCtx));
+                // ── 宛先へ書き込む。基準を渡されていなければ、ブレンド前の形状をバックアップとして残す
+                if (baseCtx == null)
+                {
+                    string backupName = GenerateUniqueName(destCtx.Name + "_backup", existingNames);
+                    var backupCtx  = CloneContext(destCtx, backupName);
+                    int backupIdx  = model.Add(backupCtx);
+                    addedCtxs.Add((backupIdx, backupCtx));
+                    baseIndex = backupIdx;
+                }
 
                 writeCtx   = destCtx;
                 writeIndex = destIndex;
@@ -99,8 +140,17 @@ namespace Poly_Ling.UI
                 }
             }
 
-            // ── ブレンド確定
+            // ── 基準を渡されたときは、書き込み先を基準の位置・法線へ戻してから混ぜる。
+            //    選択頂点だけ・対応の取れない頂点も基準の形になる（前の結果を残さない）。
             var writeMo     = writeCtx.MeshObject;
+            if (baseCtx != null)
+            {
+                int n = Mathf.Min(backup.Length, writeMo.VertexCount);
+                for (int i = 0; i < n; i++) writeMo.Vertices[i].Position = backup[i];
+                BlendPreviewState.RestoreNormals(writeMo, normalBackup);
+            }
+
+            // ── ブレンド確定
             var nonIsolated = BlendPreviewState.BuildNonIsolatedSet(writeMo);
             var verts       = selectedVertsOnly ? writeCtx.SelectedVertices : null;
 
@@ -128,8 +178,10 @@ namespace Poly_Ling.UI
             toolCtx?.SyncMeshContextPositionsOnly?.Invoke(writeCtx);
             SyncMirrorSide(model, writeCtx, toolCtx, recalculateNormals, null);
 
-            // 可視状態復元（書き込み先は表示のまま残す）
-            preview.RestoreVisibility(model, writeIndex);
+            // 可視状態復元（書き込み先は表示のまま残す）。
+            // 基準を渡されたとき（作り直し）は書き込み先も元の表示に戻す。作り直しのたびに、
+            // 隠した出力が表示へ戻らないようにする。
+            preview.RestoreVisibility(model, baseCtx != null ? -1 : writeIndex);
 
             toolCtx?.NotifyTopologyChanged?.Invoke();
             model.OnListChanged?.Invoke();

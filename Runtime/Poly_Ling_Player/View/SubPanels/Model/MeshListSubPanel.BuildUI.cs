@@ -453,11 +453,9 @@ namespace Poly_Ling.MeshListV2
             var indices = targets.Select(a => a.MasterIndex).ToArray();
             var s = GetObjectMoveSettings?.Invoke();
 
-            SendCmd(new BeginBoneTransformSliderDragCommand(ModelIndex, indices)
-            {
-                Mode       = s?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
-                OriginOnly = s?.OriginOnly ?? false,
-            });
+            SendCmd(new BeginBoneTransformSliderDragCommand(ModelIndex, indices,
+                s?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                s?.OriginOnly ?? false));
 
             bool isRotation =
                 field == SetBoneTransformValueCommand.Field.RotationX ||
@@ -618,6 +616,24 @@ namespace Poly_Ling.MeshListV2
                     SendCmd(new SetMirrorBranchRootCommand(ModelIndex, indices, e.newValue));
             });
             c.Add(_mirrorBranchRootToggle);
+
+            // ── ミラー分岐：ミラー側も同じ向きに動かす（分岐ルートにだけ意味がある）──
+            _mirrorBranchSameSenseToggle = new Toggle("ミラー側も同じ向きに回す") { name = "mirror-branch-same-sense-toggle" };
+            _mirrorBranchSameSenseToggle.style.color     = new StyleColor(Color.white);
+            _mirrorBranchSameSenseToggle.style.marginTop = 2;
+            _mirrorBranchSameSenseToggle.tooltip =
+                "ミラー分岐ルートに付ける。ヒエラルキー書き出し（MeshFilter）で、\n"
+                + "ミラー側の向きを鏡像からミラー軸まわりに 180° 回す。\n"
+                + "同じ値のローカル回転が、3 軸とも実体側の動きの鏡像になる\n"
+                + "（切ると、ミラー軸以外の 2 軸は逆向きに動く）。";
+            _mirrorBranchSameSenseToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    SendCmd(new SetMirrorBranchSameSenseCommand(ModelIndex, indices, e.newValue));
+            });
+            c.Add(_mirrorBranchSameSenseToggle);
 
             _preserveNormalsToggle = new Toggle("法線を保持(再計算しない)") { name = "preserve-normals-toggle" };
             _preserveNormalsToggle.style.color     = new StyleColor(Color.white);

@@ -234,14 +234,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // workaxis_library.csv（作業軸辞書。プロジェクト単位の独立ファイル）
                 WriteWorkAxisLibraryCsv(projectFolderPath, project);
 
-                // 各モデルフォルダ
+                // 各モデルフォルダ（名前は project.csv と同じ表から取る）
+                var folderNames = BuildModelFolderNames(project);
                 for (int i = 0; i < project.ModelCount; i++)
                 {
                     var model = project.Models[i];
                     if (model == null) continue;
 
-                    string modelName = SanitizeFileName(model.Name ?? $"Model_{i}");
-                    string modelFolderPath = Path.Combine(projectFolderPath, modelName);
+                    string modelFolderPath = Path.Combine(projectFolderPath, folderNames[i]);
 
                     var wp = workPlanes != null && i < workPlanes.Count ? workPlanes[i] : null;
                     var es = editorStates != null && i < editorStates.Count ? editorStates[i] : null;
@@ -464,8 +464,31 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // project.csv 読み書き
         // ================================================================
 
+        /// <summary>
+        /// モデルフォルダの名前を決める（書き出しと project.csv で共有する唯一の場所）。
+        /// 同じ名前（大文字小文字を区別しない＝Windows のファイル名）のモデルは 2 つ目から _2, _3… を付け、
+        /// 1 つのフォルダへ重ね書きしない。名前が空なら Model_i。
+        /// 読込はフォルダ名を project.csv から、モデル名を model.csv から取るので、番号を付けても往復する。
+        /// </summary>
+        private static List<string> BuildModelFolderNames(ProjectContext project)
+        {
+            var names = new List<string>(project.ModelCount);
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < project.ModelCount; i++)
+            {
+                string raw = project.Models[i]?.Name;
+                string baseName = string.IsNullOrEmpty(raw) ? $"Model_{i}" : SanitizeFileName(raw);
+                if (string.IsNullOrEmpty(baseName)) baseName = $"Model_{i}";
+                string name = baseName;
+                for (int n = 2; !used.Add(name); n++) name = $"{baseName}_{n}";
+                names.Add(name);
+            }
+            return names;
+        }
+
         private static void WriteProjectCsv(string folderPath, ProjectContext project, string projectFileName = null)
         {
+            var folderNames = BuildModelFolderNames(project);
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing,version,1.0");
             sb.AppendLine($"name,{Esc(project.Name)}");
@@ -476,9 +499,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             for (int i = 0; i < project.ModelCount; i++)
             {
-                var model = project.Models[i];
-                string folderName = SanitizeFileName(model?.Name ?? $"Model_{i}");
-                sb.AppendLine($"model,{i},{Esc(folderName)}");
+                sb.AppendLine($"model,{i},{Esc(folderNames[i])}");
             }
 
             string fileName = string.IsNullOrEmpty(projectFileName) ? ProjectFileName : projectFileName;

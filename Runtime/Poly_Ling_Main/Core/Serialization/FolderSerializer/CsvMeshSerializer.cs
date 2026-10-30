@@ -96,7 +96,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     WriteBoneData(sb, mc, useNameBased, indexToName);
                 }
 
-                // SpringBone 付帯データ（規約4: CSV/JSON 対称）
+                // SpringBone 付帯データ（規約4: CSV / JSON / バイナリ対称）
                 //
                 // 【なぜ Bone 限定の中から出したか】
                 //   揺れデータの付帯先はボーンに限らない（MeshObject.cs の

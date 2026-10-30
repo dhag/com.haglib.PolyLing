@@ -22,6 +22,8 @@ namespace Poly_Ling.Data
         public const string Unauthorized   = "unauthorized";
         /// <summary>送り手の見ている構造が古い（索引と安定 ID の食い違い）。取り直してから送り直す。</summary>
         public const string StaleView      = "staleView";
+        /// <summary>オブジェクトグループの出力（モディファイアの出力）へ書こうとした。グループを解除（適用）すれば書ける。</summary>
+        public const string ModifierOutput = "modifierOutput";
         /// <summary>実行中に例外が出た。</summary>
         public const string Exception      = "exception";
         /// <summary>上のどれでもない失敗（対象が無い・処理が成り立たないなど）。</summary>

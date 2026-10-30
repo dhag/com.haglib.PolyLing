@@ -321,5 +321,27 @@ namespace Poly_Ling.Player
             b.style.height = 18; b.style.fontSize = 9;
             p.Add(RowTarget.Add(t.Key, b, t.Text, UiSafety.SafeWrite));
         }
+
+        /// <summary>
+        /// パス欄と [...] の行（PlayerIoUiKit.PathRow）を作り、両方を登録する。
+        /// ID はパス欄が id + ".path"、[...] が id + ".browse"。[...] はファイルダイアログを開くので UserOnly。
+        /// </summary>
+        private VisualElement PR(string id, TextField field, Action onBrowse, string description)
+        {
+            var row = PlayerIoUiKit.PathRow(field, onBrowse, out var browse);
+            RowTarget.Add(id + ".path", field, description + "（パス）");
+            RowTarget.Add(id + ".browse", browse, description + "：ファイルを選ぶ", UiSafety.UserOnly);
+            return row;
+        }
+
+        /// <summary>
+        /// 厚み付けの裏側エッジのサイズの見出し。表示は表側と同じ「サイズ」だが、
+        /// UI 自動操作の ID が表側（"EdgeSize"）と重ならないよう "EdgeSizeBack" にする。
+        /// </summary>
+        private static Lx EdgeSizeBackLx => new Lx("EdgeSizeBack", T("EdgeSize").Text);
+
+        /// <summary>横長ボタン（PlayerIoUiKit.WideBtn）を作って登録する。</summary>
+        private Button WB(string id, string text, Action onClick, UiSafety safety, string description = null)
+            => RowTarget.Add(id, PlayerIoUiKit.WideBtn(text, onClick), description ?? text, safety);
     }
 }

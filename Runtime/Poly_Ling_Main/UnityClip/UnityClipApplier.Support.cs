@@ -376,8 +376,8 @@ namespace Poly_Ling.UnityClip
             {
                 var bpd = list[i]?.BonePoseData;
                 if (bpd == null) continue;
-                var layer = bpd.GetLayer(LayerName);
-                if (layer != null) layer.Clear();
+                // ClearLayer は行列のキャッシュを無効にする（layer.Clear() だけだと最後のフレームの姿勢が残る）。
+                bpd.ClearLayer(LayerName);
             }
             ClearNodeDeltas();
             model.ComputeWorldMatrices();

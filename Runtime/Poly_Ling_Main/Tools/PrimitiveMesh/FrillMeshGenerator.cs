@@ -82,6 +82,12 @@ namespace Poly_Ling.Frill
 
         /// <summary>右レール各段のウェイト。並びは Right と 1 対 1。</summary>
         public IReadOnlyList<BoneWeight?> RightWeights;
+
+        /// <summary>
+        /// 逆方向の控え（ModifierFrameTrace）での梯子の番号（元の並びの番号）。-1 で控えない。
+        /// 段ごとの枠を「この梯子の段 r」として控える（作り直し整備計画 段 15）。
+        /// </summary>
+        public int TraceBelt = -1;
     }
 
     public static class FrillMeshGenerator
@@ -322,6 +328,30 @@ namespace Poly_Ling.Frill
                 }
             }
 
+            // ── 逆方向の控え（段 15）──
+            //   段 r の枠＝段 r を端に持つステップ（前後 2 区間）の左右のレールの頂点。
+            //   レールの頂点はその区間の両端の段から決まるので、枠は重なってよい（枠ごとに相似変換を求める）。
+            if (ModifierFrameTrace.Current != null)
+            {
+                var frames = new Dictionary<(int belt, int rung), List<int>>();
+                void AddTo(int belt, int rung, int[] verts)
+                {
+                    if (belt < 0 || verts == null) return;
+                    if (!frames.TryGetValue((belt, rung), out var list)) { list = new List<int>(); frames[(belt, rung)] = list; }
+                    list.AddRange(verts);
+                }
+                for (int i = 0; i < steps.Count; i++)
+                {
+                    var st = steps[i];
+                    var lv = rails[stepRailL[i]].Verts;
+                    var rv = rails[stepRailR[i]].Verts;
+                    AddTo(st.TraceBelt, st.RungFrom, lv); AddTo(st.TraceBelt, st.RungFrom, rv);
+                    AddTo(st.TraceBelt, st.RungTo,   lv); AddTo(st.TraceBelt, st.RungTo,   rv);
+                }
+                foreach (var kv in frames)
+                    ModifierFrameTrace.RecordVerticesOfBelt(mo, new HashSet<int>(kv.Value), kv.Key.belt, kv.Key.rung);
+            }
+
             // ── 面 ──
             for (int i = 0; i < steps.Count; i++)
             {
@@ -394,6 +424,8 @@ namespace Poly_Ling.Frill
             public float   U0;       // UV の u（プロファイル x=0 のとき）
             public float   UStep;    // UV の u の1ステップぶん
             public int     BeltIndex;
+            public int     RungFrom, RungTo;   // このステップの両端の段（s と s+1。閉じていれば末尾→0）
+            public int     TraceBelt;          // 逆方向の控えの梯子の番号（-1 で控えない）
 
             // レール線分の両端のウェイト。頂点はこの 2 つをプロファイル x で混ぜる。
             public BoneWeight? WA0, WA1;   // 左レール
@@ -469,6 +501,9 @@ namespace Poly_Ling.Frill
                         U0          = (float)s / stepCount,
                         UStep       = 1f / stepCount,
                         BeltIndex   = bi,
+                        RungFrom    = s,
+                        RungTo      = j,
+                        TraceBelt   = belt.TraceBelt,
                     });
                 }
             }

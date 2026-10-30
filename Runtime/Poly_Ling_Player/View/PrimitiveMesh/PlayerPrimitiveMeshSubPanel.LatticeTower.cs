@@ -277,7 +277,8 @@ namespace Poly_Ling.Player
                 row.Add(LtFF(_ltP.WidthsX[i], v => { _ltP.WidthsX[ii] = Mathf.Max(0f, v); DLT(); }));
                 row.Add(LtFF(_ltP.WidthsZ[i], v => { _ltP.WidthsZ[ii] = Mathf.Max(0f, v); DLT(); }));
                 if (n > 2) row.Add(SmallRowButton("×", () => RemoveTowerPoint(ii)));
-                c.Add(row);
+                // 点の数だけ並ぶデータ行。行の入れ物として登録し、検査の対象から外す。
+                c.Add(RowTarget.AddRows(row));
 
                 if (i == 0) break;
 
@@ -302,7 +303,7 @@ namespace Poly_Ling.Player
                     DLT();
                 });
                 srow.Add(dd);
-                c.Add(srow);
+                c.Add(RowTarget.AddRows(srow));
             }
 
             var add = LtRow();
@@ -414,7 +415,7 @@ namespace Poly_Ling.Player
                 dd.RegisterValueChangedCallback(_ => { _ltP.ArmAxes = LtSet(_ltP.ArmAxes, ii, dd.index, 0); DLT(); });
                 row.Add(dd);
                 row.Add(SmallRowButton("×", () => RemoveTowerArm(ii)));
-                c.Add(row);
+                c.Add(RowTarget.AddRows(row));
             }
 
             var add = LtRow();
@@ -467,7 +468,7 @@ namespace Poly_Ling.Player
                     _ltP.GateBeamHeights = LtRemoveAt(_ltP.GateBeamHeights, ii);
                     RebuildSettings(); DLT();
                 }));
-                c.Add(row);
+                c.Add(RowTarget.AddRows(row));
             }
             var add = LtRow();
             SB(add, T("TowerAddBeam"), () =>
@@ -503,7 +504,7 @@ namespace Poly_Ling.Player
                     if (_ltDeckSel >= _ltDecks.Count) _ltDeckSel = _ltDecks.Count - 1;
                     RebuildSettings(); DLT();
                 }));
-                c.Add(row);
+                c.Add(RowTarget.AddRows(row));
             }
 
             var add = LtRow();
@@ -576,7 +577,7 @@ namespace Poly_Ling.Player
                 _ltTargetIndex = (k >= 0 && k < _ltTargetCandidates.Count) ? _ltTargetCandidates[k].MasterIndex : -1;
                 RefreshLatticeTowerInfo();
             });
-            c.Add(dd);
+            c.Add(RowTarget.Add("TowerTarget", dd, dd.label));
 
             var row = LtRow();
             SB(row, T("PlaceRefresh"), RebuildSettings);

@@ -737,6 +737,36 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 規約 4（CSV / JSON / バイナリ対称）の検査。今のプロジェクトを
+    /// 「保存の JSON（ProjectSerializer.FromProjectContext）」と
+    /// 「リモートのバイナリ（SerializeWholeProject）で送って受け側で復元したものの JSON」の
+    /// 2 通りで作り、項目ごとに比べる。ファイルは介さない。
+    /// 実処理は PlayerCommandDispatcher（ProjectSyncDiff）。
+    /// </summary>
+    [PLCommand(Category = "io.project", Writes = PLWriteScope.None, Description = "今のプロジェクトを、保存の JSON と、もう一方の形式で往復させたものの JSON の 2 通りで作って比べる（規約 4：CSV / JSON / バイナリ対称の検査）。via=binary はリモート送信のバイナリで送って受け側で復元（ファイルを書かない）、via=csv は一時フォルダへ CSV 保存して読み戻す（一時フォルダは消す）。差分 0 ならその形式に抜けは無い。プロジェクト直下の createdAt / modifiedAt は比べない。")]
+    [PLResult("report",    PLResultKind.Text,    Description = "違いの一覧（パターン別の件数と例）。無ければ「差なし」")]
+    [PLResult("diffCount", PLResultKind.Integer, Description = "違う項目の数の合計")]
+    [PLResult("patterns",  PLResultKind.Integer, Description = "違う項目のパターン（配列の索引を [] にまとめたパス）の数")]
+    [PLResult("jsonBytesA", PLResultKind.Integer, Description = "保存の JSON の大きさ")]
+    [PLResult("jsonBytesB", PLResultKind.Integer, Description = "往復させた側の JSON の大きさ")]
+    [PLResult("binaryBytes", PLResultKind.Integer, Description = "バイナリの大きさ（via=csv では 0）")]
+    public class QueryProjectSyncDiffCommand : PanelCommand
+    {
+        [PLParam(Description = "パターンごとに例として返す違いの最大数")]
+        public int MaxLines { get; }
+
+        [PLParam(Description = "比べる相手の往復のしかた。binary＝リモート送信のバイナリ（既定）、csv＝一時フォルダへ CSV 保存して読み戻す")]
+        public string Via { get; }
+
+        public QueryProjectSyncDiffCommand(int modelIndex, int maxLines = 3, string via = "binary")
+            : base(modelIndex)
+        {
+            MaxLines = maxLines <= 0 ? 3 : maxLines;
+            Via      = string.IsNullOrEmpty(via) ? "binary" : via;
+        }
+    }
+
+    /// <summary>
     /// プロジェクト全体を JSON（ProjectDTO）にして、接続中のエディタ拡張
     /// （ヒエラルキー書き出し、自動受け入れがオンのもの）へ送る。
     /// 実処理は RemoteServerCore.SendHierarchyBundle。

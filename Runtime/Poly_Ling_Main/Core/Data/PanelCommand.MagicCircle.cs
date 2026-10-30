@@ -74,6 +74,9 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets,
         Description = "配置元オブジェクトを円周上に等分に並べる（藤壺のように複製する）。外向き・内向き（上下反転）・正立を選べる。魔法陣の部品。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.RadialPlace,
+        InverseKeeps = "個数・回る向き・向きの決め方・配置元・割り当て",
+        InverseLoses = "部品ごとのずれ・回転・歪み、間隔の不揃い、円の中心のずれ、面の傾き")]
     public sealed class CreateRadialPlaceCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "RadialPlace", Description = "オブジェクトの円周配置のパラメータ", Required = true)]
@@ -81,7 +84,7 @@ namespace Poly_Ling.Data
 
         /// <summary>配置元の MeshContextList インデックス。</summary>
         [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "RadialPlace";
@@ -106,6 +109,7 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
         Description = "魔法陣を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品（リング・紋章図形・円形の文字・星座の円周配置・オブジェクトの円周配置など図形生成コマンド）を順にその子として作る。部品の並びは 1 件のオブジェクトグループとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createEmblem;params.kind=Hexagram;params.size=0.9）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・グループ化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
+    [PLModifier(Capture = PLGroupCapture.Assembly)]   // PlayerCommandDispatcher.MagicCircle.cs ExecuteEmptyParentAssembly
     public sealed class CreateMagicCircleCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshName", Description = "親オブジェクトの名前。重なるときは番号を付ける", Required = true)]

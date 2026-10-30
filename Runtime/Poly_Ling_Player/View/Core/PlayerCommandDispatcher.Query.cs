@@ -23,6 +23,9 @@ namespace Poly_Ling.Player
 {
     public partial class PlayerCommandDispatcher
     {
+        /// <summary>操作モード・カレントビュー・ギズモを組めるかを文字で返す口（ビューアが配線する。querySelectionState）。</summary>
+        public Func<string> OnDescribeViewState;
+
         /// <summary>
         /// DispatchCore の分担：照会（モデルを変えない）・選択を結果辞書へ写す・生データの取得／送信。
         /// 該当するコマンドなら処理して true を返す。区画の本文は元の switch のままで、
@@ -32,6 +35,26 @@ namespace Poly_Ling.Player
         {
             switch (cmd)
             {
+                // ── 規約 4（CSV / JSON / バイナリ対称）の検査
+                case QueryProjectSyncDiffCommand psd:
+                {
+                    MarkNotRecorded();
+                    var r = ProjectSyncDiff.Run(project, psd.MaxLines, psd.Via);
+                    if (r.DiffCount < 0) { Fail(r.Report); return true; }
+                    // 大きなプロジェクトでは応答待ちを超えることがあるので、ログにも残す。
+                    Debug.Log($"[queryProjectSyncDiff] via={psd.Via} diffCount={r.DiffCount} patterns={r.Patterns} " +
+                              $"jsonA={r.JsonBytesA} jsonB={r.JsonBytesB} binary={r.BinaryBytes}\n{r.Report}");
+                    ReportData(CommandDataJson.New()
+                        .Text("report",      r.Report)
+                        .Int("diffCount",    r.DiffCount)
+                        .Int("patterns",     r.Patterns)
+                        .Int("jsonBytesA",   r.JsonBytesA)
+                        .Int("jsonBytesB",   r.JsonBytesB)
+                        .Int("binaryBytes",  r.BinaryBytes)
+                        .Build());
+                    return true;
+                }
+
                 // ── ツールの公開層（操作経路統一計画.md B・C・D）
                 case QueryToolStateCommand qts:
                 {
@@ -166,6 +189,74 @@ namespace Poly_Ling.Player
                     if (qModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
 
                     ReportData(BuildModelStructureData(project, qModel, c));
+                    return true;
+                }
+
+                case QueryObjectGroupStepArgsCommand c:
+                {
+                    var qaModel = project.GetModel(c.ModelIndex);
+                    if (qaModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
+
+                    string qaData = BuildObjectGroupStepArgsData(project, qaModel, c, out string qaErr);
+                    if (qaData == null) { Fail(qaErr); return true; }
+                    ReportData(qaData);
+                    return true;
+                }
+
+                case QueryModifierGraphCommand c:
+                {
+                    var qmModel = project.GetModel(c.ModelIndex);
+                    if (qmModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
+
+                    ReportData(BuildModifierGraphData(qmModel));
+                    return true;
+                }
+
+                // ── 選択と画面の状態（段 I の切り分け用）
+                case QuerySelectionStateCommand _:
+                {
+                    MarkNotRecorded();
+                    var sm = project.CurrentModel;
+                    var meshes = new List<string>();
+                    var bones  = new List<string>();
+                    var elems  = new List<string>();
+                    if (sm != null)
+                    {
+                        foreach (int i in sm.SelectedDrawableMeshIndices) meshes.Add($"{i}:{sm.GetMeshContext(i)?.Name}");
+                        foreach (int i in sm.SelectedBoneIndices)         bones.Add($"{i}:{sm.GetMeshContext(i)?.Name}");
+                        for (int i = 0; i < sm.MeshContextCount; i++)
+                        {
+                            var s = sm.GetMeshContext(i)?.Selection;
+                            if (s == null) continue;
+                            int v = s.Vertices.Count, e = s.Edges.Count, f = s.Faces.Count, l = s.Lines.Count;
+                            if (v + e + f + l == 0) continue;
+                            elems.Add($"{i}:{sm.GetMeshContext(i).Name} v={v} e={e} f={f} l={l}");
+                        }
+                    }
+                    ReportData(CommandDataJson.New()
+                        .Int  ("currentModelIndex", project.CurrentModelIndex)
+                        .Text ("activeCategory",    sm != null ? sm.ActiveCategory.ToString() : "")
+                        .Texts("selectedMeshes",    meshes)
+                        .Texts("selectedBones",     bones)
+                        .Texts("elementSelections", elems)
+                        .Text ("viewState",         OnDescribeViewState?.Invoke() ?? "（配線されていない）")
+                        .Build());
+                    return true;
+                }
+
+                case SetGizmoDebugLogCommand c:
+                {
+                    MarkNotRecorded();
+                    Poly_Ling.Tools.AxisGizmo.GizmoDebugLog = c.Enabled;
+                    ReportData(CommandDataJson.New().Flag("enabled", c.Enabled).Build());
+                    return true;
+                }
+
+                case QueryModifierInverseCommand c:
+                {
+                    var qiModel = project.GetModel(c.ModelIndex);
+                    if (qiModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
+                    ReportData(BuildModifierInverseData(project, qiModel, c));
                     return true;
                 }
 

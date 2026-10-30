@@ -78,7 +78,9 @@ namespace Poly_Ling.PrimitiveMesh
             if (method == ProfileAcquireMethod.Baked)
                 return ProfileAcquireResult.Fail("取り込み方が記録されていない（控えた値を使う）");
 
-            var mesh = source?.MeshObject;
+            // 断面はローカルで読む入力（PLParam.MeshRefSpace = Local。段 10）。スキンド化済みなら
+            // スキンド化で控えた行列で元のローカルへ戻して読む。
+            var mesh = Poly_Ling.Ops.ModifierSpace.LocalView(source?.MeshObject);
             if (mesh == null)
                 return ProfileAcquireResult.Fail("取り込み元のメッシュがない");
 

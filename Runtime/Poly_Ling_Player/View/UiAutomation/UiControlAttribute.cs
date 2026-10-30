@@ -196,6 +196,26 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 条件に合うボタンや入力欄を外す。行の一部だけを作り直す箇所で、
+        /// 作り直す前に古いボタンや入力欄を外すのに使う（外さないと一覧に重複して残る）。
+        /// </summary>
+        public void Remove(Predicate<Entry> match)
+        {
+            if (match != null) _entries.RemoveAll(match);
+        }
+
+        /// <summary>
+        /// container の中（container 自身を含む）にある要素のボタンや入力欄を外す。
+        /// container を Clear して作り直す箇所で、Clear の前に呼ぶ。
+        /// </summary>
+        public void RemoveUnder(VisualElement container)
+        {
+            if (container == null) return;
+            _entries.RemoveAll(e => e.Element != null
+                                    && (e.Element == container || container.Contains(e.Element)));
+        }
+
+        /// <summary>
         /// ID（と組）で探す。group が null なら組を問わない。
         /// 行の一部だけを作り直す箇所（Begin を通らずに Clear して Add し直す）では、
         /// 外された古い要素のボタンや入力欄が残る。画面に付いている要素のボタンや入力欄を先に返し、

@@ -56,6 +56,12 @@ namespace Poly_Ling.UndoSystem
             /// <summary>控えの持ち主。Undo/Redo のときに書き戻す相手。</summary>
             public MeshContext Owner;
 
+            /// <summary>
+            /// 持ち主の書き込み先（モデル・ObjectId）。Undo/Redo の時点で引き直す
+            /// （一覧のスナップショットの Undo で Owner が古い参照になるため。段 12）。
+            /// </summary>
+            public MeshUndoTarget OwnerTarget;
+
             /// <summary>操作前の辞書（Undo で戻す）。</summary>
             public List<Poly_Ling.Selection.PartsSelectionSet> Before;
 
@@ -269,6 +275,11 @@ namespace Poly_Ling.UndoSystem
     public struct MeshMoveEntry
     {
         public int MeshContextIndex;
+        /// <summary>
+        /// 対象の安定 ID。記録の時点で MeshUndoStack が詰める（0 なら索引のまま使う）。
+        /// 一覧の Undo で並びが変わっても同じオブジェクトを指すため（段 12）。
+        /// </summary>
+        public ulong ObjectId;
         public int[] Indices;
         public Vector3[] OldPositions;
         public Vector3[] NewPositions;
@@ -282,6 +293,12 @@ namespace Poly_Ling.UndoSystem
     public class MultiMeshVertexMoveRecord : MeshUndoRecord
     {
         public MeshMoveEntry[] Entries;
+
+        /// <summary>
+        /// 索引が指すモデル。記録の時点で MeshUndoStack が詰める（段 12）。
+        /// Undo の時点の ParentModelContext は別のモデルのことがある。
+        /// </summary>
+        public Poly_Ling.Context.ModelContext Model;
 
         public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
 
@@ -300,34 +317,38 @@ namespace Poly_Ling.UndoSystem
             ApplyPositions(ctx, isUndo: false);
         }
 
+        /// <summary>
+        /// 今の索引へ引き直したエントリを ctx へ渡す。Undo は Old/New を入れ替える
+        /// （受け側は NewPositions を書く）。ObjectId が一覧に無い要素は索引 -1（受け側が飛ばす）。
+        /// </summary>
         private void ApplyPositions(MeshUndoContext ctx, bool isUndo)
         {
             if (Entries == null || Entries.Length == 0)
                 return;
 
-            ctx.PendingMeshMoveEntries = isUndo ? FlipEntries(Entries) : Entries;
-
-            ctx.DirtyMeshIndices.Clear();
-            for (int e = 0; e < Entries.Length; e++)
+            var model = Model;
+            var applied = new MeshMoveEntry[Entries.Length];
+            for (int i = 0; i < Entries.Length; i++)
             {
-                ctx.DirtyMeshIndices.Add(Entries[e].MeshContextIndex);
-            }
-        }
-
-        private static MeshMoveEntry[] FlipEntries(MeshMoveEntry[] entries)
-        {
-            var flipped = new MeshMoveEntry[entries.Length];
-            for (int i = 0; i < entries.Length; i++)
-            {
-                flipped[i] = new MeshMoveEntry
+                var e = Entries[i];
+                applied[i] = new MeshMoveEntry
                 {
-                    MeshContextIndex = entries[i].MeshContextIndex,
-                    Indices = entries[i].Indices,
-                    OldPositions = entries[i].NewPositions,
-                    NewPositions = entries[i].OldPositions
+                    MeshContextIndex = MeshUndoTarget.ResolveIndex(model, e.MeshContextIndex, e.ObjectId),
+                    ObjectId         = e.ObjectId,
+                    Indices          = e.Indices,
+                    OldPositions     = isUndo ? e.NewPositions : e.OldPositions,
+                    NewPositions     = isUndo ? e.OldPositions : e.NewPositions,
                 };
             }
-            return flipped;
+
+            ctx.PendingMeshMoveEntries = applied;
+            ctx.PendingTargetModel     = model;
+
+            ctx.DirtyMeshIndices.Clear();
+            for (int e = 0; e < applied.Length; e++)
+            {
+                ctx.DirtyMeshIndices.Add(applied[e].MeshContextIndex);
+            }
         }
     }
 }

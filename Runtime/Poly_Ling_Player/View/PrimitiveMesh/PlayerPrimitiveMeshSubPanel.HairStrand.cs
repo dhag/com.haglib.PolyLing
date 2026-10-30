@@ -333,6 +333,8 @@ namespace Poly_Ling.Player
         {
             if (_hairLobeWidthBox == null) return;
 
+            // Begin を通らない作り直しなので、前回の行のボタンや入力欄を外してから作る。
+            RowTarget.RemoveUnder(_hairLobeWidthBox);
             _hairLobeWidthBox.Clear();
 
             int n = Mathf.Clamp(_hairP.LobeCount,
@@ -369,7 +371,7 @@ namespace Poly_Ling.Player
                 RefreshHairBaseMode();
                 D();
             });
-            return dd;
+            return RowTarget.Add("HairBaseType", dd, dd.label);
         }
 
         /// <summary>円筒の軸（X / Y / Z）。</summary>
@@ -380,7 +382,7 @@ namespace Poly_Ling.Player
             dd.label = T("HairBaseAxis");
             dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(_ => { _hairP.Axis = (HairBaseAxis)dd.index; D(); });
-            return dd;
+            return RowTarget.Add("HairBaseAxis", dd, dd.label);
         }
 
         /// <summary>幅のつなぎ方（冪（従来） / 滑らか）。行の表示も切り替える。</summary>
@@ -397,7 +399,7 @@ namespace Poly_Ling.Player
                 RefreshHairWidthMode();
                 D();
             });
-            return dd;
+            return RowTarget.Add("HairWidthProfileMode", dd, dd.label);
         }
 
         /// <summary>房ごとの変化のさせ方（片端から / 中央基準）。</summary>
@@ -409,7 +411,7 @@ namespace Poly_Ling.Player
             dd.label = T("HairSlopeMode");
             dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(_ => { _hairP.SlopeMode = (HairSlopeMode)dd.index; D(); });
-            return dd;
+            return RowTarget.Add("HairSlopeMode", dd, dd.label);
         }
     }
 }

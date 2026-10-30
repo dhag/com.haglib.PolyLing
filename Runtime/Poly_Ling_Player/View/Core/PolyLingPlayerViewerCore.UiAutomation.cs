@@ -156,6 +156,9 @@ namespace Poly_Ling.Player
                 case nameof(PlayerLayoutRoot.FetchBtn):
                 // Python アドオンのパネルを開くだけ（起動・実行はパネルの中のボタン）。
                 case nameof(PlayerLayoutRoot.PyAddonBtn):
+                // Undo / Redo は 1 段戻す・やり直すだけで、逆の操作でいつでも元に戻せる。
+                case nameof(PlayerLayoutRoot.UndoBtn):
+                case nameof(PlayerLayoutRoot.RedoBtn):
                     return UiSafety.SafeWrite;
                 default:
                     return UiSafety.Unspecified;
@@ -680,6 +683,7 @@ namespace Poly_Ling.Player
                 .Int ("unsupportedTypes",     r.UnsupportedTypes)
                 .Int ("unregisteredElements", r.UnregisteredElements)
                 .Int ("unknownRouteItems",    r.UnknownRouteItems)
+                .Int ("duplicateIds",         r.DuplicateIds)
                 .Build());
         }
 

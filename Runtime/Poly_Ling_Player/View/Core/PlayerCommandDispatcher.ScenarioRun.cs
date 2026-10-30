@@ -24,6 +24,11 @@
 // 【シナリオは流し始めに写す】
 //   流している途中でシナリオのファイルが書き換わっても、流れは写しを使う。
 //
+// 【グループと同じに扱う】（作り直し整備計画 段 11）
+//   シナリオは疎なグループで、違いは密か疎か・処理時間だけにする。そのため項目ごとに
+//     ・梯子・断面は取り込み元から読み直す（ObjectGroupOps.RefreshInputs。作り直しと同じ）
+//     ・書き込みのある項目のあとに評価器を流す（RunModifierEvaluation）
+//
 // 【実行は Dispatch の再入】
 //   Dispatch は _pendingResult を退避・復元するので（PlayerCommandDispatcher.cs の注記）、
 //   内側の結果がこちらの応答を壊すことはない。
@@ -692,6 +697,12 @@ namespace Poly_Ling.Player
             int stepModelIndex = _getProject()?.CurrentModelIndex ?? modelIndex;
             if (stepModelIndex < 0) stepModelIndex = modelIndex;
 
+            // 梯子・断面は、取り込み方と取り込み元が書いてあれば取り込み元から読み直す。
+            // グループの作り直し（ObjectGroupOps.BuildCommand）と同じ読み方にする（作り直し整備計画 段 11）。
+            // 取り込み方が Baked・取り込み元が -1 なら書いてある点列のまま。
+            if (cmdType != null)
+                Poly_Ling.Ops.ObjectGroupOps.RefreshInputs(_getProject(), stepModelIndex, cmdType, args, out _, out _);
+
             var inner = PanelCommandFactory.Create(step.Action, stepModelIndex, args, out string createError);
             if (inner == null) { reason = $"{step.Action} を組み立てられません: {createError}"; return false; }
 
@@ -712,6 +723,13 @@ namespace Poly_Ling.Player
                 { reason = "invokePyAddon が呼び出しの番号を返しませんでした"; waitCallNo = 0; return false; }
                 return true;
             }
+
+            // 書き込みのある項目のあとに、グループの項目（モディファイア）を依存の順に流す（作り直し整備計画 段 11）。
+            // 項目は入れ子の Dispatch なので一番外側の終わり（DispatchAuthorized）の評価に乗らず、
+            // 流しの中では画面更新のきっかけ（RebuildAdapter）も通らない。署名を取り直してから流す。
+            // こうしないと、同じコマンドの並びを 1 つずつ撃ったときとシナリオで流したときで結果が変わる。
+            if (ShouldEvaluateModifiersAfter(inner))
+                RunModifierEvaluation($"シナリオ {scenarioName}/{step.ScenarioItemId}", recheckInputs: true);
 
             run.PrevMaster = result?.MasterIndices;
             run.PrevIds    = result?.ObjectIds;

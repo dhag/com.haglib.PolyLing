@@ -382,8 +382,11 @@ namespace Poly_Ling.Remote
             {
                 for (int i = 0; i < mesh.VertexCount; i++)
                 {
+                    // 本数-1。法線を 1 本も持たない頂点は -1（Normals 欄は 1 本ぶんの仮の値を運ぶので、
+                    // ここで「無い」を伝える。段 H）。-1 を知らない読み手は仮の 1 本のまま。
                     var ns = mesh.Vertices[i].Normals;
-                    int extra = (ns != null && ns.Count > 1) ? ns.Count - 1 : 0;
+                    int count = ns?.Count ?? 0;
+                    int extra = count == 0 ? -1 : count - 1;
                     w.Write(extra);
                     for (int j = 1; j <= extra; j++) RemoteBinaryIO.WriteVector3(w, ns[j]);
                 }
@@ -438,6 +441,12 @@ namespace Poly_Ling.Remote
                     int extra = r.ReadInt32();
                     if (extra == 0) continue;
                     var v = mesh.Vertices[i];
+                    if (extra < 0)
+                    {
+                        // 法線を 1 本も持たない頂点（段 H）。Normals 欄の仮の 1 本を捨てる。
+                        v.Normals?.Clear();
+                        continue;
+                    }
                     if (v.Normals == null) v.Normals = new List<Vector3>();
                     if (v.Normals.Count == 0) v.Normals.Add(Vector3.up);
                     for (int j = 0; j < extra; j++) v.Normals.Add(RemoteBinaryIO.ReadVector3(r));

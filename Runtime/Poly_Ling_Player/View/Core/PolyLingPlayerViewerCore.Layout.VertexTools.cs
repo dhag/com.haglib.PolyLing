@@ -91,7 +91,7 @@ namespace Poly_Ling.Player
                 return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
             };
             // ワールド座標が要るのは計算の直前だけ。毎フレームは呼ばない。
-            _surfaceSnapHandler.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _surfaceSnapHandler.OnRequestUpdateTransform = () => _viewportManager.SettleWorldPositions(ActiveProject);
             _surfaceSnapHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
             _surfaceSnapHandler.EndPreview      = EndHostPreview;
             // Poly_Ling_Main 側へビューポート実装を持ち込まないため、値だけを写して渡す。

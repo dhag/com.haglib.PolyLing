@@ -30,8 +30,9 @@
 //     ・MeshFilter のうちに塗ると、塗った頂点だけが SkinningMatrix 経路へ移り、
 //       WorldMatrix が単位でなければ飛ぶ。
 //     ・一括スキンド化は全頂点へ {自分のボーン, 1.0} を書くので、先に塗っても消える。
-//   はしご／パイプのグループへ「自動更新」を立てておき、スキンド化のあとに
-//   PlayerCommandDispatcher.RunAutoUpdateGroups が流し直して塗る。
+//   スキンド化のあとに、オブジェクトグループの評価器が依存の順に流し直して塗る
+//   （PlayerCommandDispatcher.ReevaluateAfterSkinning。作り直し整備計画 段 5）。
+//   「自動更新」を立てる段は残しているが、評価器はその値を見ない。
 
 using System;
 using System.Collections.Generic;

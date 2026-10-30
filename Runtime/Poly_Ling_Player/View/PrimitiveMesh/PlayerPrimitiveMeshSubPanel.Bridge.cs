@@ -276,12 +276,13 @@ namespace Poly_Ling.Player
 
             // ── 穴A / 穴B の取り込み ──
             c.Add(PlayerIoUiKit.SectionLabel(T("BridgeHoleA")));
-            SB(c, T("BridgeImport"), () => ImportBridgeSeedA());
+            // A と B のボタンは同じ表示なので、ID を分ける。
+            SB(c, new Lx("BridgeImportA", T("BridgeImport").Text), () => ImportBridgeSeedA());
             _bridgeInfoA = BridgeInfoLabel();
             c.Add(_bridgeInfoA);
 
             c.Add(PlayerIoUiKit.SectionLabel(T("BridgeHoleB")));
-            SB(c, T("BridgeImport"), () => ImportBridgeSeedB());
+            SB(c, new Lx("BridgeImportB", T("BridgeImport").Text), () => ImportBridgeSeedB());
             _bridgeInfoB = BridgeInfoLabel();
             c.Add(_bridgeInfoB);
 

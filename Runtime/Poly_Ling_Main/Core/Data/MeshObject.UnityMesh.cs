@@ -89,7 +89,6 @@ namespace Poly_Ling.Data
             Faces.Clear();
             // 線分群は頂点索引で面と連携しているので、頂点・面と一緒に捨てる。
             LineGroups = new System.Collections.Generic.List<LineGroup>();
-            _positionCacheDirty = true;
         }
 
         /// <summary>

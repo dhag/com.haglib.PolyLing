@@ -248,13 +248,10 @@ namespace Poly_Ling.Player
             _edgeRibbonFaceHandler.SetUndoController(_editOps?.UndoController);
             _edgeRibbonFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
 
-            // 帯の座標は GPU が計算したワールド位置から組む（CPU で行列を掛けない）。
-            _edgeRibbonFaceHandler.GetWorldPositions = mc =>
-            {
-                var model = ActiveProject?.CurrentModel;
-                if (model == null || mc == null || _viewportManager == null) return null;
-                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
-            };
+            // 帯の座標はバインド姿勢のワールド（モデル空間で読む入力の決まり。段 E）から組む。
+            // GPU の表示位置（ポーズ込み）を読むと、ポーズを付けたまま作り直したとき結果がポーズで変わり、
+            // 描画バッファに載っていない（隠した）オブジェクトから作れない。
+            _edgeRibbonFaceHandler.GetWorldPositions = Poly_Ling.Ops.ModifierSpace.BindWorldPositions;
 
             _edgeRibbonFaceHandler.NotifyTopologyChanged = () =>
                 {
@@ -316,13 +313,8 @@ namespace Poly_Ling.Player
                 GetProject = () => ActiveProject,
             };
 
-            // 頂点の位置は GPU が計算したワールド位置から読む（CPU で行列を掛けない）。
-            _vertexBillboardPlaceHandler.GetWorldPositions = mc =>
-            {
-                var model = ActiveProject?.CurrentModel;
-                if (model == null || mc == null || _viewportManager == null) return null;
-                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
-            };
+            // 頂点の位置はバインド姿勢のワールド（モデル空間で読む入力の決まり。段 E）から読む。
+            _vertexBillboardPlaceHandler.GetWorldPositions = Poly_Ling.Ops.ModifierSpace.BindWorldPositions;
 
             _vertexBillboardPlaceHandler.ResolveSources = ResolvePlaceSourcesForCommand;
         }

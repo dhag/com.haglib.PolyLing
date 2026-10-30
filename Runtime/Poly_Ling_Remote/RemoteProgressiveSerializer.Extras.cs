@@ -2,6 +2,9 @@
 // プログレッシブ転送の付帯（CSV と揃えるための欄）。
 //
 //   PLRH v2 … 作業軸辞書（workaxis_library.csv）
+//   PLRS v8 … モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt。書き読みは本体側）
+//   PLRM v12 … 表情の作成日時（.mfproj の morphExpressions[].createdAt）と ObjectGroup の付帯
+//              （objectGroups[] の createdAt・scenarioOutputs、steps[] の usageScene・profileDim）
 //   PLRM v10 … グループモーフの子（morphgroups.csv の子の欄）
 //   PLRM v9 … モデル単位の付帯（materials.csv の既定材質、vrmexpressions.csv、meshselsets.csv、
 //              datastore.csv、mirrorpairs.csv、tposebackup.csv、springbonegroups.csv、
@@ -102,6 +105,109 @@ namespace Poly_Ling.Remote
                     string name = ReadString(r);
                     float weight = r.ReadSingle();
                     me?.GroupChildren.Add(new MorphGroupChild(name, weight));
+                }
+            }
+        }
+
+        // ================================================================
+        // PLRM v12：表情の作成日時（MorphExpression.CreatedAt）
+        //   表情の数（int）、表情ごとに DateTime.ToBinary（long）。並びは MorphExpressions と同じ。
+        //   .mfproj の morphExpressions[].createdAt と揃える。
+        // ================================================================
+
+        private static void WriteMorphExpressionCreatedAt(BinaryWriter w, ModelContext model)
+        {
+            var exprs = model.MorphExpressions;
+            int n = exprs?.Count ?? 0;
+            w.Write(n);
+            for (int i = 0; i < n; i++)
+                w.Write((exprs[i]?.CreatedAt ?? default(DateTime)).ToBinary());
+        }
+
+        private static void ReadMorphExpressionCreatedAt(BinaryReader r, ModelContext model)
+        {
+            int n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                var t = DateTime.FromBinary(r.ReadInt64());
+                if (model.MorphExpressions != null && i < model.MorphExpressions.Count && model.MorphExpressions[i] != null)
+                    model.MorphExpressions[i].CreatedAt = t;
+            }
+        }
+
+        // ================================================================
+        // PLRM v12：ObjectGroup の付帯（.mfproj の objectGroups[] と揃える）
+        //   グループの数（int）、グループごとに
+        //     [8B] CreatedAt（DateTime.ToBinary）
+        //     [int] 出力の数 ([string] Name [string] From [string] Description) × N（名前の無いものは書かない）
+        //     [int] 項目の数 ([string] UsageScene [int] ProfileDim) × N
+        //   並びは本体の ObjectGroups（null は空として詰めてある）・Steps と同じ。
+        // ================================================================
+
+        private static void WriteObjectGroupExtras(BinaryWriter w, ModelContext model)
+        {
+            var groups = model.ObjectGroups;
+            int n = groups?.Count ?? 0;
+            w.Write(n);
+            for (int i = 0; i < n; i++)
+            {
+                var g = groups[i];
+                w.Write((g?.CreatedAt ?? default(DateTime)).ToBinary());
+
+                var outs = new List<Poly_Ling.Data.ScenarioOutput>();
+                if (g?.Outputs != null)
+                    foreach (var o in g.Outputs)
+                        if (o != null && !string.IsNullOrEmpty(o.Name)) outs.Add(o);
+                w.Write(outs.Count);
+                foreach (var o in outs)
+                {
+                    WriteString(w, o.Name);
+                    WriteString(w, o.From ?? "");
+                    WriteString(w, o.Description ?? "");
+                }
+
+                // 本体の書き（SerializeModelMeta）は null グループを空の項目 0 件で詰める。
+                var steps = g?.Steps;
+                int sc = steps?.Count ?? 0;
+                w.Write(sc);
+                for (int s = 0; s < sc; s++)
+                {
+                    var st = steps[s];
+                    WriteString(w, st?.UsageScene ?? "");
+                    w.Write(st?.ProfileDim ?? Poly_Ling.Data.ObjectGroupStep.CurrentProfileDim);
+                }
+            }
+        }
+
+        private static void ReadObjectGroupExtras(BinaryReader r, ModelContext model)
+        {
+            int n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                var g = (model.ObjectGroups != null && i < model.ObjectGroups.Count) ? model.ObjectGroups[i] : null;
+
+                var createdAt = DateTime.FromBinary(r.ReadInt64());
+                if (g != null) g.CreatedAt = createdAt;
+
+                int oc = r.ReadInt32();
+                var outs = new List<Poly_Ling.Data.ScenarioOutput>(oc);
+                for (int k = 0; k < oc; k++)
+                    outs.Add(new Poly_Ling.Data.ScenarioOutput
+                    {
+                        Name        = ReadString(r),
+                        From        = ReadString(r),
+                        Description = ReadString(r),
+                    });
+                if (g != null) g.Outputs = outs;
+
+                int sc = r.ReadInt32();
+                for (int s = 0; s < sc; s++)
+                {
+                    string scene = ReadString(r);
+                    int dim = r.ReadInt32();
+                    if (g?.Steps == null || s >= g.Steps.Count || g.Steps[s] == null) continue;
+                    g.Steps[s].UsageScene = scene;
+                    g.Steps[s].ProfileDim = dim;
                 }
             }
         }
@@ -895,6 +1001,7 @@ namespace Poly_Ling.Remote
             to.HierarchyParentIndex = from.HierarchyParentIndex;
             to.IgnorePoseInArmature = from.IgnorePoseInArmature;
             to.IsMirrorBranchRoot   = from.IsMirrorBranchRoot;
+            to.MirrorBranchSameSense = from.MirrorBranchSameSense;
             to.Billboard            = from.Billboard;
             to.DoubleSidedDisplay   = from.DoubleSidedDisplay;
             to.HideFaceShading      = from.HideFaceShading;
@@ -917,6 +1024,8 @@ namespace Poly_Ling.Remote
             to.IsTriangulated      = from.IsTriangulated;
             to.PreserveNormals     = from.PreserveNormals;
             to.SetSkinKind(from.SkinKind);
+            to.HasSkinBakeMatrix   = from.HasSkinBakeMatrix;
+            to.SkinBakeMatrix      = from.SkinBakeMatrix;
         }
 
         /// <summary>

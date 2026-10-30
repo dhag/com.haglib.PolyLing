@@ -371,11 +371,315 @@ namespace Poly_Ling.Ops
 
             if (!RewriteMeshRefs(project, modelIndex, t, step, args, out error)) return null;
 
-            LastBeltMessage    = RefreshBelts(project, modelIndex, t, args);
-            LastProfileMessage = RefreshProfile(project, modelIndex, t, args);
+            RefreshInputs(project, modelIndex, t, args, out string beltMessage, out string profileMessage);
+            LastBeltMessage    = beltMessage;
+            LastProfileMessage = profileMessage;
 
             var cmd = PanelCommandFactory.Create(step.Action, modelIndex, args, out error);
             return cmd;
+        }
+
+        /// <summary>
+        /// 梯子・断面を持つコマンドの引数で、記録した取り込み方を取り込み元へ掛け直し、点列を差し替える。
+        /// グループの作り直し（BuildCommand）とシナリオの項目（PlayerCommandDispatcher.TryExecuteRunStep）が
+        /// 同じ読み方をするための口（作り直し整備計画 段 11）。取り込み元の索引は今の索引にしてから渡すこと。
+        /// 取り込み方が Baked のもの・取り込み元が -1 のものは何もしない（控えた点列のまま）。
+        /// </summary>
+        public static void RefreshInputs(
+            ProjectContext project, int modelIndex, Type t, Dictionary<string, string> args,
+            out string beltMessage, out string profileMessage)
+        {
+            beltMessage    = null;
+            profileMessage = null;
+            if (t == null || args == null) return;
+            beltMessage    = RefreshBelts(project, modelIndex, t, args);
+            profileMessage = RefreshProfile(project, modelIndex, t, args);
+        }
+
+        // ================================================================
+        // グループ → シナリオ（PolyLing_作り直し整備計画.md 段 11）
+        // ================================================================
+
+        /// <summary>
+        /// グループの項目を、モデルに縛られないシナリオの項目へ写す。
+        ///
+        /// 【つながりの書き換え】MeshRef のキーごとに
+        ///   ・同じグループの前の項目の出力（1 個）を指す → @&lt;その項目 ID&gt;.masterIndices
+        ///   ・グループの外を指す → シナリオの引数 &lt;項目 ID&gt;_&lt;キー&gt;（既定値は今の索引）を ${名前} で参照
+        ///   ・0（参照なし）だけ → 今の値（-1）のまま
+        ///   内と外が混じる、出力が複数の項目を指す、モデル索引付きの参照が内を指す、のどれかは断る。
+        /// MeshRefIds・OutputObjectIds は空にする（シナリオは実体に縛らない）。
+        /// </summary>
+        /// <param name="modelIndex">グループが属するモデルの索引（外の参照の既定値を引く）。</param>
+        public static bool BuildScenarioSteps(
+            ProjectContext project, int modelIndex, ObjectGroup group,
+            out List<ObjectGroupStep> steps, out List<ScenarioParam> parameters, out string error)
+        {
+            steps      = new List<ObjectGroupStep>();
+            parameters = new List<ScenarioParam>();
+            error      = null;
+            if (group == null) { error = "グループがありません"; return false; }
+
+            // まとめたグループ（mergeObjectGroup は項目を Clone で写す）では項目 ID が重なりうる。
+            var work = group.Clone();
+            work.EnsureScenarioItemIds();
+
+            // 出力の ObjectId → それを作った項目（前の項目だけを内として扱う）
+            var producer = new Dictionary<ulong, ObjectGroupStep>();
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int s = 0; s < work.StepCount; s++)
+            {
+                var src = work.Steps[s];
+                if (src == null) continue;
+
+                var dst = src.Clone();
+                dst.MeshRefIds.Clear();
+                dst.OutputObjectIds.Clear();
+
+                if (src.IsExecutable)
+                {
+                    Type t = PanelCommandFactory.ResolveType(src.Action);
+                    if (t == null) { error = $"項目 {src.ScenarioItemId}: 未対応の action {src.Action}"; return false; }
+
+                    // 今の索引（外の参照の既定値）。引けない参照があればここで断る。
+                    var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var kv in src.Args) resolved[kv.Key] = kv.Value;
+                    if (!RewriteMeshRefs(project, modelIndex, t, src, resolved, out string rwError))
+                    { error = $"項目 {src.ScenarioItemId}: {rwError}"; return false; }
+
+                    foreach (var mr in PanelCommandFactory.MeshRefKeys(t))
+                    {
+                        var ids = src.GetMeshRefIds(mr.Key);
+                        if (ids.Count == 0) continue;
+
+                        int nonZero = 0, inner = 0;
+                        ObjectGroupStep from = null;
+                        bool sameProducer = true;
+                        foreach (ulong id in ids)
+                        {
+                            if (id == 0UL) continue;
+                            nonZero++;
+                            if (producer.TryGetValue(id, out var p))
+                            {
+                                inner++;
+                                if (from == null) from = p;
+                                else if (!ReferenceEquals(from, p)) sameProducer = false;
+                            }
+                        }
+
+                        if (nonZero == 0)
+                        {
+                            if (resolved.TryGetValue(mr.Key, out string keep)) dst.SetArg(mr.Key, keep);
+                            continue;
+                        }
+
+                        if (inner == nonZero)
+                        {
+                            if (!sameProducer || ids.Count != 1 || from.OutputObjectIds.Count != 1)
+                            { error = $"項目 {src.ScenarioItemId} の {mr.Key}: 前の項目の出力を複数指しているので @ 参照にできません"; return false; }
+                            if (mr.HasModelKey)
+                            { error = $"項目 {src.ScenarioItemId} の {mr.Key}: モデル索引付きの参照は @ 参照にできません"; return false; }
+                            dst.SetArg(mr.Key, "@" + from.ScenarioItemId + ".masterIndices");
+                            continue;
+                        }
+
+                        if (inner > 0)
+                        { error = $"項目 {src.ScenarioItemId} の {mr.Key}: グループの内と外の参照が混じっているので書き換えられません"; return false; }
+
+                        if (!AddScenarioParam(src, mr.Key, resolved, project, ids, usedNames, parameters, dst, out error)) return false;
+                        if (mr.HasModelKey && resolved.ContainsKey(mr.ModelKey)
+                            && !AddScenarioParam(src, mr.ModelKey, resolved, project, null, usedNames, parameters, dst, out error)) return false;
+                    }
+
+                    foreach (ulong id in src.OutputObjectIds)
+                        if (id != 0UL && !producer.ContainsKey(id)) producer[id] = src;
+                }
+
+                steps.Add(dst);
+            }
+            return true;
+        }
+
+        /// <summary>外を指す参照 1 キーをシナリオの引数にし、項目の値を ${名前} にする。</summary>
+        private static bool AddScenarioParam(
+            ObjectGroupStep src, string key, Dictionary<string, string> resolved, ProjectContext project,
+            List<ulong> ids, HashSet<string> usedNames, List<ScenarioParam> parameters, ObjectGroupStep dst,
+            out string error)
+        {
+            error = null;
+            string name = (src.ScenarioItemId ?? "") + "_" + key.Replace('.', '_');
+            if (!ScenarioParam.IsValidName(name))
+            { error = $"項目 {src.ScenarioItemId} の {key}: 引数名 {name} が作れません"; return false; }
+            if (!usedNames.Add(name))
+            { error = $"項目 {src.ScenarioItemId} の {key}: 引数名 {name} が重なります"; return false; }
+
+            string what = "";
+            if (ids != null)
+            {
+                var names = new List<string>();
+                foreach (ulong id in ids)
+                    if (id != 0UL) names.Add(Resolve(project, id)?.Name ?? id.ToString(CultureInfo.InvariantCulture));
+                what = string.Join(",", names);
+            }
+
+            parameters.Add(new ScenarioParam
+            {
+                Name        = name,
+                Default     = resolved.TryGetValue(key, out string v) ? v ?? "" : "",
+                Description = $"項目 {src.ScenarioItemId}（{src.Action}）の {key}"
+                            + (what.Length > 0 ? $"。元のグループでは {what}" : "")
+                            + "（索引）",
+            });
+            dst.SetArg(key, ScenarioParam.MakeRef(name));
+            return true;
+        }
+
+        // ================================================================
+        // 項目の引数の書き換え（PolyLing_作り直し整備計画.md 段 3）
+        // ================================================================
+
+        /// <summary>
+        /// 項目の引数のうち、外から書き換えてはいけないキーなら理由を返す。書けるなら null。
+        ///
+        /// 書けないもの
+        ///   ・入力と出力先（IsMeshRef のキーと、その相棒のモデル索引）
+        ///   ・作り直しのたびに上書きされるもの（RebuildRole の切り替えキー、keepAsGroup）
+        ///   ・入力の中身と取り方（梯子の点列・先端、プロファイル、取り込み方）
+        /// 入力の差し替えは段 3 の範囲外なので、ここで止める。
+        /// </summary>
+        public static string ArgWriteBlockReason(Type t, string key)
+            => ArgWriteBlockReason(t, key, allowProfile: false);
+
+        /// <summary>
+        /// allowProfile が true なら、断面（プロファイル）のキーは止めない。
+        /// 断面の作業空間の反映（断面の線分 → 断面の逆方向。段 6）だけが使う。
+        /// </summary>
+        public static string ArgWriteBlockReason(Type t, string key, bool allowProfile)
+        {
+            if (t == null) return "コマンドの型が引けません";
+            if (string.IsNullOrEmpty(key)) return "キーが空です";
+
+            foreach (var mr in PanelCommandFactory.MeshRefKeys(t))
+            {
+                if (string.Equals(mr.Key, key, StringComparison.Ordinal))
+                    return "入力・出力先の参照（MeshRef）は書けません";
+                if (mr.HasModelKey && string.Equals(mr.ModelKey, key, StringComparison.Ordinal))
+                    return "参照のモデル索引は書けません";
+            }
+
+            var rb = PanelCommandFactory.RebuildKeys(t);
+            if (rb.IsSupported && string.Equals(rb.TargetIndexKey, key, StringComparison.Ordinal))
+                return "出力先の索引は書けません";
+            if (rb.HasMode && string.Equals(rb.ModeKey, key, StringComparison.Ordinal))
+                return "出力先への書き戻し方は作り直しが決めるので書けません";
+
+            int dot = key.LastIndexOf('.');
+            string leaf = dot >= 0 ? key.Substring(dot + 1) : key;
+            if (string.Equals(leaf, "keepAsGroup", StringComparison.Ordinal))
+                return "グループとして残すかは作り直しが決めるので書けません";
+
+            if (!allowProfile)
+            foreach (var pk in PanelCommandFactory.ProfileKeys(t))
+            {
+                if (string.Equals(pk.Key, key, StringComparison.Ordinal)
+                 || string.Equals(pk.LoopStartsKey, key, StringComparison.Ordinal)
+                 || string.Equals(pk.LoopIsHoleKey, key, StringComparison.Ordinal))
+                    return "断面（入力の中身）は書けません";
+            }
+
+            string[] inputProps =
+            {
+                nameof(CreatePrimitiveMeshCommand.ProfileAcquire),
+                nameof(CreateBeltPrimitiveCommand.AcquireMethod),
+                nameof(CreateBeltPrimitiveCommand.AcquireCrossRows),
+                nameof(CreateBeltPrimitiveCommand.AcquireSetName),
+                nameof(CreateBeltPrimitiveCommand.BeltLeftPoints),
+                nameof(CreateBeltPrimitiveCommand.BeltRightPoints),
+                nameof(CreateBeltPrimitiveCommand.BeltStarts),
+                nameof(CreateBeltPrimitiveCommand.BeltClosed),
+                nameof(CreateBeltPrimitiveCommand.BeltFlipWinding),
+                nameof(CreateBeltPrimitiveCommand.BeltHeightScale),
+                nameof(CreateBeltPrimitiveCommand.BeltStartPoints),
+                nameof(CreateBeltPrimitiveCommand.BeltHasStartPoint),
+                nameof(CreateBeltPrimitiveCommand.BeltEndPoints),
+                nameof(CreateBeltPrimitiveCommand.BeltHasEndPoint),
+            };
+            foreach (string p in inputProps)
+            {
+                string k = PanelCommandFactory.KeyOfProperty(t, p);
+                if (!string.IsNullOrEmpty(k) && string.Equals(k, key, StringComparison.Ordinal))
+                    return "入力の中身・取り込み方は書けません";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 項目が受け付ける引数のキー。組み直したコマンドの ToArgs のキーと、今の Args のキーを合わせたもの。
+        /// 組み直せないとき（入力が引けない等）は今の Args のキーだけになる。
+        /// </summary>
+        public static HashSet<string> StepArgKeys(ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex)
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            var step = group?.GetStep(stepIndex);
+            if (step?.Args == null) return keys;
+            foreach (var kv in step.Args) keys.Add(kv.Key);
+
+            var cmd = BuildCommand(project, modelIndex, group, stepIndex, out _);
+            if (cmd != null)
+                foreach (var kv in PanelCommandFactory.ToArgs(cmd)) keys.Add(kv.Key);
+            return keys;
+        }
+
+        /// <summary>
+        /// 項目の引数へ書く前の検査。書いた結果がコマンドの型で読み直せる（Create が通る）ことまで確かめる。
+        /// グループには何も書かない（写しで試す）。通らなければ false と理由。
+        /// </summary>
+        public static bool TryValidateStepArgs(
+            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            IReadOnlyList<string> keys, IReadOnlyList<string> values, out string error)
+            => TryValidateStepArgs(project, modelIndex, group, stepIndex, keys, values, false, out error);
+
+        /// <summary>allowProfile は ArgWriteBlockReason と同じ（断面の作業空間の反映だけが true）。</summary>
+        public static bool TryValidateStepArgs(
+            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            IReadOnlyList<string> keys, IReadOnlyList<string> values, bool allowProfile, out string error)
+        {
+            error = null;
+            if (group == null) { error = "グループがありません"; return false; }
+
+            var step = group.GetStep(stepIndex);
+            if (step == null) { error = $"項目 {stepIndex} がありません（項目数 {group.StepCount}）"; return false; }
+            if (!step.IsExecutable) { error = $"項目 {stepIndex} は {step.Kind} で、引数を持つ実行項目ではありません"; return false; }
+
+            Type t = PanelCommandFactory.ResolveType(step.Action);
+            if (t == null) { error = $"未対応の action: {step.Action}"; return false; }
+
+            if (keys == null || values == null || keys.Count == 0)
+            { error = "書くキーがありません"; return false; }
+            if (keys.Count != values.Count)
+            { error = $"キー {keys.Count} 個と値 {values.Count} 個の数が違います"; return false; }
+
+            var known = StepArgKeys(project, modelIndex, group, stepIndex);
+            var seen  = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < keys.Count; i++)
+            {
+                string k = keys[i];
+                if (string.IsNullOrEmpty(k)) { error = $"{i} 番目のキーが空です"; return false; }
+                if (!seen.Add(k)) { error = $"キー {k} が重複しています"; return false; }
+                if (!known.Contains(k)) { error = $"{step.Action} に引数 {k} はありません"; return false; }
+                string why = ArgWriteBlockReason(t, k, allowProfile);
+                if (why != null) { error = $"{k}: {why}"; return false; }
+            }
+
+            var trial = group.Clone();
+            var ts = trial.GetStep(stepIndex);
+            for (int i = 0; i < keys.Count; i++) ts.SetArg(keys[i], values[i]);
+
+            var cmd = BuildCommand(project, modelIndex, trial, stepIndex, out string bErr);
+            if (cmd == null) { error = $"値をコマンドの型で読み直せません: {bErr}"; return false; }
+            return true;
         }
 
         /// <summary>
@@ -519,8 +823,22 @@ namespace Poly_Ling.Ops
             if (!acquired.Ok)
                 return $"取り直せないので控えた点列を使う（{acquired.Message}）";
 
+            WriteBeltArgs(t, args, acquired.Belts.ToArray());
+
+            return $"梯子を {acquired.Belts.Count} 本取り直した（{method} / "
+                 + $"上下展開={(cross ? "する" : "しない")} / {acquired.Message}）";
+        }
+
+        /// <summary>
+        /// 梯子の点列を引数へ書く（取り直し RefreshBelts と、逆方向で書き直した梯子の両方が使う）。
+        /// 先端は、元の生成が先端を使っていたとき（有無の列が引数にあるとき）だけ書く。
+        ///   辺のパイプ化のように、検出の起点として足しただけの開始タグを持つ梯子は
+        ///   先端を渡さずに作っている。勝手に先端へすぼめると形が変わる。
+        /// </summary>
+        public static void WriteBeltArgs(Type t, IDictionary<string, string> args, BeltCsvEntry[] belts)
+        {
             CreateBeltPrimitiveCommand.SplitBelts(
-                acquired.Belts.ToArray(),
+                belts,
                 out var left, out var right, out var starts,
                 out var closed, out var flip, out var height,
                 out var startPts, out var hasStart, out var endPts, out var hasEnd);
@@ -537,10 +855,7 @@ namespace Poly_Ling.Ops
             Put(nameof(CreateBeltPrimitiveCommand.BeltClosed),      JoinBools(closed));
             Put(nameof(CreateBeltPrimitiveCommand.BeltFlipWinding), JoinBools(flip));
             Put(nameof(CreateBeltPrimitiveCommand.BeltHeightScale), JoinFloats(height));
-            // 先端も取り直す。控えた点列の先端が残ると、ソースを直しても蓋の先が古いまま。
-            //   ただし元の生成が先端を使っていたときだけ（有無の列が控えにあるとき）。
-            //   辺のパイプ化のように、検出の起点として足しただけの開始タグを持つ梯子は
-            //   先端を渡さずに作っている。作り直しで勝手に先端へすぼめると形が変わる。
+
             string hasStartKey = PanelCommandFactory.KeyOfProperty(t, nameof(CreateBeltPrimitiveCommand.BeltHasStartPoint));
             string hasEndKey   = PanelCommandFactory.KeyOfProperty(t, nameof(CreateBeltPrimitiveCommand.BeltHasEndPoint));
             bool usedStart = !string.IsNullOrEmpty(hasStartKey)
@@ -557,9 +872,6 @@ namespace Poly_Ling.Ops
                 Put(nameof(CreateBeltPrimitiveCommand.BeltEndPoints),     JoinFloats(endPts));
                 Put(nameof(CreateBeltPrimitiveCommand.BeltHasEndPoint),   JoinBools(hasEnd));
             }
-
-            return $"梯子を {acquired.Belts.Count} 本取り直した（{method} / "
-                 + $"上下展開={(cross ? "する" : "しない")} / {acquired.Message}）";
         }
 
         /// <summary>
@@ -723,7 +1035,7 @@ namespace Poly_Ling.Ops
             return result.ToArray();
         }
 
-        private static string JoinInts(IReadOnlyList<int> v)
+        public static string JoinInts(IReadOnlyList<int> v)
         {
             if (v == null || v.Count == 0) return "";
             var sb = new StringBuilder();
@@ -745,7 +1057,7 @@ namespace Poly_Ling.Ops
         /// PanelCommandFactory.TryFormat の Vector3[] と同じ並びにすること
         /// （読み側は TryParseVectorArray がこの形を前提にしている）。
         /// </summary>
-        private static string JoinVector3(IReadOnlyList<Vector3> v)
+        public static string JoinVector3(IReadOnlyList<Vector3> v)
         {
             if (v == null || v.Count == 0) return "";
             var sb = new StringBuilder();
@@ -800,7 +1112,63 @@ namespace Poly_Ling.Ops
             foreach (var st in group.Steps) UpgradeLegacyProfileArgs(st);
         }
 
-        private static string JoinBools(IReadOnlyList<bool> v)
+        // ================================================================
+        // 旧版の保存データ（ブレンドの基準・出力。作り直し整備計画 段 13）
+        // ================================================================
+
+        /// <summary>
+        /// 段 13 より前に記録したブレンドの項目の参照を今の形へ直す。
+        ///
+        /// 旧形は、出力が「実行で増えた ObjectId の最大」で、基準のキー（baseMasterIndex）を持たない。
+        ///   宛先を書き換える設定 … 出力＝バックアップ（_backup）、宛先＝書き換えた描画オブジェクト
+        ///   複製を作る設定       … 出力＝複製、宛先＝元の描画オブジェクト
+        /// 今の形は、基準を入力、書き込み先を出力とする（ApplyBlendCommand の注記）。
+        ///   宛先を書き換える設定 … 基準＝旧出力、宛先＝出力＝旧宛先
+        ///   複製を作る設定       … 基準＝旧宛先、宛先＝旧出力（出力はそのまま）
+        /// 対象は action が applyBlend で、基準のキーが無く、出力と宛先が 1 個ずつの項目だけ。
+        /// シナリオの項目（参照と出力を持たない）は何もしない。読み込み直後に 1 回だけ呼ぶ。
+        /// </summary>
+        public static void UpgradeLegacyBlendRefs(ObjectGroupStep step)
+        {
+            if (step == null || string.IsNullOrEmpty(step.Action)) return;
+            Type t = PanelCommandFactory.ResolveType(step.Action);
+            if (t != typeof(ApplyBlendCommand)) return;
+
+            string baseKey = PanelCommandFactory.KeyOfProperty(t, nameof(ApplyBlendCommand.BaseMasterIndex));
+            string destKey = PanelCommandFactory.KeyOfProperty(t, nameof(ApplyBlendCommand.DestMasterIndex));
+            string newKey  = PanelCommandFactory.KeyOfProperty(t, nameof(ApplyBlendCommand.CreateNewObject));
+            if (string.IsNullOrEmpty(baseKey) || string.IsNullOrEmpty(destKey)) return;
+
+            if (step.MeshRefIds != null && step.MeshRefIds.ContainsKey(baseKey)) return;
+            if (step.OutputObjectIds == null || step.OutputObjectIds.Count != 1) return;
+
+            var destIds = step.GetMeshRefIds(destKey);
+            if (destIds.Count != 1 || destIds[0] == 0UL) return;
+
+            ulong oldDest = destIds[0];
+            ulong oldOut  = step.OutputObjectIds[0];
+
+            string newText = step.GetArg(newKey, "false");
+            bool createNew = string.Equals(newText?.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+                          || newText?.Trim() == "1";
+
+            ulong baseId = createNew ? oldDest : oldOut;
+            ulong outId  = createNew ? oldOut  : oldDest;
+
+            step.SetMeshRefIds(baseKey, new List<ulong> { baseId });
+            step.SetMeshRefIds(destKey, new List<ulong> { outId });
+            step.OutputObjectIds.Clear();
+            step.OutputObjectIds.Add(outId);
+        }
+
+        /// <summary>グループの全項目へ UpgradeLegacyBlendRefs を掛ける。</summary>
+        public static void UpgradeLegacyBlendRefs(ObjectGroup group)
+        {
+            if (group?.Steps == null) return;
+            foreach (var st in group.Steps) UpgradeLegacyBlendRefs(st);
+        }
+
+        public static string JoinBools(IReadOnlyList<bool> v)
         {
             if (v == null || v.Count == 0) return "";
             var sb = new StringBuilder();
@@ -812,7 +1180,7 @@ namespace Poly_Ling.Ops
             return sb.ToString();
         }
 
-        private static string JoinFloats(IReadOnlyList<float> v)
+        public static string JoinFloats(IReadOnlyList<float> v)
         {
             if (v == null || v.Count == 0) return "";
             var sb = new StringBuilder();

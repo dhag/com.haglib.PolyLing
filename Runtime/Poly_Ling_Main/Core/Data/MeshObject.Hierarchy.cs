@@ -72,7 +72,6 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
-            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -84,7 +83,6 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position, uv);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
-            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -96,7 +94,6 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position, uv, normal);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
-            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -114,7 +111,6 @@ namespace Poly_Ling.Data
                 RegisterVertexId(vertex.Id);
             }
             Vertices.Add(vertex);
-            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -124,7 +120,6 @@ namespace Poly_Ling.Data
         public int AddVertexRaw(Vertex vertex)
         {
             Vertices.Add(vertex);
-            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 

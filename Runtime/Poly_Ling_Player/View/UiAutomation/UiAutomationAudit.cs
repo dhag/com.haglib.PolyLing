@@ -10,6 +10,7 @@
 //   registrationErrors   … 登録を拒否したもの（ID 重複・属性の誤り・メソッド名の誤り）
 //   unspecifiedSafety    … ボタンなのに安全度が未指定のもの（押せない）
 //   unsupportedTypes     … 既定の読み書きができず、Getter / Setter も無い型のもの
+//   duplicateIds         … 動的なボタンや入力欄で、画面に付いている別々の要素が同じ ID を持つもの
 //
 // 【セクションの一覧】
 //   右ペインのセクションはすべて PlayerLayoutRoot.AddSection が作り、台帳（RightSections）に
@@ -38,6 +39,8 @@ namespace Poly_Ling.Player
             public int    UnregisteredElements;
             /// <summary>コマンドの経路（PLUiRoute・図形からの割り出し）に書かれたボタン・入力欄の ID のうち、登録されていないもの。</summary>
             public int    UnknownRouteItems;
+            /// <summary>動的なボタンや入力欄で、画面に付いている別々の要素が同じ ID を持つもの。</summary>
+            public int    DuplicateIds;
             public int    Controls;
             public int    Panels;
             public string Report;
@@ -50,7 +53,7 @@ namespace Poly_Ling.Player
                 UnregisteredSections > 0 || MissingAttributes    > 0 ||
                 RegistrationErrors   > 0 || UnspecifiedSafety    > 0 ||
                 UnsupportedTypes     > 0 || UnregisteredElements > 0 ||
-                UnknownRouteItems    > 0;
+                UnknownRouteItems    > 0 || DuplicateIds         > 0;
 
             /// <summary>問題の件数を 1 行にまとめる。0 のものは省く。</summary>
             public string ProblemSummary()
@@ -63,6 +66,7 @@ namespace Poly_Ling.Player
                 if (UnsupportedTypes     > 0) parts.Add($"未対応の型 {UnsupportedTypes}");
                 if (UnregisteredElements > 0) parts.Add($"未登録のボタンや入力欄 {UnregisteredElements}");
                 if (UnknownRouteItems    > 0) parts.Add($"経路の未登録のボタンや入力欄 {UnknownRouteItems}");
+                if (DuplicateIds         > 0) parts.Add($"ID の重複 {DuplicateIds}");
                 return string.Join(" / ", parts);
             }
         }
@@ -144,13 +148,19 @@ namespace Poly_Ling.Player
             var unknownRoute = CollectUnknownRouteItems(registry);
             r.UnknownRouteItems = unknownRoute.Count;
 
+            // ── ID の重複（動的なボタンや入力欄）─────────────────────────
+            var duplicates = registry.CollectDuplicateDynamicIds();
+            r.DuplicateIds = duplicates.Count;
+
             // ── 報告 ───────────────────────────────────────────────
             sb.AppendLine($"[UiAutomationAudit] セクション {r.Sections} / パネル {r.Panels} / ボタンや入力欄 {r.Controls}"
                         + $"（未構築 {unbuilt}）");
             sb.AppendLine($"  未登録のセクション {r.UnregisteredSections} / 属性の付け忘れ {r.MissingAttributes}"
                         + $" / 登録失敗 {r.RegistrationErrors} / 安全度未指定のボタン {r.UnspecifiedSafety}"
                         + $" / 未対応の型 {r.UnsupportedTypes} / 未登録のボタンや入力欄 {r.UnregisteredElements}"
-                        + $" / 経路の未登録のボタンや入力欄 {r.UnknownRouteItems}");
+                        + $" / 経路の未登録のボタンや入力欄 {r.UnknownRouteItems}"
+                        + $" / ID の重複 {r.DuplicateIds}");
+            AppendList(sb, "ID の重複", duplicates);
             AppendList(sb, "経路の未登録のボタンや入力欄", unknownRoute);
             AppendList(sb, "未登録のセクション", unregistered);
             AppendList(sb, "対象外にしたセクション", excluded);

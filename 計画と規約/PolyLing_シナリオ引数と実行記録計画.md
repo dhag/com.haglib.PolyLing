@@ -29,7 +29,7 @@ model.csv が無いときだけ null にするよう直した（2026-10-21）。
 - `queryScenarioAudit`：宣言していない `${名前}` の使用、宣言して使っていない引数を指摘する。
 - `describeScenario` に `paramNames` / `paramDefaults` / `paramDescriptions` を載せる（outline でも載せる）。
 
-## 2. 段 2：流すときに使う（済 2026-10-21。MCP サーバの再ビルド待ち）
+## 2. 段 2：流すときに使う（済 2026-10-21。MCP サーバは再ビルド済み：動いているサーバの polyling_describe の説明に paramKeys / paramValues の文がある〔2026-10-31 確認〕）
 
 結果：共通関数は `ScenarioParam.TryBind` / `TrySubstitute` / `TryBindRef` / `SubstituteStep`（ObjectGroup.cs）。
 流し：`Frame.Params` に段ごとの値。`runScenario` の `paramKeys` / `paramValues`（宣言に無い名前は流し始める前に失敗）。
@@ -98,3 +98,7 @@ resolve は子の ${seg} を親の ${seg} に置き換えて返す。展開も�
 
 - 3 つの csproj をコンパイル、`unity_validate_changes`、Play で確かめる、キャプチャ。
 - 進んだら、この計画書の該当段に「済」と結果を書く。
+
+## 6. 締め（2026-10-31。この計画は完了）
+
+- 段 1〜4b はすべて済。MCP サーバの再ビルド待ちは解消（段 2 の見出し）。

@@ -211,8 +211,10 @@ namespace Poly_Ling.PrimitiveMesh
 
             var partsIds = new PartsIdCounter();
 
-            foreach (var pos in Positions(p))
+            var positions = Positions(p);
+            for (int pi = 0; pi < positions.Count; pi++)
             {
+                var pos = positions[pi];
                 MeshObject src;
                 switch (p.Mode)
                 {
@@ -232,7 +234,7 @@ namespace Poly_Ling.PrimitiveMesh
 
                 // 回転させない（配置元の向きのまま平行移動）。
                 PlaceObjectMeshGenerator.AppendInstance(
-                    mo, src, pos, Vector3.right, Vector3.up, Vector3.forward, s, true, partsIds.Take());
+                    mo, src, pos, Vector3.right, Vector3.up, Vector3.forward, s, true, partsIds.Take(), pi);
             }
 
             mo.RecalculateNormals();

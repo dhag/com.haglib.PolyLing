@@ -129,7 +129,7 @@ namespace Poly_Ling.Player
                     : SpringBoneLadderMode.Strand;
                 RefreshSpringBoneLadderInfo();
             });
-            c.Add(modeDd);
+            c.Add(RowTarget.Add("SBLadderMode", modeDd, T("SBLadderMode").Text));
 
             c.Add(SL("髪系ははしご1本が鎖1本になり、ボーンは横木の中点に載ります。"
                    + "スカート系は横方向のはしごが縦に積まれた形を想定し、"
@@ -149,15 +149,16 @@ namespace Poly_Ling.Player
                 _sbLadderMethod = SbLadderMethods[i];
                 RefreshSpringBoneLadderInfo();
             });
-            c.Add(methodDd);
+            c.Add(RowTarget.Add("SBLadderMethod", methodDd, T("SBLadderMethod").Text));
 
             var setName = new TextField(T("SBLadderSetName")) { value = _sbLadderSetName };
             setName.RegisterValueChangedCallback(e => _sbLadderSetName = e.newValue);
-            c.Add(setName);
+            c.Add(RowTarget.Add("SBLadderSetName", setName, T("SBLadderSetName").Text));
             c.Add(SL("「はしごを自動検索」は開始タグ三角形が起点です。"
                    + "「パーツ選択辞書の面から」のときだけ辞書名を使います。"));
 
-            c.Add(PlayerIoUiKit.WideBtn(T("SBLadderCheck"), RefreshSpringBoneLadderInfo));
+            c.Add(WB("SBLadderCheck", T("SBLadderCheck"), RefreshSpringBoneLadderInfo, UiSafety.SafeWrite,
+                "はしごの取り込みを試して結果を表示する（モデルは変えない）"));
 
             _sbLadderInfo = new Label();
             _sbLadderInfo.style.fontSize   = 10;
@@ -224,7 +225,7 @@ namespace Poly_Ling.Player
                     : SpringBoneLadderBundleMode.Thin;
                 RefreshSpringBoneLadderInfo();
             });
-            c.Add(bundleDd);
+            c.Add(RowTarget.Add("SBLadderBundleMode", bundleDd, T("SBLadderBundleMode").Text));
 
             c.Add(SL("はしご自体は間引かず、ボーンを置く骨組みだけを粗くします。"
                    + "頂点は必ずどれかの鎖へ付きます。末尾の段と末尾の本は必ず節点になるので、"

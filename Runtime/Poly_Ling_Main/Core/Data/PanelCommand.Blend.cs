@@ -138,11 +138,23 @@ namespace Poly_Ling.Data
     ///   バックアップメッシュとして残す。
     /// CreateNewObject = true  … 宛先を複製し、複製側へ書き込む（元は変更しない）。
     ///
+    /// BaseMasterIndex ≥ 0 … base を宛先の今の形ではなく、その描画オブジェクトの
+    ///   頂点の位置・法線から読む。バックアップメッシュは作らない（作り直し整備計画 段 13）。
+    ///   面構成は書き込み先のまま。頂点数が書き込み先と違えば失敗する。
+    ///
+    /// 【オブジェクトグループの作り直し】
+    ///   グループとして残すと、基準（宛先を書き換える設定ではバックアップ、
+    ///   複製を作る設定では元の宛先）を BaseMasterIndex、書き込み先を
+    ///   DestMasterIndex（出力）として記録する。作り直しは
+    ///   DestMasterIndex に出力の索引・CreateNewObject に false を書いて流す（RebuildRole）。
+    ///   入力はソースと基準で、出力（書き込み先）は入力に並ばない（循環しない）。
+    ///
     /// 宛先は ModelIndex のモデル内に限る。別モデルを宛先にすると
     /// PanelCommand.ModelIndex と書き込み先が食い違い、Undo と
     /// 所有権判定の基準が二重になるため。
     /// </summary>
     [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.Targets, Description = "宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]   // PlayerCommandDispatcher.Blend.cs
     public class ApplyBlendCommand : PanelCommand
     {
         /// <summary>1 コマンドで受け付けるソースの上限</summary>
@@ -163,7 +175,8 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "MeshBlendSourceMasterIndices",
                  Description = "ブレンド元の masterIndex。SourceModelIndices と同じ並び",
                  Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefModelKey = "SourceModelIndices")]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefModelKey = "SourceModelIndices",
+                 MeshRefSpace = PLMeshRefSpace.Model)]
         public int[]   SourceMasterIndices { get; }
 
         [PLParam(TextKey = "MeshBlendSourceWeights",
@@ -213,13 +226,25 @@ namespace Poly_Ling.Data
         /// <summary>書き込み先 MeshContext の MasterIndex（ModelIndex のモデル内）</summary>
         [PLParam(TextKey = "MeshBlendDestMasterIndex",
                  Description = "結果を書き込む描画オブジェクトの masterIndex", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, WriteWhen = "createNewObject=false")]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, WriteWhen = "createNewObject=false",
+                 MeshRefSpace = PLMeshRefSpace.Local, RebuildRole = PLRebuildRole.TargetIndex)]
         public int    DestMasterIndex      { get; }
 
         /// <summary>宛先を複製して、そちらへ書き込むか</summary>
         [PLParam(TextKey = "MeshBlendCreateNewObject",
-                 Description = "宛先を複製してそちらへ書く。既定は false")]
+                 Description = "宛先を複製してそちらへ書く。既定は false",
+                 RebuildRole = PLRebuildRole.TargetMode, RebuildModeValue = "false")]
         public bool   CreateNewObject      { get; }
+
+        /// <summary>
+        /// 基準（ブレンド前の形）を読む描画オブジェクトの MasterIndex（ModelIndex のモデル内）。
+        /// -1 なら宛先の今の形を基準にし、宛先を書き換える設定ではバックアップを作る。
+        /// 0 以上なら、その頂点の位置・法線を基準にし、バックアップは作らない。
+        /// </summary>
+        [PLParam(Description = "基準（ブレンド前の形）を読む描画オブジェクトの masterIndex。-1 で宛先の今の形（既定）",
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 MeshRefSpace = PLMeshRefSpace.Local)]
+        public int    BaseMasterIndex      { get; }
 
         /// <summary>適用後に法線を再計算するか</summary>
         [PLParam(TextKey = "MeshBlendRecalculateNormals",
@@ -252,10 +277,12 @@ namespace Poly_Ling.Data
             bool recalculateNormals   = true,
             bool selectedVerticesOnly = false,
             Poly_Ling.UI.BlendMatchMode matchMode = Poly_Ling.UI.BlendMatchMode.Index,
-            bool keepAsGroup          = false)
+            bool keepAsGroup          = false,
+            int  baseMasterIndex      = -1)
             : base(modelIndex)
         {
             KeepAsGroup          = keepAsGroup;
+            BaseMasterIndex      = baseMasterIndex;
             SourceModelIndices   = sourceModelIndices  ?? System.Array.Empty<int>();
             SourceMasterIndices  = sourceMasterIndices ?? System.Array.Empty<int>();
             SourceWeights        = sourceWeights       ?? System.Array.Empty<float>();

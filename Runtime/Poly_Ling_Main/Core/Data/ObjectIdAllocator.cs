@@ -9,12 +9,13 @@
 //   プロジェクトを読み込んだ場合も Observe() で追い越すため衝突しない。
 // - 0 は「未割当」を意味する予約値。
 //
-// 【割当タイミング】
-//   EnsureIds(list) を以下で呼ぶ:
-//     - プロジェクト/モデル読み込み直後
-//     - メッシュ追加・複製・インポート直後
-//     - リモート送信直前（保険）
+// 【割当タイミング】（作り直し整備計画 段 C）
+//   ModelContext の一覧へ入れる道（Add・Insert・ReplaceMeshContexts・SetMeshContextAt）が
+//   ModelContext.Admit で未割当（0）のものにだけ Next() を振る。振るのはそこ 1 か所。
 //   既に 0 以外が入っているものは触らない（＝IDは一度決まったら不変）。
+//   読み込みは保存の ID を入れて Observe し、ResolveDuplicates で重複と 0 を振り直す。
+//   リモートの受信側は振らない（送り手の ID をそのまま持つ）。
+//   一覧の点検は ModelContext.CheckObjectIds（書き込みのあるコマンドの終わりに Dispatch が呼ぶ）。
 
 using System;
 using System.Collections.Generic;
@@ -48,34 +49,6 @@ namespace Poly_Ling.Data
                 if (cur >= v) return;
                 if (Interlocked.CompareExchange(ref _next, v, cur) == cur) return;
             }
-        }
-
-        /// <summary>
-        /// 未割当（ObjectId==0）の MeshContext にIDを振る。
-        /// 既に割当済みのものは Observe した上でそのまま残す。
-        /// </summary>
-        /// <returns>新たに割り当てた件数</returns>
-        public static int EnsureIds(IEnumerable<MeshContext> contexts)
-        {
-            if (contexts == null) return 0;
-
-            // 1パス目: 既存IDの観測（カウンタの追い越し）
-            foreach (var mc in contexts)
-            {
-                if (mc == null) continue;
-                Observe(mc.ObjectId);
-            }
-
-            // 2パス目: 未割当への発行
-            int assigned = 0;
-            foreach (var mc in contexts)
-            {
-                if (mc == null) continue;
-                if (mc.ObjectId != Unassigned) continue;
-                mc.ObjectId = Next();
-                assigned++;
-            }
-            return assigned;
         }
 
         /// <summary>

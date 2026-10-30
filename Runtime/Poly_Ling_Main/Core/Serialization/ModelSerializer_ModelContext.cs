@@ -158,31 +158,31 @@ namespace Poly_Ling.Serialization
             modelDTO.springBoneWarmupFrames = model.SpringBoneWarmupFrames;
 
             // ================================================================
-            // TPoseバックアップ（規約4：CSV/JSON 対称）
+            // TPoseバックアップ（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             modelDTO.tPoseBackup = ToTPoseBackupDTO(model.TPoseBackup);
 
             // ================================================================
-            // VRM 1.0 モデルレベル設定（規約4：CSV/JSON 対称）
+            // VRM 1.0 モデルレベル設定（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             modelDTO.vrmMeta   = ToVrmMetaDTO(model.VrmMeta);
             modelDTO.vrmLookAt = ToVrmLookAtDTO(model.VrmLookAt);
 
             // ================================================================
-            // Avatar リターゲット設定（規約4：CSV/JSON 対称）
+            // Avatar リターゲット設定（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             modelDTO.avatarRetarget = ToAvatarRetargetDTO(model.AvatarRetarget);
 
             // ================================================================
-            // PMX / MQO の座標規約（規約4：CSV/JSON 対称）
+            // PMX / MQO の座標規約（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             modelDTO.coordinateConvention = ToCoordinateConventionDTO(model.CoordinateConvention);
 
-            // 下絵（規約4：CSV/JSON 対称。CSV は underlay.csv）
+            // 下絵（規約4：CSV / JSON / バイナリ対称。CSV は underlay.csv）
             modelDTO.underlay = UnderlayDTO.From(model.Underlay);
 
             return modelDTO;
@@ -340,32 +340,32 @@ namespace Poly_Ling.Serialization
             model.SpringBoneWarmupFrames = modelDTO.springBoneWarmupFrames;
 
             // ================================================================
-            // TPoseバックアップ復元（規約4：CSV/JSON 対称）
+            // TPoseバックアップ復元（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             if (modelDTO.tPoseBackup != null)
                 model.TPoseBackup = FromTPoseBackupDTO(modelDTO.tPoseBackup);
 
             // ================================================================
-            // VRM 1.0 モデルレベル設定復元（規約4：CSV/JSON 対称）
+            // VRM 1.0 モデルレベル設定復元（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             model.VrmMeta   = FromVrmMetaDTO(modelDTO.vrmMeta);
             model.VrmLookAt = FromVrmLookAtDTO(modelDTO.vrmLookAt);
 
             // ================================================================
-            // Avatar リターゲット設定復元（規約4：CSV/JSON 対称）
+            // Avatar リターゲット設定復元（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             model.AvatarRetarget = FromAvatarRetargetDTO(modelDTO.avatarRetarget);
 
             // ================================================================
-            // PMX / MQO の座標規約復元（規約4：CSV/JSON 対称）
+            // PMX / MQO の座標規約復元（規約4：CSV / JSON / バイナリ対称）
             // ================================================================
 
             model.CoordinateConvention = FromCoordinateConventionDTO(modelDTO.coordinateConvention);
 
-            // 下絵（規約4：CSV/JSON 対称）
+            // 下絵（規約4：CSV / JSON / バイナリ対称）
             model.Underlay = UnderlayDTO.ToData(modelDTO.underlay);
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
@@ -404,6 +404,8 @@ namespace Poly_Ling.Serialization
                 contextData.isVisible = meshContext.IsVisible;
                 contextData.isLocked = meshContext.IsLocked;
                 contextData.isFolding = meshContext.IsFolding;
+                // 項目の出力の未確定（段 F）
+                contextData.modifierOutputEdited = ModifierEvaluator.IsOutputEdited(meshContext);
 
                 // 協働編集。ここで写さないと CSV 書き出しの往復で 0 / 空に落ちる。
                 contextData.objectId   = meshContext.ObjectId;
@@ -508,6 +510,8 @@ namespace Poly_Ling.Serialization
                 IsVisible = meshDTO.isVisible,
                 IsLocked = meshDTO.isLocked,
                 IsFolding = meshDTO.isFolding,
+                // 項目の出力の未確定（段 F）。未確定なら印（1）、でなければ未記録（0）
+                ModifierForwardSig = meshDTO.modifierOutputEdited ? MeshContext.ModifierForwardSigEditedMark : 0UL,
                 // 協働編集
                 ObjectId = meshDTO.objectId,
                 // EditorName は作業中だけの一時ロックなので読み込まない（操作経路統一計画.md L-1）。

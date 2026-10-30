@@ -88,6 +88,8 @@ namespace Poly_Ling.View
         /// ボーン生成前のメッシュ属性なので、オブジェクトリストで設定する。
         /// </summary>
         bool IsMirrorBranchRoot { get; }
+        /// <summary>ミラー分岐のミラー側も実体側と同じ向きに動かすか（MeshObject.MirrorBranchSameSense）。</summary>
+        bool MirrorBranchSameSense { get; }
 
         // ボーン
         int BoneIndex { get; }
@@ -427,6 +429,29 @@ namespace Poly_Ling.View
         public bool   OutputMissing;
         /// <summary>詳細表示の文（項目・入力・退避）。</summary>
         public string Detail;
+        /// <summary>項目ごとの引数（並びは項目順）。</summary>
+        public ObjectGroupStepView[] Steps = System.Array.Empty<ObjectGroupStepView>();
+    }
+
+    /// <summary>オブジェクトグループの項目 1 つの引数の写し。</summary>
+    public sealed class ObjectGroupStepView
+    {
+        public string   Action;
+        public bool     IsExecutable;
+        /// <summary>引数のキー（キー順）。</summary>
+        public string[] Keys     = System.Array.Empty<string>();
+        /// <summary>今の値。Keys と同じ並び。</summary>
+        public string[] Values   = System.Array.Empty<string>();
+        /// <summary>書けるか（ObjectGroupOps.ArgWriteBlockReason が null）。Keys と同じ並び。</summary>
+        public bool[]   Writable = System.Array.Empty<bool>();
+
+        // ── 逆方向（段 6）
+        /// <summary>逆方向の方法。空なら逆方向を持たない。</summary>
+        public string InverseMethod = "";
+        public string InverseKeeps  = "";
+        public string InverseLoses  = "";
+        /// <summary>出力の編集が未確定か（ModifierEvaluator.IsOutputEditPending）。</summary>
+        public bool   OutputEditPending;
     }
 
     // ================================================================

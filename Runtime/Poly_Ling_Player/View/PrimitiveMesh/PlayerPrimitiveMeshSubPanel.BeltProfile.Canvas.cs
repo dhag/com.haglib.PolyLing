@@ -57,11 +57,12 @@ namespace Poly_Ling.Player
                                         ch / RevolutionProfileEditCore.RangeY);
             float s = (ed.BgScale * baseScale) / bh;
 
+            // 画像の原点（BgOrigin, 画像px・Y下向き）を断面点 BgOffset に合わせ、拡大縮小も原点を中心に行う
             Vector2 c = RevolutionProfileEditCore.ProfileToCanvas(ed.BgOffset, cw, ch, 1f, Vector2.zero);
-            ed.BgEl.style.left   = c.x - bw * 0.5f; ed.BgEl.style.top = c.y - bh * 0.5f;
+            ed.BgEl.style.left   = c.x - ed.BgOrigin.x; ed.BgEl.style.top = c.y - ed.BgOrigin.y;
             ed.BgEl.style.width  = bw; ed.BgEl.style.height = bh;
             ed.BgEl.style.transformOrigin = new TransformOrigin(
-                new Length(bw * 0.5f, LengthUnit.Pixel), new Length(bh * 0.5f, LengthUnit.Pixel), 0f);
+                new Length(ed.BgOrigin.x, LengthUnit.Pixel), new Length(ed.BgOrigin.y, LengthUnit.Pixel), 0f);
             ed.BgEl.style.scale   = new Scale(new Vector3(s, s, 1f));
             ed.BgEl.style.opacity = ed.BgAlpha;
             ed.BgEl.style.backgroundSize = new StyleBackgroundSize(

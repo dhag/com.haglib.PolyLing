@@ -7,7 +7,7 @@
 //   「どの描画オブジェクトを対象にするか」を MeshContextList の索引で持つものがある。
 //     CreatePlaceObjectCommand.SourceMasterIndices   … 藤壺の配置元
 //     PrimitivePlacement.AddTargetIndex              … 「既存へ追加」の追加先
-//     ApplyBlendCommand.DestMasterIndex / SrcMasterIndices … ブレンドの宛先とソース
+//     ApplyBlendCommand.DestMasterIndex / SourceMasterIndices / BaseMasterIndex … ブレンドの宛先・ソース・基準
 //   索引はリストの挿入・削除・並べ替えでずれるので、保存した値をそのまま
 //   Create へ渡すと別のオブジェクトを指す。再構築の直前に ObjectId から
 //   引き直すために、どのキーがそれに当たるかを知る必要がある。
@@ -56,8 +56,12 @@ namespace Poly_Ling.Data
             /// </summary>
             public readonly string WriteWhen;
 
-            public MeshRefKey(string key, bool isArray, string modelKey, PLMeshRefAccess access, string writeWhen)
-            { Key = key; IsArray = isArray; ModelKey = modelKey ?? ""; Access = access; WriteWhen = writeWhen ?? ""; }
+            /// <summary>指すオブジェクトをどの空間で読むか（PLParam.MeshRefSpace。段 10）。</summary>
+            public readonly PLMeshRefSpace Space;
+
+            public MeshRefKey(string key, bool isArray, string modelKey, PLMeshRefAccess access, string writeWhen,
+                              PLMeshRefSpace space = PLMeshRefSpace.Unspecified)
+            { Key = key; IsArray = isArray; ModelKey = modelKey ?? ""; Access = access; WriteWhen = writeWhen ?? ""; Space = space; }
 
             /// <summary>別モデルを指しうるか。</summary>
             public bool HasModelKey => !string.IsNullOrEmpty(ModelKey);
@@ -101,7 +105,8 @@ namespace Poly_Ling.Data
                     prop.PropertyType == typeof(int[]),
                     ResolveModelKey(t, attr),
                     attr.MeshRefAccess,
-                    attr.WriteWhen));
+                    attr.WriteWhen,
+                    attr.MeshRefSpace));
             }
 
             return result;
@@ -161,8 +166,11 @@ namespace Poly_Ling.Data
                         $"[PanelCommandFactory] {key}: 入れ子では MeshRefModelKey を使えない");
                 }
 
-                string ww = m.Attr.HasWriteWhen ? prefix + "." + m.Attr.WriteWhen : "";
-                dst.Add(new MeshRefKey(key, m.Type == typeof(int[]), "", m.Attr.MeshRefAccess, ww));
+                // 条件の各節（"&" 区切り）のキーへ外側の接頭辞を付ける。
+                string ww = m.Attr.HasWriteWhen
+                    ? string.Join("&", m.Attr.WriteWhen.Split('&').Select(c => prefix + "." + c.Trim()))
+                    : "";
+                dst.Add(new MeshRefKey(key, m.Type == typeof(int[]), "", m.Attr.MeshRefAccess, ww, m.Attr.MeshRefSpace));
             }
         }
 
@@ -680,34 +688,55 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>
-        /// "キー=値1|値2" を分解する。形が正しくなければ false。
+        /// 書き込み条件の 1 節 "キー=値1|値2" を分解する。形が正しくなければ false。
+        /// 値が空（"キー="）は文字列の引数が空のとき（段 D）。
         /// </summary>
-        public static bool TryParseWriteWhen(string writeWhen, out string key, out string[] values)
+        public static bool TryParseWriteWhen(string clause, out string key, out string[] values)
         {
             key = null; values = null;
-            if (string.IsNullOrEmpty(writeWhen)) return false;
-            int eq = writeWhen.IndexOf('=');
-            if (eq <= 0 || eq == writeWhen.Length - 1) return false;
-            key = writeWhen.Substring(0, eq).Trim();
-            values = writeWhen.Substring(eq + 1).Split('|');
+            if (string.IsNullOrEmpty(clause)) return false;
+            int eq = clause.IndexOf('=');
+            if (eq <= 0) return false;
+            key = clause.Substring(0, eq).Trim();
+            values = clause.Substring(eq + 1).Split('|');
             for (int i = 0; i < values.Length; i++) values[i] = values[i].Trim();
             return key.Length > 0;
         }
 
+        /// <summary>書き込み条件を "&amp;" で節に分ける（すべての節を満たすとき書く。段 D）。</summary>
+        public static string[] WriteWhenClauses(string writeWhen)
+        {
+            if (string.IsNullOrEmpty(writeWhen)) return Array.Empty<string>();
+            var parts = writeWhen.Split('&');
+            for (int i = 0; i < parts.Length; i++) parts[i] = parts[i].Trim();
+            return parts;
+        }
+
         /// <summary>
         /// Write 引数がこのコマンドの値で実際に書き込み先になるか。
-        /// args は ToArgs(cmd) の結果。WriteWhen が空なら常に true。
-        /// 条件のキーが args に無いとき（既定値のまま等）は、書き込み先とみなす（安全側）。
+        /// args は ToArgs(cmd) の結果（オブジェクトグループの項目では控えた引数）。WriteWhen が空なら常に true。
+        /// 条件は "&amp;" で並べた節のすべてを満たすとき書き込み先。
+        /// 節のキーが args に無いとき（既定値のまま等）・形が崩れているときは、その節を満たすとみなす（安全側）。
+        /// 担当者判定（RemoteOwnership）・出力の保護（ModifierOutputGuard）・依存グラフ（ModifierEvaluator）が
+        /// 同じこの判定を使う。
         ///
         /// 【enum の比べ方】
         ///   ToArgs は enum を整数の文字列で出す（TryFormat）。WriteWhen は名前で書くので、
         ///   条件のキーの型が enum なら名前を整数へ直してから比べる。
+        /// 【文字列】値は空（"キー="）だけを受け、引数が空のとき満たす。
         /// </summary>
         public static bool IsWriteActive(Type t, MeshRefKey k, IReadOnlyDictionary<string, string> args)
         {
             if (k.Access != PLMeshRefAccess.Write) return false;
             if (string.IsNullOrEmpty(k.WriteWhen)) return true;
-            if (!TryParseWriteWhen(k.WriteWhen, out string key, out string[] values)) return true;
+            foreach (var clause in WriteWhenClauses(k.WriteWhen))
+                if (!ClauseHolds(t, clause, args)) return false;
+            return true;
+        }
+
+        private static bool ClauseHolds(Type t, string clause, IReadOnlyDictionary<string, string> args)
+        {
+            if (!TryParseWriteWhen(clause, out string key, out string[] values)) return true;
             if (args == null || !args.TryGetValue(key, out string actual)) return true;
 
             Type argType = null;
@@ -723,7 +752,7 @@ namespace Poly_Ling.Data
                     if (name == null) continue;
                     want = Convert.ToInt32(Enum.Parse(argType, name)).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 }
-                if (string.Equals(want, actual, StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(want, actual ?? "", StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
         }
@@ -742,20 +771,26 @@ namespace Poly_Ling.Data
 
                 if (k.Access != PLMeshRefAccess.Write)
                 { bad.Add(at + "：Write 以外に付いている"); continue; }
-                if (!TryParseWriteWhen(k.WriteWhen, out string key, out string[] values))
-                { bad.Add(at + "：\"キー=値\" の形ではない"); continue; }
-                if (!TryResolveArgType(t, key, out Type argType))
-                { bad.Add(at + $"：キー {key} が引数に無い"); continue; }
 
-                foreach (var v in values)
+                foreach (var clause in WriteWhenClauses(k.WriteWhen))
                 {
-                    bool ok = argType == typeof(bool)
-                        ? (string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(v, "false", StringComparison.OrdinalIgnoreCase))
-                        : argType.IsEnum
-                            ? Enum.GetNames(argType).Any(n => string.Equals(n, v, StringComparison.OrdinalIgnoreCase))
-                            : false;
-                    if (!ok) bad.Add(at + $"：値 {v} は {argType.Name} として読めない（bool と enum だけを受ける）");
+                    if (!TryParseWriteWhen(clause, out string key, out string[] values))
+                    { bad.Add(at + $"：節 \"{clause}\" が \"キー=値\" の形ではない"); continue; }
+                    if (!TryResolveArgType(t, key, out Type argType))
+                    { bad.Add(at + $"：キー {key} が引数に無い"); continue; }
+
+                    foreach (var v in values)
+                    {
+                        bool ok = argType == typeof(bool)
+                            ? (string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(v, "false", StringComparison.OrdinalIgnoreCase))
+                            : argType.IsEnum
+                                ? Enum.GetNames(argType).Any(n => string.Equals(n, v, StringComparison.OrdinalIgnoreCase))
+                                : argType == typeof(string)
+                                    ? v.Length == 0
+                                    : false;
+                        if (!ok) bad.Add(at + $"：値 \"{v}\" は {argType.Name} として読めない（bool・enum と、文字列の空だけを受ける）");
+                    }
                 }
             }
             return bad;

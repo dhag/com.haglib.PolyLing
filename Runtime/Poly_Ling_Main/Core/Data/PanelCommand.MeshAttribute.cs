@@ -391,6 +391,22 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
     }
 
+    /// <summary>ミラー分岐のミラー側も実体側と同じ向きに動かすかを設定するコマンド。</summary>
+    [PLCommand(Category = "mirror", Effects = PLCommandEffect.MirrorSetting, Writes = PLWriteScope.Targets,
+               Description = "ミラー分岐ルートに「ミラー側も同じ向きに動かす」を設定する。立てた枝のヒエラルキー書き出し（MeshFilter）では、ミラー側の向きを鏡像からミラー軸まわりに 180° 回し、同じ値のローカル回転が 3 軸とも実体側の動きの鏡像になる。分岐ルートにだけ意味がある。")]
+    public class SetMirrorBranchSameSenseCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "対象の描画オブジェクト（ミラー分岐ルート）の masterIndex 配列", Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "MirrorBranchSameSenseValue",
+                 Description = "ミラー側も実体側と同じ向きに動かす", Required = true)]
+        public bool  Value         { get; }
+        public SetMirrorBranchSameSenseCommand(int modelIndex, int[] masterIndices, bool value)
+            : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
+    }
+
     [PLCommand(Category = "mirror", Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つのミラー種別を次の値へ送る。")]
     public class CycleMirrorTypeCommand : PanelCommand
     {

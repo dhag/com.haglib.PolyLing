@@ -289,6 +289,25 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// アダプター mi のバッファが model の今の描画オブジェクトと合っているか（作り直し整備計画 段 A・段 B）。
+        /// アダプターを作ったモデルが違えば false。アダプターが無いときは、載せるものが無ければ true。
+        /// </summary>
+        public bool AdapterMatchesModel(int mi, ModelContext model)
+        {
+            if (model == null) return false;
+            var adapter = GetAdapter(mi);
+            if (adapter == null || !adapter.IsInitialized)
+            {
+                // RebuildAdapter は頂点を持つ描画オブジェクトが無いとアダプターを作らない。
+                foreach (var mc in model.MeshContextList)
+                    if (mc?.MeshObject != null && mc.MeshObject.VertexCount > 0) return false;
+                return true;
+            }
+            if (mi >= _adapterModels.Count || !ReferenceEquals(_adapterModels[mi], model)) return false;
+            return adapter.BufferManager != null && adapter.BufferManager.MatchesModel(model);
+        }
+
+        /// <summary>
         /// 全アダプター数（ビューポートマネージャーがループ走査する際に使う）。
         /// </summary>
         public int AdapterCount => _adapters.Count;
@@ -397,11 +416,11 @@ namespace Poly_Ling.Core
         {
             Poly_Ling.Diagnostics.PLResStat.Report("RebuildAdapter.enter mi=" + mi);
 
-            // サブディビジョンの子を親に合わせる。子は親から作る派生物で、
-            // バッファを組む前に中身が揃っていなければならない（面の追加・削除・
-            // Undo・読み込みはどれもこの入口を通る）。差し替えた旧 Mesh は
+            // オブジェクトグループの項目（モディファイア）を入力に合わせる（評価器のきっかけ 1）。
+            // サブディビジョンの子のような派生物は、バッファを組む前に中身が揃っていなければ
+            // ならない（面の追加・削除・Undo・読み込みはどれもこの入口を通る）。差し替えた旧 Mesh は
             // 遅延破棄に積まれ、直後の FlushRetiredMeshes で解放される。
-            Poly_Ling.Ops.SubdivisionSync.RefreshModel(model);
+            Poly_Ling.Ops.ModifierEvaluator.RefreshModel(model);
 
             // 書き戻しが積んだ旧 Mesh をここで解放する。
             // 再構築の入口なので前フレームの描画は完了している。

@@ -356,6 +356,13 @@ namespace Poly_Ling.Player
 
         private void EndPreview() => Surface?.Invoke(Tool, "endPreview");
 
+        /// <summary>プレビュー中なら終えて見た目を元へ戻す（Undo・Redo の前に Viewer が呼ぶ）。</summary>
+        public void CancelIfActive()
+        {
+            if (Surface == null || Surface.GetInt(Tool, "previewSetIndex") < 0) return;
+            OnEndPreview();
+        }
+
         // ── エントリのウェイト ────────────────────────────────────────────
         // 操作中は previewEntryWeight で見た目だけ変え、離したときに commitEntryWeights で
         // SetMorphEntryWeightsCommand（Undo 1 回ぶん）として確定する。

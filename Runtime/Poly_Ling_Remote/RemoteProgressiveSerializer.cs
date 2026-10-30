@@ -11,8 +11,9 @@
 //
 // 【決まり】シリアライザ（CSV / JSON(.mfproj) / このバイナリ）は 3 つ揃えて直す。
 //   CSV や JSON に項目を足したら、ここにも足す（リモート送信はこのバイナリで行う）。
-//   確認は saveProjectCsv → saveProjectBinary → loadProjectBinary → saveProjectCsv の
-//   2 つの CSV を比べる（PolyLing_追加作業の必読.md の E）。
+//   確認は queryProjectSyncDiff（JSON とバイナリ経由の JSON の差分 0）と、
+//   saveProjectCsv → saveProjectBinary → loadProjectBinary → saveProjectCsv の
+//   2 つの CSV を比べる（PolyLing_追加作業の必読.md の E。規約 4）。
 
 using System;
 using System.Collections.Generic;
@@ -146,6 +147,10 @@ namespace Poly_Ling.Remote
         //                  [2B] ParamCount ([string] Name [string] Default [string] Description) × ParamCount
         //                  [2B] StepCount …
         //     グループは途中に並ぶので Version 10 以前の受信側とは非互換。Editor/Player を同時更新すること。
+        //   ※ Version 12 で末尾に表情の作成日時（MorphExpression.CreatedAt。.mfproj の morphExpressions[].createdAt）を追加。
+        //     [4B] ExpressionCount  ([8B] DateTime.ToBinary) × ExpressionCount。並びは MorphExpressions と同じ。
+        //     続けて ObjectGroup の付帯（作成日時・出力・項目の利用シーンと点の成分数。WriteObjectGroupExtras）。
+        //     Version 11 以前の受信側は末尾のこの欄を読まずに終わる。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -163,7 +168,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)11);  // version 11: シナリオの引数（ObjectGroup.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
+                w.Write((byte)12);  // version 12: 表情の作成日時。version 11: シナリオの引数（ObjectGroup.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -311,6 +316,12 @@ namespace Poly_Ling.Remote
 
                 // ── version 10：グループモーフの子（morphgroups.csv の子の欄と揃える）
                 WriteMorphGroupChildren(w, model);
+
+                // ── version 12：表情の作成日時（.mfproj の morphExpressions[].createdAt と揃える）
+                WriteMorphExpressionCreatedAt(w, model);
+
+                // ── version 12：ObjectGroup の付帯（作成日時・出力・項目の利用シーンと点の成分数）
+                WriteObjectGroupExtras(w, model);
 
                 return ms.ToArray();
             }
@@ -505,6 +516,7 @@ namespace Poly_Ling.Remote
 
                             // Version 4 以前には ScenarioItemId が無い。
                             g.EnsureScenarioItemIds();
+                            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(g);   // 段 13 より前のブレンド
                             model.ObjectGroups.Add(g);
                             continue;
                         }
@@ -538,6 +550,7 @@ namespace Poly_Ling.Remote
                         }
 
                         g3.EnsureScenarioItemIds();
+                        Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(g3);   // 段 13 より前のブレンド
                         model.ObjectGroups.Add(g3);
                     }
                 }
@@ -553,6 +566,13 @@ namespace Poly_Ling.Remote
                 // ── version 10：グループモーフの子
                 if (metaVersion >= 10)
                     ReadMorphGroupChildren(r, model);
+
+                // ── version 12：表情の作成日時
+                if (metaVersion >= 12)
+                {
+                    ReadMorphExpressionCreatedAt(r, model);
+                    ReadObjectGroupExtras(r, model);
+                }
 
                 return (modelIndex, model);
             }
@@ -586,6 +606,12 @@ namespace Poly_Ling.Remote
         // [RigidBody][1B] Has (if) *.pmx_physics.csv の rigidBody 行と同じ項目                            (v6+)
         // [Joint]    [1B] Has (if) *.pmx_physics.csv の joint 行と同じ項目                                (v6+)
         //   ※ v6 で末尾に追加。v5 以前の受信側は読まずに終わる。
+        // [MeshExtras] (v7+)  RemoteProgressiveSerializer.Extras.cs の WriteMeshExtras
+        // [1B] HasMorphBaseData (v8+)  (if) [8B] CreatedAt（DateTime.ToBinary。.mfproj の morphBaseData.createdAt）
+        //   ※ v8 で末尾に追加。v7 以前の受信側は読まずに終わる。
+        // [1B] MirrorBranchSameSense (v9+)
+        // [1B] HasSkinBakeMatrix (v10+)  (if) [4B × 16] SkinBakeMatrix
+        // [1B] ModifierOutputEdited (v11+)  項目の出力の未確定（段 F）。v10 以前の受信側は読まずに終わる。
         // ================================================================
 
         public static byte[] SerializeMeshSummary(MeshContext mc, int modelIndex, int meshIndex)
@@ -595,7 +621,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)7);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値 / v6: ポーズ層・IK リンク・剛体・ジョイント / v7: メッシュ単位の付帯
+                w.Write((byte)11);  // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値 / v6: ポーズ層・IK リンク・剛体・ジョイント / v7: メッシュ単位の付帯 / v8: モーフ基準データの作成日時 / v9: ミラー分岐の同じ向き / v10: スキンド化のときに焼いた行列 / v11: 項目の出力の未確定
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -739,6 +765,27 @@ namespace Poly_Ling.Remote
 
                 // ---- v7: メッシュ単位の付帯（CSV の mesh 行と揃える。RemoteProgressiveSerializer.Extras.cs）----
                 WriteMeshExtras(w, mc);
+
+                // ---- v8: モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt と揃える）----
+                var mbdAt = mc.MorphBaseData;
+                w.Write(mbdAt != null);
+                if (mbdAt != null) w.Write(mbdAt.CreatedAt.ToBinary());
+
+                // ---- v9: ミラー分岐のミラー側も同じ向きに動かすか（CSV の mirrorBranchSameSense と揃える）----
+                w.Write(mc.MirrorBranchSameSense);
+
+                // ---- v10: スキンド化のときに焼いた ローカル→バインド の行列（CSV の skinBakeMatrix と揃える。段 10）----
+                var sbmo = mc.MeshObject;
+                bool hasSbm = sbmo != null && sbmo.HasSkinBakeMatrix;
+                w.Write(hasSbm);
+                if (hasSbm)
+                {
+                    var sbm = sbmo.SkinBakeMatrix;
+                    for (int k = 0; k < 16; k++) w.Write(sbm[k]);
+                }
+
+                // ---- v11: 項目の出力の未確定（CSV の modifierOutputEdited と揃える。段 F）----
+                w.Write(Poly_Ling.Ops.ModifierEvaluator.IsOutputEdited(mc));
 
                 return ms.ToArray();
             }
@@ -964,6 +1011,35 @@ namespace Poly_Ling.Remote
                 if (summaryVersion >= 7)
                     ReadMeshExtras(r, mc);
 
+                // ---- v8: モーフ基準データの作成日時 ----
+                // 送信元にあって受け側に無い（基準位置 0 件）ときは読み捨てる。
+                if (summaryVersion >= 8 && r.ReadBoolean())
+                {
+                    var createdAt = DateTime.FromBinary(r.ReadInt64());
+                    if (mc.MorphBaseData != null) mc.MorphBaseData.CreatedAt = createdAt;
+                }
+
+                // ---- v9: ミラー分岐のミラー側も同じ向きに動かすか ----
+                if (summaryVersion >= 9)
+                    mc.MirrorBranchSameSense = r.ReadBoolean();
+
+                // ---- v10: スキンド化のときに焼いた行列 ----
+                if (summaryVersion >= 10 && r.ReadBoolean())
+                {
+                    var sbm = new UnityEngine.Matrix4x4();
+                    for (int k = 0; k < 16; k++) sbm[k] = r.ReadSingle();
+                    if (mc.MeshObject != null)
+                    {
+                        mc.MeshObject.SkinBakeMatrix    = sbm;
+                        mc.MeshObject.HasSkinBakeMatrix = true;
+                    }
+                }
+
+                // ---- v11: 項目の出力の未確定（段 F）。未確定なら印（1）、でなければ未記録（0）----
+                if (summaryVersion >= 11)
+                    mc.ModifierForwardSig = r.ReadBoolean()
+                        ? MeshContext.ModifierForwardSigEditedMark : 0UL;
+
                 // BoneTransform は MeshObject 設定後に適用
                 // mc.MeshObject は先頭で生成済み（Name/Type書き込み済み）なのでそのまま使う
                 if (hasBone)
@@ -1185,7 +1261,8 @@ namespace Poly_Ling.Remote
             // ---- version 2 拡張ブロック ----
             if (version >= 2)
             {
-                d.ShaderName = ReadString(r);
+                // 書きは null を "" にする。CSV（NullIfEmpty）と同じく null に戻す（規約4）。
+                d.ShaderName = NullIfEmpty(ReadString(r));
                 d.BaseMapST = ReadST(r);
                 d.NormalMapST = ReadST(r);
                 d.EmissionMapST = ReadST(r);

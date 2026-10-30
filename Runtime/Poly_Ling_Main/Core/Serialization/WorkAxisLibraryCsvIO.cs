@@ -38,7 +38,8 @@ namespace Poly_Ling.Serialization
     {
         private const string Header = "Name,OX,OY,OZ,QX,QY,QZ,QW,Length";
 
-        private static string F(float v) => v.ToString(CultureInfo.InvariantCulture);
+        // G9：float を正確に往復させる（CsvMeshSerializer と同じ）。書式指定なしでは桁が落ちて値がずれる。
+        private static string F(float v) => v.ToString("G9", CultureInfo.InvariantCulture);
 
         private static bool P(string s, out float v)
             => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);

@@ -220,7 +220,10 @@ namespace Poly_Ling.Data
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
+            copy.HasSkinBakeMatrix    = this.HasSkinBakeMatrix;
+            copy.SkinBakeMatrix       = this.SkinBakeMatrix;
             copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
+            copy.MirrorBranchSameSense = this.MirrorBranchSameSense;
             copy.PreserveNormals      = this.PreserveNormals;
             copy.Billboard            = this.Billboard;
             copy.DoubleSidedDisplay   = this.DoubleSidedDisplay;
@@ -273,7 +276,10 @@ namespace Poly_Ling.Data
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
+            copy.HasSkinBakeMatrix    = this.HasSkinBakeMatrix;
+            copy.SkinBakeMatrix       = this.SkinBakeMatrix;
             copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
+            copy.MirrorBranchSameSense = this.MirrorBranchSameSense;
             copy.PreserveNormals      = this.PreserveNormals;
             copy.Billboard            = this.Billboard;
             copy.DoubleSidedDisplay   = this.DoubleSidedDisplay;

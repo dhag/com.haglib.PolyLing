@@ -19,7 +19,7 @@ namespace Poly_Ling.Data
     [PLResult("schemaRevision",   PLResultKind.Text,    Description = "道具一覧の版。コマンドの顔ぶれが変わると変わる")]
     [PLResult("scenarioRevision", PLResultKind.Integer, Description = "シナリオの置き場の版")]
     [PLResult("sceneRevision",    PLResultKind.Integer, Description = "利用シーンの置き場の版")]
-    [PLResult("activeModes",      PLResultKind.TextArray, Description = "いま続いている一時的な状態。scenarioRecording / scenarioRecordingPaused / scenarioRecordingEnded / scenarioRun / morphPreview / blendPreview。無ければ空", Optional = true)]
+    [PLResult("activeModes",      PLResultKind.TextArray, Description = "いま続いている一時的な状態。scenarioRecording / scenarioRecordingPaused / scenarioRecordingEnded / scenarioRun（流している途中） / scenarioRunEnded（流し終えて、まだやめていない） / morphPreview / blendPreview。無ければ空", Optional = true)]
     public sealed class QueryRevisionsCommand : PanelCommand
     {
         public QueryRevisionsCommand(int modelIndex = 0)

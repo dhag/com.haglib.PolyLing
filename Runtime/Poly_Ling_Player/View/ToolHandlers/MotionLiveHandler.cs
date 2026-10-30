@@ -252,7 +252,8 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// フレームのマッスル（＋root）を正準骨格に当て、駆動されているボーンと Hips のローカル回転を f.BoneRot へ入れる。
-        /// 値の無いマッスルは、駆動されているボーンの dof なら 0（受信側 ApplyMuscleFrame と同じ）、
+        /// 値の無いマッスルは、駆動されているボーンの dof なら 0（absentMuscles="rest" のフレームは正準 T ポーズの値。
+        /// 受信側 ApplyMuscleFrame と同じ）、
         /// 駆動されていないボーンなら正準 T ポーズの値（そのボーンは単位ローカルになり、祖先に付いていく）。
         /// root が無ければレストの body。メインスレッドで呼ぶ。
         /// </summary>
@@ -284,7 +285,8 @@ namespace Poly_Ling.Player
                 if (mi < f.Valid.Length && f.Valid[mi] && mi < f.Muscles.Length) { _boneBuf[mi] = f.Muscles[mi]; continue; }
                 int b = HumanTrait.BoneFromMuscle(mi);
                 bool driven = b >= 0 && b < _drivenBone.Length && _drivenBone[b];
-                _boneBuf[mi] = driven ? 0f : (rest != null && mi < rest.Length ? rest[mi] : 0f);
+                float restV = rest != null && mi < rest.Length ? rest[mi] : 0f;
+                _boneBuf[mi] = driven && !f.AbsentRest ? 0f : restV;
             }
 
             _canon.SetMuscles(_boneBuf, f.HasRoot ? f.RootT : (Vector3?)null, f.HasRoot ? f.RootQ : (Quaternion?)null);
@@ -482,7 +484,7 @@ namespace Poly_Ling.Player
 
             var model = GetModel?.Invoke();
             if (model == null) return;
-            _applier.ApplyMuscleFrame(model, f.Muscles, f.Valid, (float)f.Time);
+            _applier.ApplyMuscleFrame(model, f.Muscles, f.Valid, (float)f.Time, f.AbsentRest);
             Interlocked.Increment(ref _applied);
             OnFrameApplied?.Invoke();
         }

@@ -86,7 +86,7 @@ namespace Poly_Ling.PrimitiveMesh
             if (dst == null || src == null || src.VertexCount == 0) return;
             Axes(angleDeg, facing, out var x, out var y);
             PlaceObjectMeshGenerator.AppendInstance(
-                dst, src, Position(radius, angleDeg), x, y, Vector3.forward, scale, true, partsId);
+                dst, src, Position(radius, angleDeg), x, y, Vector3.forward, scale, true, partsId, partsId);
         }
     }
 

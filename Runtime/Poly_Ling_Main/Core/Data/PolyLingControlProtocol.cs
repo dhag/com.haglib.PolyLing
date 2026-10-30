@@ -410,11 +410,19 @@ namespace Poly_Ling.Data
             if (!raw.TryGetValue("command", out string command) || string.IsNullOrEmpty(command))
                 return BuildError(op, "params.command がありません", CommandErrorCodes.InvalidArgs);
 
-            int modelIndex = 0;
+            // modelIndex を省くか負にしたら、カレントのモデルを対象にする（以前は 0 に決め打ちで、
+            // カレントでないモデル 0 を指して「参照先が別のモデルにあります」で断られることがあった）。
+            // モデルが無ければ 0（モデルを要らないコマンドはそのまま通る）。
+            int modelIndex = -1;
             if (raw.TryGetValue("modelIndex", out string mi) && !string.IsNullOrEmpty(mi))
             {
                 if (!int.TryParse(mi, out modelIndex))
                     return BuildError(op, $"modelIndex を整数にできません: {mi}", CommandErrorCodes.InvalidArgs);
+            }
+            if (modelIndex < 0)
+            {
+                int cur = PolyLingCommandGateway.CurrentModelIndex?.Invoke() ?? -1;
+                modelIndex = cur >= 0 ? cur : 0;
             }
 
             // 封筒の値。コマンドの引数ではないので外す。

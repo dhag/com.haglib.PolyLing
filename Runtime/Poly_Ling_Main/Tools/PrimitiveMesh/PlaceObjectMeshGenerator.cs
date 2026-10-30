@@ -57,7 +57,8 @@ namespace Poly_Ling.PlaceObject
             bool beltClosed, bool flipWinding,
             IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f,
             int rollSteps = 0, PlaceScaleMode scaleMode = PlaceScaleMode.RungLength,
-            PartsIdCounter partsIds = null)
+            PartsIdCounter partsIds = null,
+            IReadOnlyList<BoneWeight?> leftWeights = null, IReadOnlyList<BoneWeight?> rightWeights = null)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
@@ -98,7 +99,12 @@ namespace Poly_Ling.PlaceObject
                 bool assignParts = (partsIds != null);
                 int  partsId     = assignParts ? partsIds.Take() : 0;
 
-                AppendInstance(mo, source, center, x, y, zDir, scale, assignParts, partsId);
+                // はしごのウェイト（載っていれば。段 I）：段の左右を半々に混ぜた 1 つの値を部品全体へ。
+                BoneWeight? w = null;
+                if (leftWeights != null && rightWeights != null && i < leftWeights.Count && i < rightWeights.Count)
+                    w = Poly_Ling.UI.SkinWeightOps.LerpNullable(leftWeights[i], rightWeights[i], 0.5f);
+
+                AppendInstance(mo, source, center, x, y, zDir, scale, assignParts, partsId, i, w);
             }
 
             mo.RecalculateNormals();
@@ -129,8 +135,8 @@ namespace Poly_Ling.PlaceObject
         // 配置フレーム
         // ================================================================
 
-        /// <summary>rung i に隣接する矩形を 2 三角ずつに割り、その法線の平均を返す。</summary>
-        private static Vector3 RungNormal(
+        /// <summary>rung i に隣接する矩形を 2 三角ずつに割り、その法線の平均を返す。まつげ（LushMeshGenerator）も使う。</summary>
+        public static Vector3 RungNormal(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding, int segments, int i)
         {
@@ -175,13 +181,19 @@ namespace Poly_Ling.PlaceObject
         /// src をフレーム (center, x, y, z) と倍率で dst の末尾へ複製する。
         /// 法線は写さない（呼び出し側が最後に RecalculateNormals する）。
         /// 頂点へ藤壺（VertexBillboardPlaceOps）もこれを使う。
+        /// weight があれば、複製した全頂点のボーンウェイトにする（はしごのウェイトの引き継ぎ。段 I）。
         /// </summary>
         public static void AppendInstance(
             MeshObject dst, MeshObject src,
             Vector3 center, Vector3 x, Vector3 y, Vector3 z, float scale,
-            bool assignParts, int partsId)
+            bool assignParts, int partsId, int frameKey = -1, BoneWeight? weight = null)
         {
             int baseIdx = dst.VertexCount;
+
+            // 逆方向の控え（ModifierFrameTrace）。控えていなければ何もしない。
+            //   枠の番号は呼び出し側が渡す（梯子なら段の番号、ほかは置いた順）。渡されなければパーツ ID。
+            Poly_Ling.Ops.ModifierFrameTrace.RecordInstance(
+                dst, baseIdx, src.VertexCount, frameKey >= 0 ? frameKey : partsId, center, scale);
 
             for (int v = 0; v < src.VertexCount; v++)
             {
@@ -199,6 +211,7 @@ namespace Poly_Ling.PlaceObject
                 // サブIDは配置元の値をそのまま使う（新規採番はしない）。
                 nv.SubId = sv.SubId;
                 if (assignParts) nv.PartsId = partsId;
+                if (weight.HasValue) nv.BoneWeight = weight;
 
                 dst.Vertices.Add(nv);
             }

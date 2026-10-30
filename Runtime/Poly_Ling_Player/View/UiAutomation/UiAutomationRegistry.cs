@@ -167,10 +167,20 @@ namespace Poly_Ling.Player
             {
                 if (_dynamicSources.Count == 0) return _controlOrder;
                 var list = new List<ControlEntry>(_controlOrder);
+                var seen = new HashSet<string>();
                 foreach (var ds in _dynamicSources)
+                {
+                    // 行の一部だけを作り直す箇所（Begin を通らずに Add し直す）では、同じ ID の
+                    // 控えが古い要素の分だけ残る。一覧には ID ごとに 1 件だけ出し、中身は
+                    // 押す・値を入れる対象と同じ Find の結果から作る。並びは最初に出た順。
+                    seen.Clear();
                     foreach (var e in ds.Controls.Entries)
-                        if (ds.Group == null || e.Group == ds.Group)
-                            list.Add(MakeDynamicEntry(ds, e));
+                    {
+                        if (ds.Group != null && e.Group != ds.Group) continue;
+                        if (!seen.Add(e.Id)) continue;
+                        list.Add(MakeDynamicEntry(ds, ds.Controls.Find(e.Id, ds.Group) ?? e));
+                    }
+                }
                 return list;
             }
         }
@@ -193,6 +203,40 @@ namespace Poly_Ling.Player
         }
 
         private readonly List<DynamicSource> _dynamicSources = new List<DynamicSource>();
+
+        /// <summary>
+        /// 動的なボタンや入力欄の ID の重複。同じ置き場・同じ組で、画面に付いている別々の要素が
+        /// 同じ ID を持つもの（「ID（件数）」）。押す・値を入れる対象はそのうち 1 つにしかならない。
+        /// 同じ置き場を複数のパネルが見ていても、置き場と組の組み合わせごとに 1 回だけ数える。
+        /// </summary>
+        public List<string> CollectDuplicateDynamicIds()
+        {
+            var list    = new List<string>();
+            var checkedSources = new HashSet<(UiDynamicControls, string)>();
+            var byId    = new Dictionary<string, HashSet<VisualElement>>();
+            var order   = new List<string>();
+            foreach (var ds in _dynamicSources)
+            {
+                if (!checkedSources.Add((ds.Controls, ds.Group))) continue;
+                byId.Clear(); order.Clear();
+                foreach (var e in ds.Controls.Entries)
+                {
+                    if (ds.Group != null && e.Group != ds.Group) continue;
+                    if (e.Element == null || e.Element.panel == null) continue;
+                    if (!byId.TryGetValue(e.Id, out var set))
+                    {
+                        set = new HashSet<VisualElement>();
+                        byId.Add(e.Id, set);
+                        order.Add(e.Id);
+                    }
+                    set.Add(e.Element);
+                }
+                foreach (var id in order)
+                    if (byId[id].Count > 1)
+                        list.Add($"{ds.Head}{id}（{byId[id].Count} 件、{ds.Source}）");
+            }
+            return list;
+        }
 
         private static ControlEntry MakeDynamicEntry(DynamicSource ds, UiDynamicControls.Entry e)
         {
@@ -398,6 +442,16 @@ namespace Poly_Ling.Player
                     {
                         if (f.GetValue(instance) is UiDynamicControls dyn)
                         {
+                            // 置き場を指すだけのフィールド（PlayerPrimitiveMeshSubPanel._uiRowTarget など）は
+                            // 別の置き場ではない。同じパネル・同じ接頭辞で同じ置き場を 2 回登録すると、
+                            // 一覧に中身がまるごと 2 回出る。
+                            bool already = false;
+                            foreach (var other in _dynamicSources)
+                                if (ReferenceEquals(other.Controls, dyn) && other.PanelId == panelId
+                                    && other.IdPrefix == idPrefix && other.Group == dynamicGroup)
+                                { already = true; break; }
+                            if (already) continue;
+
                             _dynamicSources.Add(new DynamicSource
                             {
                                 PanelId  = panelId,

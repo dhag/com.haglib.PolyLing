@@ -421,6 +421,26 @@ namespace Poly_Ling.Data
                 foreach (var n in noAccess) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // 読む空間（PLParam.MeshRefSpace）の未指定。グループに残るコマンド（Capture が OnKeepAsGroup・Always）の
+            // 入力キー（ModifierInventory.InputKeys）だけを数える。評価器が署名の取り方とスキンド化済みの入力の
+            // 読み方をこれで決めるので完了条件に入れる（作り直し整備計画 段 10）。
+            var noSpace = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                var ma = t.GetCustomAttribute<PLModifierAttribute>(inherit: true);
+                if (ma == null || (ma.Capture != PLGroupCapture.OnKeepAsGroup && ma.Capture != PLGroupCapture.Always)) continue;
+                foreach (var k in ModifierInventory.InputKeys(t))
+                    if (k.Space == PLMeshRefSpace.Unspecified) noSpace.Add(t.Name + "." + k.Key);
+            }
+
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] 読む空間（PLParam.MeshRefSpace）が未指定のモディファイアの入力 ").Append(noSpace.Count);
+            if (noSpace.Count > 0)
+            {
+                sb.Append('\n').Append("── MeshRefSpace が Unspecified ──");
+                foreach (var n in noSpace) sb.Append('\n').Append("  ").Append(n);
+            }
+
             // 書き込み条件（PLParam.WriteWhen）の書き間違い。担当者判定がこれを読むので完了条件に入れる。
             var badWhen = new List<string>();
             foreach (var t in PLParamAudit.FindCommandTypes())

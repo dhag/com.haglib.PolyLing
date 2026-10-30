@@ -17,6 +17,8 @@
 // 【シナリオは実体に縛らない】
 //   saveScenarioFromGroup は MeshRefIds と OutputObjectIds を落としてから登録する。
 //   焼き付けると、そのモデルを閉じた時点で死んだ ObjectId がシナリオに残る。
+//   つながりは捨てずに書き換える（作り直し整備計画 段 11。ObjectGroupOps.BuildScenarioSteps）：
+//   同じグループの前の項目の出力 → @<項目 ID>.masterIndices、グループの外 → シナリオの引数。
 
 using System;
 using System.Collections.Generic;
@@ -476,7 +478,7 @@ namespace Poly_Ling.Player
                     if (dot <= 1)
                     {
                         Add(id, "badRef", kv.Key,
-                            $"{v} は @ で始まるので、流したとき参照として読まれるが、@prev.<キー> か @<項目 ID>.<キー> の形になっていない");
+                            $"{v} は @ で始まるので、流したとき参照として読まれるが、@prev.<キー> か @<項目 ID>.<キー> の形になっていない（@ で始まる名前そのものを渡すなら先頭に \\ を付けて \\{v} と書く）");
                         continue;
                     }
 
@@ -958,29 +960,34 @@ namespace Poly_Ling.Player
         private void RunSaveScenarioFromGroup(SaveScenarioFromGroupCommand cmd)
         {
             // この 1 本だけは現在のモデルを読む。
-            var model = _getProject()?.CurrentModel;
+            var project = _getProject();
+            var model = project?.CurrentModel;
             if (model == null) { Fail("no current model"); return; }
 
             var group = model.FindObjectGroupByName(cmd.GroupName);
             if (group == null) { Fail($"オブジェクトグループがありません: {cmd.GroupName}"); return; }
             if (string.IsNullOrEmpty(cmd.ScenarioName)) { Fail("シナリオの名前が空です"); return; }
 
+            // 実体への参照は落とし、つながりは書き換えて残す（作り直し整備計画 段 11）。
+            //   同じグループの前の項目の出力 → @<項目 ID>.masterIndices、グループの外 → シナリオの引数。
+            if (!Poly_Ling.Ops.ObjectGroupOps.BuildScenarioSteps(
+                    project, project.CurrentModelIndex, group,
+                    out var convSteps, out var convParams, out string convError))
+            { Fail($"シナリオへ写せません: {convError}"); return; }
+
             var g = group.Clone();
             g.Name = cmd.ScenarioName;
             if (!string.IsNullOrEmpty(cmd.Goal)) g.Goal = cmd.Goal;
 
-            // 実体への参照は落とす。シナリオは特定のオブジェクトに縛らない。
             g.StashObjectId = 0UL;
             g.SourceDigest  = "";
             g.AutoUpdate    = false;
-            if (g.Steps != null)
+            g.Steps         = convSteps;
+            if (g.Params == null) g.Params = new List<ScenarioParam>();
+            foreach (var p in convParams)
             {
-                foreach (var step in g.Steps)
-                {
-                    if (step == null) continue;
-                    step.OutputObjectIds.Clear();
-                    step.MeshRefIds.Clear();
-                }
+                if (g.FindParam(p.Name) != null) { Fail($"シナリオの引数 {p.Name} が重なります"); return; }
+                g.Params.Add(p);
             }
 
             g.Provenance = new ObjectGroupProvenance
@@ -993,9 +1000,10 @@ namespace Poly_Ling.Player
             if (!ScenarioLibrary.Register(g, cmd.Overwrite, out string error)) { Fail(error); return; }
 
             ReportData(CommandDataJson.New()
-                .Text("name",  g.Name)
-                .Int ("steps", g.StepCount)
-                .Int ("count", ScenarioLibrary.Count)
+                .Text("name",   g.Name)
+                .Int ("steps",  g.StepCount)
+                .Int ("params", convParams.Count)
+                .Int ("count",  ScenarioLibrary.Count)
                 .Build());
         }
 
@@ -1417,7 +1425,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 引数の値が @prev / @&lt;項目 ID&gt; なら、流れの控えから実際の値へ直す。
-        /// どちらでもなければそのまま返す。
+        /// どちらでもなければそのまま返す。\@ で始まる値は先頭の \ を外した文字そのものにする。
         /// 控えが空のときは失敗にする。空文字を黙って入れると、対象なしで
         /// 実行されて原因が見えなくなる。
         /// </summary>
@@ -1427,6 +1435,14 @@ namespace Poly_Ling.Player
             reason   = null;
 
             if (string.IsNullOrEmpty(value)) return true;
+
+            // \@… は参照として読まず、先頭の \ を外した文字そのものとして渡す。
+            // ミラー分岐ルート（@@…）など @ で始まる名前を値に書くため。
+            if (value.Length > 1 && value[0] == '\\' && value[1] == '@')
+            {
+                expanded = value.Substring(1);
+                return true;
+            }
 
             if (string.Equals(value, PrevMasterIndicesToken, StringComparison.Ordinal))
             {

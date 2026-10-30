@@ -166,6 +166,7 @@ namespace Poly_Ling.Player
             c.Add(ShapeTitle(T("Revolution")));
             c.Add(NF(() => _revP.MeshName, v => _revP.MeshName = v));
             c.Add(IR(T("RadialSegments"), RevolutionParams.RadialSegmentsMin, RevolutionParams.RadialSegmentsMax,   () => _revP.RadialSegments, v => { _revP.RadialSegments = v; D(); }));
+            c.Add(SR(T("CornerSplitAngle"), RevolutionParams.CornerSplitAngleMin, RevolutionParams.CornerSplitAngleMax, () => _revP.CornerSplitAngle, v => { _revP.CornerSplitAngle = v; D(); }));
             c.Add(TR(T("CloseTop"),    () => _revP.CloseTop,    v => { _revP.CloseTop    = v; D(); }));
             c.Add(TR(T("CloseBottom"), () => _revP.CloseBottom, v => { _revP.CloseBottom = v; D(); }));
             c.Add(TR(T("CloseLoop"),   () => _revP.CloseLoop,   v => { _revP.CloseLoop   = v; D(); RefreshRevCanvas(); }));
@@ -201,7 +202,7 @@ namespace Poly_Ling.Player
                 }
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
-            c.Add(presetDd);
+            c.Add(RowTarget.Add("Preset", presetDd, T("Preset").Text));
 
             if (_revP.CurrentPreset == ProfilePreset.Donut)
             {
@@ -361,11 +362,11 @@ namespace Poly_Ling.Player
             var revLassoToggle = new Toggle(T("LassoMode")) { value = _revLassoMode };
             revLassoToggle.style.marginLeft = 4;
             revLassoToggle.RegisterValueChangedCallback(ev => _revLassoMode = ev.newValue);
-            revViewRow.Add(revLassoToggle);
+            revViewRow.Add(RowTarget.Add("LassoMode", revLassoToggle, T("LassoMode").Text));
             var revGizmoToggle = new Toggle(T("ShowGizmo")) { value = _revShowGizmo };
             revGizmoToggle.style.marginLeft = 8;
             revGizmoToggle.RegisterValueChangedCallback(ev => { _revShowGizmo = ev.newValue; RefreshRevCanvas(); });
-            revViewRow.Add(revGizmoToggle);
+            revViewRow.Add(RowTarget.Add("ShowGizmo", revGizmoToggle, T("ShowGizmo").Text));
             pe.Add(revViewRow);
 
             BuildRevAnchorTransformUI(pe);
@@ -428,7 +429,9 @@ namespace Poly_Ling.Player
                     RevCommit("点X編集");
                 });
                 var xRow = new VisualElement(); xRow.style.flexDirection = FlexDirection.Row; xRow.style.marginBottom = 2;
-                xRow.Add(ML("R (X)")); xRow.Add(xSl); xRow.Add(xFf);
+                xRow.Add(ML("R (X)"));
+                xRow.Add(RowTarget.Add("point.x", xSl, "選んだ点の R (X)"));
+                xRow.Add(RowTarget.Add("point.xValue", xFf, "選んだ点の R (X)（数値入力）"));
                 _revPtRow.Add(xRow);
                 _revPtXSlider = xSl; _revPtXField = xFf;
             }
@@ -456,7 +459,9 @@ namespace Poly_Ling.Player
                     RevCommit("点Y編集");
                 });
                 var yRow = new VisualElement(); yRow.style.flexDirection = FlexDirection.Row; yRow.style.marginBottom = 2;
-                yRow.Add(ML("Y")); yRow.Add(ySl); yRow.Add(yFf);
+                yRow.Add(ML("Y"));
+                yRow.Add(RowTarget.Add("point.y", ySl, "選んだ点の Y"));
+                yRow.Add(RowTarget.Add("point.yValue", yFf, "選んだ点の Y（数値入力）"));
                 _revPtRow.Add(yRow);
                 _revPtYSlider = ySl; _revPtYField = yFf;
             }
@@ -481,6 +486,7 @@ namespace Poly_Ling.Player
                     RevBegin();
                     _revProfile           = result.Profile;
                     _revP.RadialSegments  = result.RadialSegments;
+                    _revP.CornerSplitAngle = result.CornerSplitAngle;
                     _revP.CloseTop        = result.CloseTop;
                     _revP.CloseBottom     = result.CloseBottom;
                     _revP.CloseLoop       = result.CloseLoop;
@@ -501,12 +507,12 @@ namespace Poly_Ling.Player
                 }
             }
 
-            revCsvFold.Add(PlayerIoUiKit.PathRow(csvPathField, LoadRevCsv));
+            revCsvFold.Add(PR("profileCsv", csvPathField, LoadRevCsv, "断面 CSV"));
             if (string.IsNullOrEmpty(_revCsvPath)) _revCsvPath = RecentPaths.Get(RevCsvKey);
             if (!string.IsNullOrEmpty(_revCsvPath)) csvPathField.SetValueWithoutNotify(_revCsvPath);
 
-            revCsvFold.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadRevCsv));
-            revCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            revCsvFold.Add(WB("profileCsv.load", T("LoadCSV"), LoadRevCsv, UiSafety.UserOnly, "断面 CSV を読み込む（ファイルを選ぶ）"));
+            revCsvFold.Add(WB("profileCsv.save", T("SaveCSV"), () =>
             {
                 // パス欄は読込用。保存は毎回ダイアログを出す。
                 // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
@@ -519,7 +525,7 @@ namespace Poly_Ling.Player
 
                 EnsureRevProfile();
                 RevolutionCSVIO.Save(_revCsvPath, _revProfile, _revP);
-            }));
+            }, UiSafety.UserOnly, "断面 CSV を保存する（保存先を選ぶ）"));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             var revIoFold = FoldSection(pe, T("MeshProfileIO"), false);
@@ -557,12 +563,13 @@ namespace Poly_Ling.Player
             // 画像の高さ = _revBgScale ワールド単位（アスペクト維持）
             float s = (_revBgScale * baseScale) / bh;
 
-            // 画像中心をプロファイル点 _revBgOffset に合わせる（zoom=1,offset=0 相当）
+            // 画像の原点（_revBgOrigin, 画像px・Y下向き）をプロファイル点 _revBgOffset に合わせ、
+            // 拡大縮小も原点を中心に行う（zoom=1,offset=0 相当）
             Vector2 c = RevolutionProfileEditCore.ProfileToCanvas(_revBgOffset, cw, ch, 1f, Vector2.zero);
-            _revBgEl.style.left   = c.x - bw * 0.5f; _revBgEl.style.top = c.y - bh * 0.5f;
+            _revBgEl.style.left   = c.x - _revBgOrigin.x; _revBgEl.style.top = c.y - _revBgOrigin.y;
             _revBgEl.style.width  = bw; _revBgEl.style.height = bh;
             _revBgEl.style.transformOrigin = new TransformOrigin(
-                new Length(bw * 0.5f, LengthUnit.Pixel), new Length(bh * 0.5f, LengthUnit.Pixel), 0f);
+                new Length(_revBgOrigin.x, LengthUnit.Pixel), new Length(_revBgOrigin.y, LengthUnit.Pixel), 0f);
             _revBgEl.style.scale   = new Scale(new Vector3(s, s, 1f));
             _revBgEl.style.opacity = _revBgAlpha;
             _revBgEl.style.backgroundSize = new StyleBackgroundSize(

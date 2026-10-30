@@ -211,3 +211,15 @@ Blender 連携の作業中に見つけた不具合を直す。
 - 段 ③ で見つけたもの：CSV はボーン以外のメッシュの bindPose を書かない（C# `CsvMeshSerializer.cs:94` で `WriteBoneData` はボーンだけ、bindPose はその中の `CsvMeshSerializer.Write.cs:192-197`。Python `format/csv_mesh.py` も同じ）。.mfproj は持つ。そのため CSV から取り込んだときの 6 の警告は WorldMatrix だけで決まる。
 - 段 ③ で見つけたもの：段 ③ の 12 の完了条件に書いた `RoboFArms_cs.mfproj` には材質のテクスチャのパスが無く、そのままでは試せなかった（作ったファイルで試した。4 の段 ③）。`SandBox/BlenderIO/` の T5_cs・synth_cs・A4_cs にも `Assets/…` のパスは無い（A4_cs は `textures\…` と絶対パス。ZeroChanTPose_cs は見ていない）。
 - 調査中の副作用：`saveProjectCsv` に作業フォルダからの相対で `BugFix/survey/alicia_vrm/project.csv` を渡したため、プロジェクト直下に `BugFix/survey/alicia_vrm/` ができた（SandBox の外。中身は試験用の CSV と画像）。
+
+## 7. 残件の締め（2026-10-31。この計画は完了）
+
+- 6（Python 側）：直さない（上の記述のとおり）。
+- 10（AliciaSolid が白）：試験データに画像が無いだけでコードの不具合ではない。作り直さない。
+- 同じ名前のモデルの CSV 保存：直した。`CsvProjectSerializer.BuildModelFolderNames` でフォルダ名を 1 か所で決め、重なれば `_2`・`_3`…（大文字小文字は区別しない）。書き出しと project.csv が同じ表を使う。確認：`__AちゃんH.pmx` を 2 回読んで `saveProjectCsv` → project.csv が `model,0,__AちゃんH`／`model,1,__AちゃんH_2`、フォルダ 2 つ。`loadProjectCsv` で 2 体とも戻った（`SandBox/verify1031/same/`）。
+- 段 ② の A（VMD のマッスル化）：直さない（段 ② で決定）。原因の調査は行わない。
+- 段 ② の 2（表情が画面に出ない）：今のコードでは出る。`loadMotionClipJson` で `__AちゃんH.pmx` の頂点モーフ「あ」と `Zunko_VRM10K.vrm` の表情グループ aa を重み 1 と 0 で当て、正面から撮って口が開く・閉じるを確かめた（`SandBox/Captures/PolyLingCapture_0004`〜`0007`）。コードの変更なし。
+- `Split` の写し 4 つ：読みに影響しないので変えない。
+- CSV がボーン以外の bindPose を書かない：記録のみ（.mfproj が持つ）。変えない。
+- `RoboFArms_cs.mfproj` のテクスチャのパス：記録のみ。
+- 調査中にできたプロジェクト直下の `BugFix/`：既に無い（2026-10-31 確認）。

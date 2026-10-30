@@ -110,6 +110,8 @@ namespace Poly_Ling.Player
 
         // ボーンTRS編集A/B: Begin で確定モードと開始状態を保持
         private BoneMoveMode _activeBoneEditMode = BoneMoveMode.BoneOnlyRebind;
+        // begin〜end の間だけ立つ。立っていない値設定は通常モード（BoneTransform を直接書く）で動かす。
+        private bool _boneSliderDragActive;
         private readonly Dictionary<int, Matrix4x4> _boneRebindStartSkinning = new Dictionary<int, Matrix4x4>();
         private readonly Dictionary<int, Matrix4x4> _boneRebindStartBindPose = new Dictionary<int, Matrix4x4>();
         private TPoseBackup _boneFreezeBefore;
@@ -820,6 +822,25 @@ namespace Poly_Ling.Player
                     }
                 }
 
+                // オブジェクトグループの出力は書けない（PolyLing_作り直し整備計画.md 2.5・段 2）。
+                // 作り直しの書き戻し（RunObjectGroupStep）の中では判定しない。
+                if (authProject != null && _modifierWriteBackDepth == 0)
+                {
+                    // 作業空間の反映・取消し・閉じるは、選択ではなく作業空間が書く先で判定する（段 8）。
+                    IList<MeshContext> esTargets =
+                        (cmd is ApplyEditSpaceCommand || cmd is CancelEditSpaceCommand || cmd is CloseEditSpaceCommand)
+                        ? OnEditSpaceWriteTargets?.Invoke(cmd)
+                        : null;
+                    string outDeny = Poly_Ling.Ops.ModifierOutputGuard.DenyReason(authProject, cmd, esTargets);
+                    if (outDeny != null)
+                    {
+                        Debug.LogWarning(
+                            $"[PolyLing] 拒否: {cmd?.GetType().Name} actor={_currentActor} → {outDeny}");
+                        OnOwnershipDenied?.Invoke(cmd, _currentActor, outDeny);
+                        return CommandResult.Fail(outDeny, CommandErrorCodes.ModifierOutput);
+                    }
+                }
+
                 var r = DispatchAuthorized(cmd);
 
                 // 実行できたら、操作者のロックを延ばす。MCP は書き込み先を自動でロックする（L-2・L-3）。
@@ -885,6 +906,21 @@ namespace Poly_Ling.Player
             {
                 DispatchCore(cmd);
                 result = _pendingResult ?? CommandResult.Ok();
+
+                // オブジェクトグループの要評価の項目を依存の順に流す（作り直し整備計画 段 4）。
+                // 深さ 1 のうちに流すので、書き戻しの Dispatch は入れ子になり、記録・版の対象にならない。
+                // Undo・Redo の復元経路にはきっかけ 2 か所を通らないものがあるので、署名を取り直してから流す。
+                if (topLevel && ShouldEvaluateModifiersAfter(cmd))
+                    RunModifierEvaluation(PanelCommandFactory.ActionOf(cmd.GetType()),
+                        recheckInputs: cmd is PerformUndoCommand || cmd is PerformRedoCommand);
+
+                // 書き込みのあるコマンドの終わりに、GPU の位置を CPU に合わせる（作り直し整備計画 段 B）。
+                // コマンドの間は GPU ＝ CPU を保つ。書き手ごとに同期を呼ぶ約束はやめた。
+                if (topLevel && Poly_Ling.Remote.RemoteOwnership.WriteScopeOf(cmd) != PLWriteScope.None)
+                {
+                    _viewportManager?.SettleWorldPositions(_getProject());
+                    CheckObjectIdsAfter(cmd);
+                }
             }
             finally
             {
@@ -909,6 +945,24 @@ namespace Poly_Ling.Player
             if (topLevel) AcceptUserStepIfAwaiting(cmd, result);
 
             return result;
+        }
+
+        /// <summary>
+        /// 書き込みのあるコマンドの終わりに、全モデルの ObjectId を点検する（作り直し整備計画 段 C の見張り）。
+        /// 0 や重複があれば、一覧へ入れる道（ModelContext の Add・Insert・ReplaceMeshContexts・
+        /// SetMeshContextAt）を通らずに一覧を書いた箇所がある。コマンド名を付けてエラーに出す。
+        /// </summary>
+        private void CheckObjectIdsAfter(PanelCommand cmd)
+        {
+            var project = _getProject();
+            if (project == null) return;
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.GetModel(mi);
+                string bad = model?.CheckObjectIds();
+                if (bad == null) continue;
+                Debug.LogError($"[ObjectId] {PanelCommandFactory.ActionOf(cmd.GetType())} のあと、モデル {mi}「{model.Name}」の ObjectId が不正：{bad}");
+            }
         }
 
         /// <summary>
@@ -1067,6 +1121,9 @@ namespace Poly_Ling.Player
             string gateReason = CommandGate?.Invoke(cmd);
             if (gateReason != null) { Fail(gateReason); return; }
 
+            // 出力の編集が未確定でも保存できる。未確定は描画オブジェクトごとに保存される
+            // （MeshContext.ModifierForwardSig。作り直し整備計画 段 F）。
+
             // プロジェクト初期化は「プロジェクトがまだ無い状態」から呼ぶコマンド。
             // 下の null 門より前で捌かないと、初回に握り潰されて何も起きない。
             if (cmd is ResetProjectCommand reset)
@@ -1129,6 +1186,43 @@ namespace Poly_Ling.Player
                     .Text("report",       PanelCommandFactoryAudit.RunAll())
                     .Int("toolsUsable",   auditUsable)
                     .Int("toolsSkipped",  auditSkipped)
+                    .Build());
+                return;
+            }
+
+            // 生成コマンドのモディファイアとしての棚卸し。型と属性だけを見るので同じく門の前で受ける。
+            if (cmd is QueryModifierInventoryCommand)
+            {
+                MarkNotRecorded();
+                var inv = ModifierInventory.Build();
+                var invActions  = new List<string>(inv.Count);
+                var invKinds    = new List<string>(inv.Count);
+                var invCaptures = new List<string>(inv.Count);
+                var invRebuilds = new List<string>(inv.Count);
+                var invInputs   = new List<string>(inv.Count);
+                var invProfiles = new List<string>(inv.Count);
+                var invInverses = new List<string>(inv.Count);
+                foreach (var e in inv)
+                {
+                    invActions.Add(e.Action);
+                    invKinds.Add(e.Kind);
+                    invCaptures.Add(e.Capture.ToString());
+                    invRebuilds.Add(e.RebuildKey);
+                    invInputs.Add(e.InputsText);
+                    invProfiles.Add(e.ProfilesText);
+                    invInverses.Add(!string.IsNullOrEmpty(e.Inverse) ? "→" + e.Inverse
+                                  : !string.IsNullOrEmpty(e.InverseOf) ? "←" + e.InverseOf : "");
+                }
+
+                ReportData(CommandDataJson.New()
+                    .Text("report",    ModifierInventory.Report(inv))
+                    .Texts("actions",  invActions)
+                    .Texts("kinds",    invKinds)
+                    .Texts("captures", invCaptures)
+                    .Texts("rebuilds", invRebuilds)
+                    .Texts("inputs",   invInputs)
+                    .Texts("profiles", invProfiles)
+                    .Texts("inverses", invInverses)
                     .Build());
                 return;
             }

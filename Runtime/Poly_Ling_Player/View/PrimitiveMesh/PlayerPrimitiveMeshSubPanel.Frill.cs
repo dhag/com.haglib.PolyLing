@@ -121,11 +121,11 @@ namespace Poly_Ling.Player
             stackHint.style.marginBottom = 2;
             bc.Add(stackHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(WB("ImportBelt", T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_frillBelts, _frillStack.Enabled);
                 RefreshFrillInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── 自動検索 ──
             BuildMeshSourceRow(bc, _frillPick, T("AutoDetectSource"));
@@ -136,11 +136,11 @@ namespace Poly_Ling.Player
             autoHint.style.marginBottom = 2;
             bc.Add(autoHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(WB("AutoDetectBelts", T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_frillBelts, _frillPick.Current, _frillStack.Enabled);
                 RefreshFrillInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── 円環の自動検索 ──
             var ringHint = new Label(T("AutoDetectRingsHint"));
@@ -149,11 +149,11 @@ namespace Poly_Ling.Player
             ringHint.style.marginBottom = 2;
             bc.Add(ringHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectRings"), () =>
+            bc.Add(WB("AutoDetectRings", T("AutoDetectRings"), () =>
             {
                 AutoDetectRings(_frillBelts, _frillPick.Current, _frillStack.Enabled);
                 RefreshFrillInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             _frillInfoLabel = new Label(BeltsInfoText(_frillBelts));
             _frillInfoLabel.style.fontSize   = 10;
@@ -287,7 +287,7 @@ namespace Poly_Ling.Player
                                v => { _frillP.EdgeSizeFront = v; D(); }),
                 BackSeg   = IR(T("BackSegments"), FrillParams.EdgeSegmentsMin, FrillParams.EdgeSegmentsMax, () => _frillP.SegmentsBack,
                                v => { _frillP.SegmentsBack = v; D(); RefreshFrillSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), FrillParams.EdgeSizeMin, FrillParams.EdgeSizeMax, () => _frillP.EdgeSizeBack,
+                BackSize  = SR(EdgeSizeBackLx, FrillParams.EdgeSizeMin, FrillParams.EdgeSizeMax, () => _frillP.EdgeSizeBack,
                                v => { _frillP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _frillP.EdgeInward,
                                v => { _frillP.EdgeInward = v; D(); }),
@@ -340,6 +340,8 @@ namespace Poly_Ling.Player
             var pe = _profileEditorContainer;
             if (pe == null) return;
 
+            // A/B 切替などで Begin を通らずに作り直すので、前回のボタンや入力欄を外してから作る。
+            RowTarget.RemoveUnder(pe);
             pe.Clear();
 
             EnsureBeltProfile(_frillEdit);
@@ -422,6 +424,8 @@ namespace Poly_Ling.Player
             var box = _frillBeltScaleContainer;
             if (box == null) return;
 
+            // Begin を通らない作り直しなので、前回の行のボタンや入力欄を外してから作る。
+            RowTarget.RemoveUnder(box);
             box.Clear();
 
             // グループ番号ごとにまとめる。出現順を保つため List で持つ。

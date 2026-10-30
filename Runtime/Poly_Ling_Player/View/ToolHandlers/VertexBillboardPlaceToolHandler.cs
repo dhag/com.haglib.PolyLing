@@ -11,9 +11,10 @@
 //   対象の各オブジェクトが持つその名前のパーツ選択辞書の頂点。頂点番号の昇順で並べる
 //   （巡回・抽選の順を決めるため）。
 //
-// 【位置】GetWorldPositions（GPU が計算したワールド座標）から読む。
+// 【位置】GetWorldPositions（バインド姿勢のワールド。ModifierSpace.BindWorldPositions）から読む。
+//   ポーズ込みの表示位置を読むと、ポーズを付けたまま作り直したとき結果がポーズで変わる（段 E）。
 // 【ボーン・原点】Target が Bones / ObjectOrigins のときは、MasterIndices の各ボーン位置／
-//   描画オブジェクト原点へ置く。値はマーカー表示と同じ WorldMatrix の平行移動成分。
+//   描画オブジェクト原点へ置く。値は BindWorldMatrix の平行移動成分（ポーズを含まない。段 E）。
 
 using System;
 using System.Collections.Generic;
@@ -37,7 +38,7 @@ namespace Poly_Ling.Player
 
         private ProjectContext _project => GetProject?.Invoke();
 
-        /// <summary>描画オブジェクトの全頂点のワールド位置を GPU から読む口。読めなければ null。</summary>
+        /// <summary>描画オブジェクトの全頂点のバインド姿勢のワールド位置を読む口。読めなければ null。</summary>
         public Func<MeshContext, Vector3[]> GetWorldPositions;
 
         /// <summary>配置元の索引列を MeshObject 列へ解決する口（子孫の展開を含む）。</summary>
@@ -171,6 +172,38 @@ namespace Poly_Ling.Player
             return new List<int>(set);
         }
 
+        /// <summary>
+        /// 頂点モードで置く頂点を、置く順（対象の索引の順 → 頂点番号の昇順）に返す。
+        /// 置いた i 個目は返す列の i 番目の頂点から来る。逆方向（段 6）も同じ列で頂点を引く。
+        /// </summary>
+        public static List<(MeshContext mc, int vertex)> CollectVertexTargets(
+            ModelContext model, IEnumerable<int> targetIndices, string vertexSetName)
+        {
+            var result = new List<(MeshContext, int)>();
+            if (model == null || targetIndices == null) return result;
+            bool fromSet = !string.IsNullOrEmpty(vertexSetName);
+
+            foreach (int index in targetIndices)
+            {
+                var mc = model.GetMeshContext(index);
+                if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
+
+                var vertices = fromSet
+                    ? mc.FindSelectionSetByName(vertexSetName)?.Vertices
+                    : mc.Selection?.Vertices;
+                if (vertices == null || vertices.Count == 0) continue;
+
+                var sorted = new List<int>(vertices);
+                sorted.Sort();
+                foreach (int vi in sorted)
+                {
+                    if (vi < 0 || vi >= mc.MeshObject.VertexCount) continue;
+                    result.Add((mc, vi));
+                }
+            }
+            return result;
+        }
+
         private bool BuildCore(
             ModelContext model, CreateVertexBillboardPlaceCommand cmd,
             List<int> targetIndices, string vertexSetName,
@@ -194,11 +227,11 @@ namespace Poly_Ling.Player
 
             if (cmd.Target != BillboardPlaceTarget.Vertices)
             {
-                // ボーン位置／原点。マーカー表示（UpdateBoneOverlayFor）と同じく
-                // WorldMatrix の平行移動成分を使う。索引の昇順（巡回・抽選の順）。
+                // ボーン位置／原点。BindWorldMatrix の平行移動成分（ポーズを含まない。段 E）。
+                // 索引の昇順（巡回・抽選の順）。
                 foreach (int index in CollectPointIndices(model, targetIndices, cmd.Target))
                 {
-                    var wm = model.GetMeshContext(index).WorldMatrix;
+                    var wm = model.GetMeshContext(index).BindWorldMatrix;
                     positions.Add(new Vector3(wm.m03, wm.m13, wm.m23));
                 }
 
@@ -212,31 +245,21 @@ namespace Poly_Ling.Player
             }
             else
             {
-                if (GetWorldPositions == null) { reason = "GPU のワールド座標を読む口が配線されていません"; return false; }
+                if (GetWorldPositions == null) { reason = "頂点のワールド座標を読む口が配線されていません"; return false; }
 
                 bool fromSet = !string.IsNullOrEmpty(vertexSetName);
 
-                foreach (int index in targetIndices)
+                var worldOf = new Dictionary<MeshContext, Vector3[]>();
+                foreach (var (mc, vi) in CollectVertexTargets(model, targetIndices, vertexSetName))
                 {
-                    var mc = model.GetMeshContext(index);
-                    if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
-
-                    var vertices = fromSet
-                        ? mc.FindSelectionSetByName(vertexSetName)?.Vertices
-                        : mc.Selection?.Vertices;
-                    if (vertices == null || vertices.Count == 0) continue;
-
-                    var world = GetWorldPositions(mc);
-                    if (world == null || world.Length < mc.MeshObject.VertexCount)
-                    { reason = $"GPU のワールド座標を読めません（{mc.Name}）"; return false; }
-
-                    var sorted = new List<int>(vertices);
-                    sorted.Sort();
-                    foreach (int vi in sorted)
+                    if (!worldOf.TryGetValue(mc, out var world))
                     {
-                        if (vi < 0 || vi >= mc.MeshObject.VertexCount) continue;
-                        positions.Add(world[vi]);
+                        world = GetWorldPositions(mc);
+                        if (world == null || world.Length < mc.MeshObject.VertexCount)
+                        { reason = $"頂点のワールド座標を読めません（{mc.Name}）"; return false; }
+                        worldOf[mc] = world;
                     }
+                    positions.Add(world[vi]);
                 }
 
                 if (positions.Count == 0)

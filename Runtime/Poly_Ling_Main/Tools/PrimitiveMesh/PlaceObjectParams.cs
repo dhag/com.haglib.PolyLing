@@ -120,6 +120,15 @@ namespace Poly_Ling.PlaceObject
                  Max = RollStepsMax, Step = 1)]
         public int RollSteps;
 
+        /// <summary>
+        /// 取り込み元のはしごのボーンウェイトを、置いた部品へ引き継ぐ（段 I）。
+        /// 部品 1 個の全頂点に、その段の左右の点のウェイトを半々に混ぜた 1 つの値を入れる
+        /// （部品を曲げずに段と一緒に動かす。パイプの端の蓋と同じ混ぜ方）。
+        /// </summary>
+        [PLParam(TextKey = "BeltInheritWeights",
+                 Description = "取り込み元のはしごのボーンウェイトを置いた部品へ引き継ぐ（部品ごとに段の左右を半々に混ぜた 1 つの値）")]
+        public bool InheritBeltWeights;
+
         public static PlaceObjectParams Default => new PlaceObjectParams
         {
             MeshName        = "PlaceObject",
@@ -133,6 +142,7 @@ namespace Poly_Ling.PlaceObject
             RowOffset       = 0,
             IncludeChildren = true,
             RollSteps       = 0,
+            InheritBeltWeights = false,
         };
 
         public bool Equals(PlaceObjectParams o)
@@ -146,7 +156,8 @@ namespace Poly_Ling.PlaceObject
             && RowStride  == o.RowStride
             && RowOffset  == o.RowOffset
             && IncludeChildren == o.IncludeChildren
-            && RollSteps       == o.RollSteps;
+            && RollSteps       == o.RollSteps
+            && InheritBeltWeights == o.InheritBeltWeights;
 
         public override bool Equals(object obj) => obj is PlaceObjectParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;

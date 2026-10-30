@@ -339,6 +339,22 @@ namespace Poly_Ling.Remote
             // 既存モデルが要る AddOnly コマンドは、コマンド側が自分で失敗を返す。
             if (scope == PLWriteScope.AddOnly) return OwnershipVerdict.Ok;
 
+            // Undo・Redo はどのモデルにも効く（モデルの追加・削除・置き換えも戻す）。ModelIndex は 0 固定で
+            // 対象を表さないので、プロジェクトの全モデルについて保守的判定をする。モデルが 0 個なら通す
+            // （読み込みを Undo して 0 個になったあとの Redo を断らない）。
+            if (cmd is PerformUndoCommand || cmd is PerformRedoCommand)
+            {
+                int n = project?.ModelCount ?? 0;
+                for (int i = 0; i < n; i++)
+                {
+                    var m = project.GetModel(i);
+                    if (m == null) continue;
+                    var v = AuthorizeModelWide(m, cmd, requesterName);
+                    if (!v.Allowed) return v;
+                }
+                return OwnershipVerdict.Ok;
+            }
+
             var model = GetModel(project, cmd.ModelIndex);
             if (model == null) return OwnershipVerdict.Deny($"モデルがありません: {cmd.ModelIndex}");
 

@@ -92,6 +92,19 @@ namespace Poly_Ling.PrimitiveMesh
         };
     }
 
+    /// <summary>
+    /// 前処理（向き補正・スプライン分割・残す段）の段の対応。逆方向（ModifierInverse）が使う。
+    /// Source[k] は出力の段 k が元の梯子（向き補正の前）のどの段から来たか（小数。整数なら元の段そのもの）。
+    /// </summary>
+    public sealed class BeltRungTrace
+    {
+        public float[] Source;
+        /// <summary>左右を入れ替えたか。</summary>
+        public bool Swapped;
+        /// <summary>並び順を反転したか（始点と終点も入れ替わる）。</summary>
+        public bool Reversed;
+    }
+
     /// <summary>基準ベルトの前処理と厚み付け。</summary>
     public static class BeltShapeOps
     {
@@ -192,7 +205,73 @@ namespace Poly_Ling.PrimitiveMesh
         /// 細分に失敗したときも元をそのまま返す。
         /// </summary>
         public static BeltCsvEntry ApplySpline(BeltCsvEntry belt, BeltSplineOptions opt)
-            => ApplyKeepRungs(ApplySplineOnly(belt, opt), opt);
+            => ApplySplineTraced(belt, opt, out _);
+
+        /// <summary>
+        /// スプライン分割と残す段を掛け、出力の段ごとに「入力のどの段から来たか（小数）」を返す。
+        /// 掛けなかったときも恒等の対応を返す。ApplySpline はこれを呼ぶだけ（規則は 1 か所）。
+        /// </summary>
+        public static BeltCsvEntry ApplySplineTraced(BeltCsvEntry belt, BeltSplineOptions opt, out float[] source)
+        {
+            source = null;
+            if (belt == null || !belt.HasData) return belt;
+
+            var s = ApplySplineOnly(belt, opt, out var srcParams);
+            int ns = Mathf.Min(s.Left.Count, s.Right.Count);
+            if (srcParams == null)
+            {
+                srcParams = new List<float>(ns);
+                for (int i = 0; i < ns; i++) srcParams.Add(i);
+            }
+
+            var k = ApplyKeepRungs(s, opt, out var keep);
+            if (keep != null)
+            {
+                var picked = new float[keep.Count];
+                for (int i = 0; i < keep.Count; i++) picked[i] = srcParams[keep[i]];
+                source = picked;
+            }
+            else source = srcParams.ToArray();
+            return k;
+        }
+
+        /// <summary>
+        /// 向き補正 → スプライン分割 → 残す段を掛け、段の対応を返す（逆方向が使う）。
+        /// Preprocess と同じ結果を返す。
+        /// </summary>
+        public static BeltCsvEntry PreprocessTraced(
+            BeltCsvEntry belt, BeltOrientOptions orient, BeltSplineOptions spline, out BeltRungTrace trace)
+        {
+            trace = null;
+            if (belt == null || !belt.HasData) return belt;
+            int n0 = Mathf.Min(belt.Left.Count, belt.Right.Count);
+
+            var o = ApplyOrient(belt, orient);
+            var s = ApplySplineTraced(o, spline, out var src);
+
+            if (src != null && orient.ReverseOrder)
+                for (int i = 0; i < src.Length; i++) src[i] = (n0 - 1) - src[i];
+
+            trace = new BeltRungTrace
+            {
+                Source   = src,
+                Swapped  = orient.SwapSides,
+                Reversed = orient.ReverseOrder,
+            };
+            return s;
+        }
+
+        /// <summary>残す段を掛ける。掛けたときは残した段の番号を keep に返す（掛けなければ null）。</summary>
+        private static BeltCsvEntry ApplyKeepRungs(BeltCsvEntry belt, BeltSplineOptions opt, out List<int> keep)
+        {
+            keep = null;
+            if (belt == null || !belt.HasData) return belt;
+            if (!opt.HasKeepRungs || belt.Closed) return belt;
+            var k = KeepIndices(Mathf.Min(belt.Left.Count, belt.Right.Count), opt.KeepRungs);
+            if (k.Count < 2) return belt;
+            keep = k;
+            return ApplyKeepRungs(belt, opt);
+        }
 
         /// <summary>
         /// 残す段だけを残す（BeltSplineOptions.KeepRungs）。指定が無い・閉じた梯子・
@@ -233,8 +312,9 @@ namespace Poly_Ling.PrimitiveMesh
             return result;
         }
 
-        private static BeltCsvEntry ApplySplineOnly(BeltCsvEntry belt, BeltSplineOptions opt)
+        private static BeltCsvEntry ApplySplineOnly(BeltCsvEntry belt, BeltSplineOptions opt, out List<float> sourceParams)
         {
+            sourceParams = null;
             if (belt == null || !belt.HasData) return belt;
             if (!opt.Enabled) return belt;
             if (belt.Closed)  return belt;
@@ -244,6 +324,8 @@ namespace Poly_Ling.PrimitiveMesh
                     opt.Segments, opt.UseFirst, opt.UseLast, opt.TrimStart, opt.TrimEnd,
                     out var left, out var right, out var srcParams))
                 return belt;
+
+            sourceParams = new List<float>(srcParams);
 
             // 細分で段が増えるので、ウェイトは「出力段が入力のどこから来たか」で補間する。
             // srcParams[k] は入力段の位置（小数）。
@@ -295,7 +377,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// <summary>向き補正 → スプライン分割の順で通す。</summary>
         public static BeltCsvEntry Preprocess(
             BeltCsvEntry belt, BeltOrientOptions orient, BeltSplineOptions spline)
-            => ApplySpline(ApplyOrient(belt, orient), spline);
+            => PreprocessTraced(belt, orient, spline, out _);
 
         // ================================================================
         // 厚み付け
@@ -324,7 +406,11 @@ namespace Poly_Ling.PrimitiveMesh
                 EdgeInward    = edgeInward,
             }, meshName);
 
-            return r.Ok ? r.Mesh : part;
+            if (!r.Ok) return part;
+
+            // 逆方向の控え（段 15）：元の部品の枠を、厚み付けした立体の対応する頂点へ広げて付け替える。
+            Poly_Ling.Ops.ModifierFrameTrace.Expanded(part, r.Mesh, r.SourceToVertices);
+            return r.Mesh;
         }
     }
 }

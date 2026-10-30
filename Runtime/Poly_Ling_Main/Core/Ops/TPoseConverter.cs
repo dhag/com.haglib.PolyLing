@@ -247,6 +247,8 @@ namespace Poly_Ling.Ops
             backup.WorldMatrices.Clear();
             backup.BindPoses.Clear();
             backup.VertexPositions.Clear();
+            backup.MorphBasePositions.Clear();
+            backup.PhysicsPoses.Clear();
 
             for (int i = 0; i < meshContexts.Count; i++)
             {
@@ -280,6 +282,19 @@ namespace Poly_Ling.Ops
                     for (int v = 0; v < verts.Count; v++)
                         positions[v] = verts[v].Position;
                     backup.VertexPositions[i] = positions;
+
+                    // モーフの基準位置も焼き込みで変わるので控える
+                    var mbd = ctx.MorphBaseData;
+                    if (mbd != null && mbd.IsValid)
+                        backup.MorphBasePositions[i] = (Vector3[])mbd.BasePositions.Clone();
+
+                    // 剛体・ジョイントの位置と回転も焼き込みで変わるので控える
+                    var rbd = ctx.MeshObject.RigidBodyData;
+                    if (rbd != null)
+                        backup.PhysicsPoses[i] = new[] { rbd.Position, rbd.Rotation };
+                    var jd = ctx.MeshObject.JointData;
+                    if (jd != null)
+                        backup.PhysicsPoses[i] = new[] { jd.Position, jd.Rotation };
                 }
             }
         }
@@ -365,6 +380,28 @@ namespace Poly_Ling.Ops
                     // UnityMeshを再生成
                     ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
                 }
+            }
+
+            // モーフの基準位置を復元（頂点数が同じときだけ）
+            foreach (var kv in backup.MorphBasePositions)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= meshContexts.Count) continue;
+                var mbd = meshContexts[idx]?.MorphBaseData;
+                if (mbd == null || !mbd.IsValid || kv.Value == null) continue;
+                if (mbd.BasePositions.Length != kv.Value.Length) continue;
+                mbd.BasePositions = (Vector3[])kv.Value.Clone();
+            }
+
+            // 剛体・ジョイントの位置と回転を復元
+            foreach (var kv in backup.PhysicsPoses)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= meshContexts.Count || kv.Value == null || kv.Value.Length < 2) continue;
+                var mo = meshContexts[idx]?.MeshObject;
+                if (mo == null) continue;
+                if (mo.RigidBodyData != null) { mo.RigidBodyData.Position = kv.Value[0]; mo.RigidBodyData.Rotation = kv.Value[1]; }
+                if (mo.JointData     != null) { mo.JointData.Position     = kv.Value[0]; mo.JointData.Rotation     = kv.Value[1]; }
             }
 
             Debug.Log("[TPoseConverter] Restored from backup");
@@ -457,6 +494,11 @@ namespace Poly_Ling.Ops
         /// </summary>
         public static void BakeSkinnedVertices(List<MeshContext> meshContexts)
         {
+            // 剛体・ジョイントを関連ボーンの動きで動かす（CPU。行列はリバインド前）。
+            // 頂点と同じく、焼き込みのあとは呼び出し元がリバインドするので、ここで
+            // 位置と回転を「変形後のワールド値」にしておく必要がある。
+            BakePhysicsPoses(meshContexts);
+
             using (var bufferManager = new UnifiedBufferManager())
             {
                 bufferManager.Initialize();
@@ -531,6 +573,12 @@ namespace Poly_Ling.Ops
                             : unskinnedInv.MultiplyPoint3x4(worldPos);
                     }
 
+                    // モーフメッシュは基準位置も同じスキンで焼く。
+                    // 差分は「頂点位置 − BasePositions」（MorphBaseData.cs）なので、頂点だけ焼くと
+                    // 焼き込みで動いた部位の差分に変換前後の位置の差が混ざる。
+                    // 行列はまだリバインド前（GPU に渡したものと同じ SkinningMatrix）。
+                    RebakeMorphBasePositions(ctx, meshContexts);
+
                     // UnityMeshを再生成して表示を更新
                     ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
 
@@ -540,6 +588,149 @@ namespace Poly_Ling.Ops
 
                 Debug.Log($"[TPoseConverter] Baked {bakedMeshCount} meshes, {bakedVertexCount} vertices using GPU");
             }
+        }
+
+        /// <summary>
+        /// モーフメッシュの基準位置（MorphBaseData.BasePositions）を、頂点と同じスキン行列で焼く。
+        /// ウェイトのある頂点だけが対象（ウェイトの無い頂点は焼き込みで位置が変わらない）。
+        /// 行列の組み方は GPU（UnifiedCompute の skinMatrix）・MeshContext.VertexMatrix と同じ
+        /// 「Σ weight × list[bone].SkinningMatrix」。ParentModelContext を介さず meshContexts を引くので、
+        /// 読み込み途中（モデルへ入る前）でも使える。
+        /// </summary>
+        private static void RebakeMorphBasePositions(MeshContext ctx, List<MeshContext> meshContexts)
+        {
+            var mbd = ctx?.MorphBaseData;
+            var mo  = ctx?.MeshObject;
+            if (mbd == null || !mbd.IsValid || mo == null) return;
+
+            int n = Mathf.Min(mbd.BasePositions.Length, mo.VertexCount);
+            for (int i = 0; i < n; i++)
+            {
+                var vtx = mo.Vertices[i];
+                if (vtx == null || !vtx.HasBoneWeight) continue;
+
+                var bw = vtx.BoneWeight.Value;
+                Matrix4x4 acc = new Matrix4x4();
+                float total = 0f;
+                total += AddBone(ref acc, meshContexts, bw.boneIndex0, bw.weight0);
+                total += AddBone(ref acc, meshContexts, bw.boneIndex1, bw.weight1);
+                total += AddBone(ref acc, meshContexts, bw.boneIndex2, bw.weight2);
+                total += AddBone(ref acc, meshContexts, bw.boneIndex3, bw.weight3);
+                if (total <= 0f) continue;
+
+                mbd.BasePositions[i] = acc.MultiplyPoint3x4(mbd.BasePositions[i]);
+            }
+        }
+
+        /// <summary>
+        /// 剛体（RigidBodyData）とジョイント（JointData）の位置・回転を、関連ボーンの SkinningMatrix で動かす。
+        /// 剛体の関連ボーンは名前（RelatedBoneName）を先に引き、無ければ BoneIndex。
+        /// ジョイントは剛体 A の関連ボーン（無ければ剛体 B）に従う。PMX のジョイントの扱いと同じ。
+        /// 関連ボーンが引けないものは動かさない。
+        /// 回転は Euler（ラジアン）で、適用側（HierarchyPhysicsBuilder）と同じく Quaternion.Euler(度) と解釈する。
+        /// </summary>
+        private static void BakePhysicsPoses(List<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return;
+
+            var boneByName = new Dictionary<string, int>();
+            var bodyByName = new Dictionary<string, int>();
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var c = meshContexts[i];
+                if (c == null || string.IsNullOrEmpty(c.Name)) continue;
+                if (c.Type == MeshType.Bone && !boneByName.ContainsKey(c.Name)) boneByName[c.Name] = i;
+                if (c.MeshObject?.RigidBodyData != null && !bodyByName.ContainsKey(c.Name)) bodyByName[c.Name] = i;
+            }
+
+            int BoneOfBody(int bodyIdx)
+            {
+                if (bodyIdx < 0 || bodyIdx >= meshContexts.Count) return -1;
+                var rb = meshContexts[bodyIdx]?.MeshObject?.RigidBodyData;
+                if (rb == null) return -1;
+                if (!string.IsNullOrEmpty(rb.RelatedBoneName) && boneByName.TryGetValue(rb.RelatedBoneName, out int bi))
+                    return bi;
+                int b = rb.BoneIndex;
+                return (b >= 0 && b < meshContexts.Count && meshContexts[b]?.Type == MeshType.Bone) ? b : -1;
+            }
+
+            int BodyIndex(string name, int index)
+            {
+                if (!string.IsNullOrEmpty(name) && bodyByName.TryGetValue(name, out int bi)) return bi;
+                return (index >= 0 && index < meshContexts.Count && meshContexts[index]?.MeshObject?.RigidBodyData != null) ? index : -1;
+            }
+
+            // 先にすべての骨の行列を引いてから書く（剛体同士は依存しないが、順序に左右されないように）
+            var targets = new List<(int ctxIdx, Matrix4x4 skin)>();
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mo = meshContexts[i]?.MeshObject;
+                if (mo == null) continue;
+
+                int bone = -1;
+                if (mo.RigidBodyData != null)
+                    bone = BoneOfBody(i);
+                else if (mo.JointData != null)
+                {
+                    var jd = mo.JointData;
+                    bone = BoneOfBody(BodyIndex(jd.BodyAName, jd.RigidBodyIndexA));
+                    if (bone < 0) bone = BoneOfBody(BodyIndex(jd.BodyBName, jd.RigidBodyIndexB));
+                }
+                if (bone < 0) continue;
+
+                // 骨が動いていないもの（スキン行列が単位）は書き換えない。
+                // 回転を Euler へ戻すと表記（-0.1 と 6.18 など）が変わるため。
+                Matrix4x4 skinM = meshContexts[bone].SkinningMatrix;
+                if (IsNearIdentity(skinM)) continue;
+
+                targets.Add((i, skinM));
+            }
+
+            foreach (var (idx, skin) in targets)
+            {
+                var mo = meshContexts[idx].MeshObject;
+                Quaternion r = skin.rotation;
+                if (mo.RigidBodyData != null)
+                {
+                    var rb = mo.RigidBodyData;
+                    rb.Position = skin.MultiplyPoint3x4(rb.Position);
+                    rb.Rotation = EulerRad(r * Quaternion.Euler(rb.Rotation * Mathf.Rad2Deg));
+                }
+                else
+                {
+                    var jd = mo.JointData;
+                    jd.Position = skin.MultiplyPoint3x4(jd.Position);
+                    jd.Rotation = EulerRad(r * Quaternion.Euler(jd.Rotation * Mathf.Rad2Deg));
+                }
+            }
+        }
+
+        private static bool IsNearIdentity(Matrix4x4 m)
+        {
+            const float eps = 1e-6f;
+            for (int k = 0; k < 16; k++)
+            {
+                float id = (k % 5 == 0) ? 1f : 0f;
+                if (Mathf.Abs(m[k] - id) > eps) return false;
+            }
+            return true;
+        }
+
+        // 回転を Euler（ラジアン、各軸 -π〜π）へ。PMX の読み込み値と同じ範囲に寄せる。
+        private static Vector3 EulerRad(Quaternion q)
+        {
+            Vector3 e = q.eulerAngles;
+            return new Vector3(Mathf.DeltaAngle(0f, e.x), Mathf.DeltaAngle(0f, e.y), Mathf.DeltaAngle(0f, e.z)) * Mathf.Deg2Rad;
+        }
+
+        private static float AddBone(ref Matrix4x4 acc, List<MeshContext> list, int boneIndex, float weight)
+        {
+            if (weight == 0f || boneIndex < 0 || boneIndex >= list.Count) return 0f;
+            var bone = list[boneIndex];
+            if (bone == null) return 0f;
+            Matrix4x4 m = bone.SkinningMatrix;
+            for (int k = 0; k < 16; k++) acc[k] += m[k] * weight;
+            return weight;
         }
     }
 }

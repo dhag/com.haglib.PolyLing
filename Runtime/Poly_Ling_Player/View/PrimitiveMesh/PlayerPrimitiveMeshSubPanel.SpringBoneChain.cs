@@ -349,7 +349,7 @@ namespace Poly_Ling.Player
 
             var prefix = new TextField(T("SBPrefix")) { value = _sbPrefix };
             prefix.RegisterValueChangedCallback(e => { _sbPrefix = e.newValue; UpdateSpringBonePreview(); });
-            c.Add(prefix);
+            c.Add(RowTarget.Add("SBPrefix", prefix, T("SBPrefix").Text));
         }
 
         /// <summary>
@@ -387,11 +387,11 @@ namespace Poly_Ling.Player
                 },
                 Mathf.Clamp(_sbTaperShape, 0, 3));
             taperDd.RegisterValueChangedCallback(_ => _sbTaperShape = taperDd.index);
-            c.Add(taperDd);
+            c.Add(RowTarget.Add("SBTaperShape", taperDd, T("SBTaperShape").Text));
 
             var groups = new TextField(T("SBGroups")) { value = _sbGroupIndices };
             groups.RegisterValueChangedCallback(e => _sbGroupIndices = e.newValue);
-            c.Add(groups);
+            c.Add(RowTarget.Add("SBGroups", groups, T("SBGroups").Text));
             c.Add(SL("根元と先で違う値を入れると、段の位置に合わせて少しずつ変えて配ります。"
                    + "同じ値なら全段同じになります。"));
 

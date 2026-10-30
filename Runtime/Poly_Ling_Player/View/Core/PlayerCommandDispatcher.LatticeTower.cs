@@ -117,7 +117,12 @@ namespace Poly_Ling.Player
             {
                 child = CreateChildPart(model, parent, deckCmd, out string r);
                 if (child == null) fail = $"デッキ: {r}";
-                else ObjectGroupOps.AppendStep(project, c.ModelIndex, g, deckCmd, new List<ulong> { child.ObjectId });
+                else
+                {
+                    var deckStep = ObjectGroupOps.AppendStep(project, c.ModelIndex, g, deckCmd, new List<ulong> { child.ObjectId });
+                    // 足した項目だけ控える（作り直し整備計画 段 9）。同じグループのほかの項目は控え直さない。
+                    ModifierEvaluator.PrimeStep(model, deckStep);
+                }
             }
             finally
             {
@@ -240,6 +245,15 @@ namespace Poly_Ling.Player
             step.SetMeshRefIds(key, newIds);
             step.Args[key] = string.Join(",", parts);
 
+            // 依存の循環になる差し替えは拒否する（作り直し整備計画 段 4）。グループは元へ戻す。
+            string cycle = ModifierGraph.CycleReason(model, g, focusInModel: true);
+            if (cycle != null)
+            {
+                step.SetMeshRefIds(key, oldIds);
+                if (oldArg != null) step.Args[key] = oldArg; else step.Args.Remove(key);
+                return $"配置元を差し替えると依存が循環するので、差し替えませんでした: {cycle}";
+            }
+
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
@@ -260,6 +274,11 @@ namespace Poly_Ling.Player
             {
                 step.SetMeshRefIds(key, oldIds);
                 if (oldArg != null) step.Args[key] = oldArg; else step.Args.Remove(key);
+            }
+            else
+            {
+                // 下流へ伝える（段 4）。下流はこのコマンドの終わりに依存の順で流れる。
+                ModifierEvaluator.MarkRebuilt(model, step);
             }
 
             g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);

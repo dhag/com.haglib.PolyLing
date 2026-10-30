@@ -108,12 +108,12 @@ namespace Poly_Ling.Player
                 D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
             }
 
-            pe.Add(PlayerIoUiKit.PathRow(pathField, LoadProfileCsv));
+            pe.Add(PR("profileCsv", pathField, LoadProfileCsv, "断面 CSV"));
             if (!string.IsNullOrEmpty(ed.CsvPath)) pathField.SetValueWithoutNotify(ed.CsvPath);
 
-            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadProfileCsv));
+            pe.Add(WB("profileCsv.load", T("LoadCSV"), LoadProfileCsv, UiSafety.UserOnly, "断面 CSV を読み込む（ファイルを選ぶ）"));
 
-            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            pe.Add(WB("profileCsv.save", T("SaveCSV"), () =>
             {
                 EnsureBeltProfile(ed);
 
@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
 
                 if (ProfilePointsCsvIO.Save(ed.CsvPath, ed.Points, ed.ClosedLoop))
                     SetBeltStatus(T("ImportedPoints", ed.Points.Count));
-            }));
+            }, UiSafety.UserOnly, "断面 CSV を保存する（保存先を選ぶ）"));
         }
 
         /// <summary>断面プロファイルエディタを組み立てる。</summary>
@@ -282,11 +282,11 @@ namespace Poly_Ling.Player
             var lassoToggle = new Toggle(T("LassoMode")) { value = ed.LassoMode };
             lassoToggle.style.marginLeft = 4;
             lassoToggle.RegisterValueChangedCallback(ev => ed.LassoMode = ev.newValue);
-            viewRow.Add(lassoToggle);
+            viewRow.Add(RowTarget.Add("LassoMode", lassoToggle, T("LassoMode").Text));
             var gizmoToggle = new Toggle(T("ShowGizmo")) { value = ed.ShowGizmo };
             gizmoToggle.style.marginLeft = 8;
             gizmoToggle.RegisterValueChangedCallback(ev => { ed.ShowGizmo = ev.newValue; RefreshBeltCanvas(ed); });
-            viewRow.Add(gizmoToggle);
+            viewRow.Add(RowTarget.Add("ShowGizmo", gizmoToggle, T("ShowGizmo").Text));
             pe.Add(viewRow);
 
             BuildBeltTransformUI(pe, ed);
@@ -369,7 +369,9 @@ namespace Poly_Ling.Player
                     BeltCommit(ed, "点X編集");
                 });
                 var xRow = new VisualElement(); xRow.style.flexDirection = FlexDirection.Row; xRow.style.marginBottom = 2;
-                xRow.Add(ML("X")); xRow.Add(xSl); xRow.Add(xFf);
+                xRow.Add(ML("X"));
+                xRow.Add(RowTarget.Add("point.x", xSl, "選んだ点の X"));
+                xRow.Add(RowTarget.Add("point.xValue", xFf, "選んだ点の X（数値入力）"));
                 ed.PtRow.Add(xRow);
                 ed.PtXSlider = xSl; ed.PtXField = xFf;
             }
@@ -396,7 +398,9 @@ namespace Poly_Ling.Player
                     BeltCommit(ed, "点Y編集");
                 });
                 var yRow = new VisualElement(); yRow.style.flexDirection = FlexDirection.Row; yRow.style.marginBottom = 2;
-                yRow.Add(ML("Y")); yRow.Add(ySl); yRow.Add(yFf);
+                yRow.Add(ML("Y"));
+                yRow.Add(RowTarget.Add("point.y", ySl, "選んだ点の Y"));
+                yRow.Add(RowTarget.Add("point.yValue", yFf, "選んだ点の Y（数値入力）"));
                 ed.PtRow.Add(yRow);
                 ed.PtYSlider = ySl; ed.PtYField = yFf;
             }
@@ -413,10 +417,10 @@ namespace Poly_Ling.Player
         private void BuildBeltTransformUI(VisualElement pe, BeltProfileEdit ed)
         {
             var tfFold = FoldSection(pe, T("SelectionTransform"), false);
-            tfFold.Add(BuildTf2("移動 X/Y",     0f, 0f, out ed.TfMoveX,  out ed.TfMoveY));
-            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out ed.TfScaleX, out ed.TfScaleY));
-            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out ed.TfScaleAxis));
-            tfFold.Add(BuildTf1("回転 (°)",       0f, out ed.TfRot));
+            tfFold.Add(BuildTf2("tf.move",  "移動 X/Y",     0f, 0f, out ed.TfMoveX,  out ed.TfMoveY));
+            tfFold.Add(BuildTf2("tf.scale", "スケール X/Y", 1f, 1f, out ed.TfScaleX, out ed.TfScaleY));
+            tfFold.Add(BuildTf1("tf.scaleAxis", "スケール軸 (°)", 0f, out ed.TfScaleAxis));
+            tfFold.Add(BuildTf1("tf.rotate",    "回転 (°)",       0f, out ed.TfRot));
 
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", () => ApplyBeltTransform(ed));
@@ -435,14 +439,16 @@ namespace Poly_Ling.Player
             magToggle.RegisterValueChangedCallback(ev => { ed.Magnet.Enabled = ev.newValue; RefreshBeltCanvas(ed); });
             var falloff = new EnumField(ed.Magnet.Falloff); falloff.style.flexGrow = 1;
             falloff.RegisterValueChangedCallback(ev => ed.Magnet.Falloff = (FalloffType)ev.newValue);
-            magRow.Add(magToggle); magRow.Add(falloff);
+            magRow.Add(RowTarget.Add("magnet.enabled", magToggle, "マグネットを使う"));
+            magRow.Add(RowTarget.Add("magnet.falloff", falloff, "マグネットの減衰の形"));
             magFold.Add(magRow);
-            magFold.Add(BuildAnchorRow("半径", 0.05f, 2f, ed.Magnet.Radius, out _, out _,
+            magFold.Add(BuildAnchorRow("magnet.radius", "半径", 0.05f, 2f, ed.Magnet.Radius, out _, out _,
                 () => false, v => { ed.Magnet.Radius = v; RefreshBeltCanvas(ed); }));
 
             // アンカー
             var anchorFold = FoldSection(pe, T("AnchorSection"), false);
-            ed.AnchorEnterBtn = new Button(() => SetBeltAnchorMode(ed, true)) { text = "アンカー設定" };
+            ed.AnchorEnterBtn = RowTarget.Add("anchor.enter", new Button(() => SetBeltAnchorMode(ed, true)) { text = "アンカー設定" },
+                "アンカーの調整を始める", UiSafety.SafeWrite);
             ed.AnchorEnterBtn.style.marginBottom = 2;
             anchorFold.Add(ed.AnchorEnterBtn);
 
@@ -451,7 +457,9 @@ namespace Poly_Ling.Player
                 var headRow = new VisualElement(); headRow.style.flexDirection = FlexDirection.Row; headRow.style.marginBottom = 2;
                 var lbl = new Label("アンカー調整中（キャンバスをドラッグで移動）");
                 lbl.style.fontSize = 10; lbl.style.flexGrow = 1; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-                var done = new Button(() => SetBeltAnchorMode(ed, false)) { text = "決定" }; done.style.width = 60;
+                var done = RowTarget.Add("anchor.done", new Button(() => SetBeltAnchorMode(ed, false)) { text = "決定" },
+                    "アンカーの調整を終える", UiSafety.SafeWrite);
+                done.style.width = 60;
                 headRow.Add(lbl); headRow.Add(done); ed.AnchorPanel.Add(headRow);
 
                 var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
@@ -461,9 +469,9 @@ namespace Poly_Ling.Player
                 SB(presetRow, "左下", () => ApplyBeltAnchorPreset(ed, Canvas2DAnchor.Preset.BottomLeft));
                 ed.AnchorPanel.Add(presetRow);
 
-                ed.AnchorPanel.Add(BuildAnchorRow("X", -1f, 2f, 0f, out ed.AnchorXSlider, out ed.AnchorXField,
+                ed.AnchorPanel.Add(BuildAnchorRow("anchor.x", "X", -1f, 2f, 0f, out ed.AnchorXSlider, out ed.AnchorXField,
                     () => ed.AnchorSuppress, v => SetBeltAnchorComponent(ed, true, v)));
-                ed.AnchorPanel.Add(BuildAnchorRow("Y", -1f, 2f, 0f, out ed.AnchorYSlider, out ed.AnchorYField,
+                ed.AnchorPanel.Add(BuildAnchorRow("anchor.y", "Y", -1f, 2f, 0f, out ed.AnchorYSlider, out ed.AnchorYField,
                     () => ed.AnchorSuppress, v => SetBeltAnchorComponent(ed, false, v)));
             }
             anchorFold.Add(ed.AnchorPanel);

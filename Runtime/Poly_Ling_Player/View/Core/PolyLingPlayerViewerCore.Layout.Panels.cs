@@ -214,7 +214,7 @@ namespace Poly_Ling.Player
                 return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
             };
             // ワールド座標が要るのは衝突計算の直前だけ。毎フレームは呼ばない。
-            _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.SettleWorldPositions(ActiveProject);
             _shrinkSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _shrinkSubPanel.TryLockForPreview  = TryBeginHostPreview;
             _shrinkSubPanel.UnlockAfterPreview = EndHostPreview;
@@ -242,7 +242,7 @@ namespace Poly_Ling.Player
                 if (model == null) return null;
                 return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
             };
-            _shrinkFaceSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _shrinkFaceSubPanel.OnRequestUpdateTransform = () => _viewportManager.SettleWorldPositions(ActiveProject);
             _shrinkFaceSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _shrinkFaceSubPanel.TryLockForPreview  = TryBeginHostPreview;
             _shrinkFaceSubPanel.UnlockAfterPreview = EndHostPreview;
@@ -279,7 +279,7 @@ namespace Poly_Ling.Player
                 return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
             };
             // ワールド座標が要るのは法線計算の直前だけ。毎フレームは呼ばない。
-            _normalTransplantSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _normalTransplantSubPanel.OnRequestUpdateTransform = () => _viewportManager.SettleWorldPositions(ActiveProject);
             _normalTransplantSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _normalTransplantSubPanel.TryLockForPreview  = TryBeginHostPreview;
             _normalTransplantSubPanel.UnlockAfterPreview = EndHostPreview;

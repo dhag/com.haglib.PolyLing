@@ -127,6 +127,8 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "生成物の境界ループ（穴）の数の合計")]
     // 画面での経路は図形名から割り出す（UiRouteCatalog）。図形ごとには書かない。
     [PLUiRouteByShape]
+    // グループへの記録は「グループとして残す」が立っているときだけ（PlayerCommandDispatcher.MeshAttributes.cs）。全図形へ引き継ぐ。
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]
     public abstract class CreatePrimitiveMeshCommand : PanelCommand
     {
         /// <summary>配置と後処理の指定。</summary>
@@ -147,7 +149,7 @@ namespace Poly_Ling.Data
         /// </summary>
         [PLParam(TextKey = "ProfileSourceIndex",
                  Description = "プロファイルの取り込み元オブジェクトの索引。-1 でひも付けなし",
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int ProfileSourceIndex { get; }
 
         /// <summary>
@@ -662,6 +664,9 @@ namespace Poly_Ling.Data
     /// 配置元の索引から MeshObject への解決はディスパッチャ側が行う（藤壺と同じ口）。
     /// </summary>
     [PLCommand(Category = "geometry.create.mechanical", Writes = PLWriteScope.Targets, Description = "ネジ配置。配置元オブジェクトを円周上（PCD）または長方形の周上へ複製する。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BoltPattern,
+        InverseKeeps = "個数・並べる面・配置元・割り当て",
+        InverseLoses = "部品ごとのずれ・回転・歪み、並びの中心のずれ、面の傾き")]
     public sealed class CreateBoltPatternCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "BoltPattern", Description = "ネジ配置のパラメータ", Required = true)]
@@ -669,7 +674,7 @@ namespace Poly_Ling.Data
 
         /// <summary>配置元の MeshContextList インデックス。</summary>
         [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, MeshRefSpace = PLMeshRefSpace.Local)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "BoltPattern";

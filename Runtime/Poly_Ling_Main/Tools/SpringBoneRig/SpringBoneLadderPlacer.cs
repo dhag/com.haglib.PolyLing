@@ -86,12 +86,13 @@
 //     人が確かめること。Stack の列番号はベルト上の rung 番号なので順序は正しい。
 //
 // 【座標系】
-//   取り込み元の頂点はそのメッシュの格納空間。ボーンは世界へ置くので
-//   source.VertexToWorldMatrix を掛けてから、親のワールド位置との差をローカル位置にする。
+//   取り込み元の頂点はそのメッシュの格納空間。ボーンはレスト（バインド）姿勢の世界へ置くので
+//   source.VertexToBindWorldMatrix を掛けてから、親のバインドのワールド位置との差をローカル位置にする。
 //   WorldMatrix ではない。スキンドの頂点は既にワールド（バインド）空間なので、
 //   WorldMatrix を掛けると二重に掛かって鎖がメッシュから外れる
-//   （MeshContext.cs:489-490 … IsSkinned ? identity : WorldMatrix）。
-//   親のワールド位置は頂点ではなくオブジェクトの原点なので、そちらは WorldMatrix のまま。
+//   （MeshContext.VertexToBindWorldMatrix … IsSkinned ? identity : BindWorldMatrix）。
+//   ポーズ込みの行列を使わないのは、歩かせている最中の作り直しでもずれないようにするため
+//   （作り直し整備計画 段 5）。親の位置も BindWorldMatrix で取る。
 //
 // 【ウェイトを塗る契機】
 //   塗ってよいのは取り込み元がスキンド系のときだけ。MeshFilter 系のうちは
@@ -316,8 +317,8 @@ namespace Poly_Ling.Tools.SpringBoneRig
             //   SkinningMatrix 経路へ移り、WorldMatrix が単位でなければ飛ぶ。
             //
             //   ボーンは先に作ってよい。塗るのはスキンド化のあとで、
-            //   オブジェクトグループの自動更新が流し直す
-            //   （PlayerCommandDispatcher.RunAutoUpdateGroups）。
+            //   オブジェクトグループの評価器が依存の順に流し直す
+            //   （PlayerCommandDispatcher.ReevaluateAfterSkinning。作り直し整備計画 段 5）。
             bool canPaint = paintWeights && source.IsSkinned;
 
             string paintNote = (paintWeights && !source.IsSkinned)
@@ -345,8 +346,9 @@ namespace Poly_Ling.Tools.SpringBoneRig
 
             // ── 間引き ──
             // スキンドの頂点は既にワールド（バインド）空間。WorldMatrix を掛けると
-            // 二重に掛かる。判定は MeshContext.VertexToWorldMatrix に集約してある。
-            Matrix4x4 toWorld = source.VertexToWorldMatrix;
+            // 二重に掛かる。ボーンはレスト（バインド）姿勢で置くので、ポーズの入らない
+            // バインドの行列で読む（作り直し整備計画 段 5。歩かせている最中の作り直しでもずれない）。
+            Matrix4x4 toWorld = source.VertexToBindWorldMatrix;
 
             var plans   = new List<ChainPlan>();
             var weights = new Dictionary<int, List<WeightRef>>();
@@ -409,7 +411,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
                     result.Message = "親にするボーンが見つかりません。";
                     return result;
                 }
-                parentWorldRoot = Origin(amc.WorldMatrix);
+                parentWorldRoot = Origin(amc.BindWorldMatrix);
             }
             else
             {
@@ -432,7 +434,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 if (mAttach >= 0 && mAttach < model.MeshContextCount)
                 {
                     var mamc = model.GetMeshContext(mAttach);
-                    if (mamc != null) mParentWorld = Origin(mamc.WorldMatrix);
+                    if (mamc != null) mParentWorld = Origin(mamc.BindWorldMatrix);
                 }
 
                 // ウェイトの参照先は実体側の鎖だけ。ミラー側の頂点対応は捨てる。
@@ -1021,18 +1023,19 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 var root = model.GetMeshContext(ch[0]);
                 if (root?.BoneTransform == null) continue;
 
-                Vector3 rootWorld = Origin(root.WorldMatrix);
+                // レスト（バインド）姿勢で比べて置く（ポーズ込みの WorldMatrix ではない。段 5）。
+                Vector3 rootWorld = Origin(root.BindWorldMatrix);
 
                 int best = -1; float bestD = float.MaxValue;
                 foreach (int b in cand)
                 {
-                    float d = (Origin(model.GetMeshContext(b).WorldMatrix) - rootWorld).sqrMagnitude;
+                    float d = (Origin(model.GetMeshContext(b).BindWorldMatrix) - rootWorld).sqrMagnitude;
                     if (d < bestD) { bestD = d; best = b; }
                 }
                 if (best < 0) continue;
 
                 root.HierarchyParentIndex  = best;
-                root.BoneTransform.Position = rootWorld - Origin(model.GetMeshContext(best).WorldMatrix);
+                root.BoneTransform.Position = rootWorld - Origin(model.GetMeshContext(best).BindWorldMatrix);
                 moved++;
             }
 
@@ -1186,8 +1189,10 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 var parentCtx   = (parentIndex >= 0 && parentIndex < model.MeshContextCount)
                     ? model.GetMeshContext(parentIndex) : null;
 
+                // 親の位置はバインド（レスト）姿勢で取る。BoneTransform.Position はレストの量なので、
+                // ポーズ込みの WorldMatrix から引くと歩かせている最中にずれる（段 5）。
                 Vector3 parentWorld = parentCtx != null
-                    ? Origin(parentCtx.WorldMatrix)
+                    ? Origin(parentCtx.BindWorldMatrix)
                     : Vector3.zero;
 
                 for (int i = 0; i < plan.Worlds.Count; i++)

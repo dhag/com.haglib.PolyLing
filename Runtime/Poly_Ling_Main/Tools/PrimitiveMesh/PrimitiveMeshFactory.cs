@@ -84,12 +84,15 @@ namespace Poly_Ling.PrimitiveMesh
             CreatePrimitiveMeshCommand cmd,
             bool forPreview = false,
             PlaceSourceResolver resolvePlaceSources = null,
-            BeltSourceResolver resolveBeltSource = null)
+            BeltSourceResolver resolveBeltSource = null,
+            SurfacePasteResolver resolveSurfacePaste = null)
         {
             if (cmd == null) return null;
 
             var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
-            MeshObject mo = Generate(cmd, resolvePlaceSources, resolveBeltSource);
+            MeshObject mo = cmd is CreateSurfacePasteCommand spc
+                ? SurfacePasteOps.Build(resolveSurfacePaste?.Invoke(spc.SourceIndex, spc.ReferenceIndex), spc.Params)
+                : Generate(cmd, resolvePlaceSources, resolveBeltSource);
             if (mo == null) return null;
             long __tGen = __sw.ElapsedMilliseconds; // TEMP-TIMING
             int __v0 = mo.VertexCount; // TEMP-TIMING
@@ -118,6 +121,23 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
         // 図形ごとの生成
         // ================================================================
+
+        /// <summary>
+        /// 索引の並びを格納値のままの MeshObject の並びにする（パイプの梯子化）。引けないもの・重複は飛ばす。
+        /// 解決口が無ければ null。
+        /// </summary>
+        private static System.Collections.Generic.List<MeshObject> ResolveStoredSources(
+            int[] masterIndices, BeltSourceResolver resolve)
+        {
+            if (resolve == null || masterIndices == null) return null;
+            var list = new System.Collections.Generic.List<MeshObject>();
+            foreach (int idx in masterIndices)
+            {
+                var mo = resolve(idx);
+                if (mo != null && !list.Contains(mo)) list.Add(mo);
+            }
+            return list;
+        }
 
         /// <summary>1 頂点でもウェイトを持つか。</summary>
         private static bool HasAnyBoneWeight(MeshObject mo)
@@ -188,9 +208,12 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateFrillCommand c:        return GenerateFrill(c, resolveBeltSource);
                 case CreatePipeCommand c:         return GeneratePipe(c, resolveBeltSource);
                 case ExtractPipeBeltCommand c:
-                    return PipeBeltExtractor.Build(c.Params,
-                        resolvePlaceSources?.Invoke(c.SourceMasterIndices, false));
-                case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources);
+                    // パイプは格納値のまま読む（スキンドを元のローカルへ戻さない）。梯子はパイプの格納空間で出来、
+                    // 出力へは ModifierSpace の行列 M で移す（貼り付けと同じ形。PLParam.OutputSpaceSource）。
+                    // 逆方向（copiedVertices）は写した頂点の新しい位置をそのままパイプへ書くので、同じ空間でなければならない。
+                    return PipeBeltExtractor.Build(c.Params, ResolveStoredSources(c.SourceMasterIndices, resolveBeltSource));
+                case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources, resolveBeltSource);
+                case CreateLushCommand c:         return GenerateLush(c, resolvePlaceSources, resolveBeltSource);
                 case CreateBoltPatternCommand c:  return GenerateBoltPattern(c, resolvePlaceSources);
 
                 // ── 魔法陣の部品 ──
@@ -424,6 +447,8 @@ namespace Poly_Ling.PrimitiveMesh
                 HeightScale = globalHeightScale * b.HeightScale,
                 TLeft       = t0,
                 TRight      = t1,
+                // 逆方向の控え（段 15）：EachPreprocessedBelt が立てた今の梯子の番号。
+                TraceBelt   = ModifierFrameTrace.Current?.CurrentBelt ?? -1,
             };
         }
 
@@ -474,7 +499,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// スプライン分割は rung 数を変えるだけなので、段を通した後に掛ける。
         /// </summary>
         private static MeshObject GeneratePlaceObject(
-            CreatePlaceObjectCommand c, PlaceSourceResolver resolvePlaceSources)
+            CreatePlaceObjectCommand c, PlaceSourceResolver resolvePlaceSources, BeltSourceResolver resolveBeltSource)
         {
             var mo = new MeshObject(c.Params.MeshName);
 
@@ -509,16 +534,26 @@ namespace Poly_Ling.PrimitiveMesh
 
             if (c.Belts == null) return mo;
 
-            foreach (var raw in c.Belts)
+            // はしごのウェイトの引き継ぎ（段 I）。前処理（向き補正・スプライン）が点を動かすので、
+            // 前処理の手前で載せる（EachPreprocessedBelt と同じ）。
+            var beltSource = ResolveBeltSource(c, c.Params.InheritBeltWeights, resolveBeltSource);
+            var weightTable = beltSource != null ? BeltWeightBinder.BuildTable(beltSource) : null;
+
+            for (int rawIndex = 0; rawIndex < c.Belts.Length; rawIndex++)
             {
+                var raw = c.Belts[rawIndex];
                 if (raw == null || !raw.HasData) continue;
+
+                if (weightTable != null && weightTable.Count > 0) BeltWeightBinder.Bind(raw, weightTable);
 
                 var oriented = BeltShapeOps.ApplyOrient(raw, c.Orient);
 
                 int row = Mathf.Max(0, oriented.RowIndex);
                 if ((row % rowStride) != rowOffset) continue;
 
-                var b = BeltShapeOps.ApplySpline(oriented, c.Spline);
+                // 前処理は Preprocess と同じ順（向き補正 → スプライン）。段の対応は逆方向の控えへ渡す。
+                var b = BeltShapeOps.PreprocessTraced(raw, c.Orient, c.Spline, out var rungTrace);
+                ModifierFrameTrace.BeginBelt(rawIndex, rungTrace);
 
                 int n = Mathf.Min(b.Left.Count, b.Right.Count);
                 var perRung = new MeshObject[n];
@@ -547,11 +582,42 @@ namespace Poly_Ling.PrimitiveMesh
                 var part = PlaceObjectMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     perRung, c.Params.MeshName, userScale, c.Params.RollSteps, c.Params.ScaleMode,
-                    partsIds);
+                    partsIds,
+                    b.HasWeights ? b.LeftWeights : null, b.HasWeights ? b.RightWeights : null);
 
                 MeshObjectAppendOps.Append(mo, part);
             }
 
+            return mo;
+        }
+
+        // ── まつげ ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// 前処理（向き補正・スプライン分割）を済ませた梯子の段ごとに原型を置く（LushMeshGenerator）。
+        /// 原型が複数なら結合して 1 つにする。パーツ ID は梯子をまたいで 0 から連番。
+        /// </summary>
+        private static MeshObject GenerateLush(
+            CreateLushCommand c, PlaceSourceResolver resolvePlaceSources, BeltSourceResolver resolveBeltSource)
+        {
+            var mo = new MeshObject(c.Params.MeshName);
+            if (resolvePlaceSources == null) return mo;
+            var srcs = resolvePlaceSources(c.SourceMasterIndices, c.Params.IncludeChildren);
+            if (srcs == null || srcs.Count == 0) return mo;
+
+            var proto = srcs.Count == 1 ? srcs[0] : MeshObjectAppendOps.Combine(srcs, c.Params.MeshName);
+            var partsIds = new PartsIdCounter();
+
+            // はしごのウェイトの引き継ぎ（段 I）。補間で足した段は前処理がウェイトも補間する。
+            var beltSource = ResolveBeltSource(c, c.Params.InheritBeltWeights, resolveBeltSource);
+
+            foreach (var b in EachPreprocessedBelt(c, beltSource))
+            {
+                var part = new MeshObject(c.Params.MeshName);
+                LushMeshGenerator.AppendBelt(part, b, proto, c.Params, partsIds);
+                MeshObjectAppendOps.Append(mo, part);
+            }
+            mo.RecalculateNormals();
             return mo;
         }
 
@@ -583,14 +649,18 @@ namespace Poly_Ling.PrimitiveMesh
             // 点を動かすので、あとから位置で突き合わせても引けない。
             var table = beltSource != null ? BeltWeightBinder.BuildTable(beltSource) : null;
 
-            foreach (var raw in c.Belts)
+            for (int rawIndex = 0; rawIndex < c.Belts.Length; rawIndex++)
             {
+                var raw = c.Belts[rawIndex];
                 if (raw == null || !raw.HasData) continue;
 
                 if (table != null && table.Count > 0) BeltWeightBinder.Bind(raw, table);
 
-                var b = BeltShapeOps.Preprocess(raw, c.Orient, c.Spline);
+                var b = BeltShapeOps.PreprocessTraced(raw, c.Orient, c.Spline, out var rungTrace);
                 if (b == null || !b.HasData) continue;
+
+                // 逆方向の控え（ModifierFrameTrace）。これから作る部品がどの梯子のものかを立てる。
+                ModifierFrameTrace.BeginBelt(rawIndex, rungTrace);
                 yield return b;
             }
         }
@@ -624,6 +694,10 @@ namespace Poly_Ling.PrimitiveMesh
             switch (shapeName)
             {
                 case "PlaceObject":
+                // まつげは藤壺と同じ（置いた 1 個＝パーツ 1 つ、サブ ID は原型のまま）。
+                case "Lush":
+                // 貼り付けは入力のパーツ ID・サブ ID をそのまま保つ。
+                case "SurfacePaste":
                 case "BoltPattern":
                 // オブジェクトの円周配置も配置元のサブIDをそのまま使う。
                 case "RadialPlace":

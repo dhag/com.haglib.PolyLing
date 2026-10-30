@@ -23,8 +23,18 @@ namespace Poly_Ling.Serialization
         {
             var dto = ModelSerializer.FromModelContext(model);
             if (dto == null) return null;
-            dto.embeddedTextures = ModelTextureTransfer.ToEmbedded(ModelTextureTransfer.Collect(model));
+            AttachTextures(dto, model);
             return dto;
+        }
+
+        /// <summary>
+        /// 材質が参照するテクスチャ画像を dto.embeddedTextures に載せる（JSON はパスしか持たないため）。
+        /// BuildDto と、プロジェクト丸ごとの ProjectSerializer.FromProjectContext(embedTextures: true) が使う。
+        /// </summary>
+        public static void AttachTextures(ModelDTO dto, ModelContext model)
+        {
+            if (dto == null || model == null) return;
+            dto.embeddedTextures = ModelTextureTransfer.ToEmbedded(ModelTextureTransfer.Collect(model));
         }
 
         /// <summary>モデル 1 つ分の JSON の UTF-8 バイト列。モデルが無ければ null。</summary>

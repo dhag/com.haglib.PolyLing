@@ -80,6 +80,27 @@ namespace Poly_Ling.Player
         [UiControl("mergeUp", Safety = UiSafety.SafeWrite, Description = "1 つ上のグループへ足す（マクロにする）")]
         private Button    _btnMerge;
 
+        // ── 項目の引数（段 3）
+        [UiControl("argStep", Description = "引数を書き換える項目")]
+        private DropdownField _argStepDropdown;
+        [UiControl("argKey", Description = "書き換える引数のキー（書けるものだけ）")]
+        private DropdownField _argKeyDropdown;
+        [UiControl("argValue", Description = "書く値（コマンドの型で読み直せること）")]
+        private TextField     _argValueField;
+        [UiControl("argWrite", Safety = UiSafety.Destructive,
+                   Description = "引数を書いて、その項目だけを作り直す")]
+        private Button        _btnArgWrite;
+
+        // ── 出力の編集（逆方向。段 6）。対象は「項目の引数」で選んだ項目。
+        [UiControl("inverseInfo", Safety = UiSafety.ReadOnly, Description = "選んだ項目の逆方向（保つもの・失うもの・未確定か）")]
+        private Label  _inverseInfo;
+        [UiControl("inverseCommit", Safety = UiSafety.Destructive,
+                   Description = "出力の位置の編集を確定する（入力を書き直し、出力と下流を作り直す）")]
+        private Button _btnInverseCommit;
+        [UiControl("inverseDiscard", Safety = UiSafety.Destructive,
+                   Description = "出力の未確定の編集を捨て、今の入力から作り直す")]
+        private Button _btnInverseDiscard;
+
         /// <summary>表示用の 1 行。Refresh のたびに作り直す。</summary>
         private struct Row
         {
@@ -182,6 +203,43 @@ namespace Poly_Ling.Player
             _btnPurge.style.marginBottom = 3;
             root.Add(_btnPurge);
 
+            // ── 項目の引数：書いたらその項目だけ作り直す。入力・出力先の参照と入力の中身は出さない。
+            root.Add(SecLabel("項目の引数"));
+
+            _argStepDropdown = new DropdownField("項目", new List<string>(), -1);
+            _argStepDropdown.style.fontSize = 10;
+            _argStepDropdown.RegisterValueChangedCallback(_ => UpdateArgKeys());
+            root.Add(_argStepDropdown);
+
+            _argKeyDropdown = new DropdownField("キー", new List<string>(), -1);
+            _argKeyDropdown.style.fontSize = 10;
+            _argKeyDropdown.RegisterValueChangedCallback(_ => UpdateArgValue());
+            root.Add(_argKeyDropdown);
+
+            _argValueField = new TextField("値");
+            _argValueField.style.fontSize = 10;
+            root.Add(_argValueField);
+
+            _btnArgWrite = MkBtn("書いて作り直す", OnArgWrite);
+            _btnArgWrite.style.marginBottom = 3;
+            root.Add(_btnArgWrite);
+
+            // ── 出力の編集（逆方向）：逆方向を持つ項目は出力の頂点の位置を編集でき、確定で入力へ戻す。
+            root.Add(SecLabel("出力の編集（逆方向）"));
+
+            _inverseInfo = new Label();
+            _inverseInfo.style.whiteSpace = WhiteSpace.Normal;
+            _inverseInfo.style.fontSize   = 10;
+            _inverseInfo.style.marginBottom = 3;
+            root.Add(_inverseInfo);
+
+            var invRow = new VisualElement();
+            invRow.style.flexDirection = FlexDirection.Row;
+            invRow.style.marginBottom  = 3;
+            _btnInverseCommit  = MkBtn("確定（入力へ戻す）", OnInverseCommit);  _btnInverseCommit.style.flexGrow  = 1; invRow.Add(_btnInverseCommit);
+            _btnInverseDiscard = MkBtn("破棄",               OnInverseDiscard); _btnInverseDiscard.style.flexGrow = 1; invRow.Add(_btnInverseDiscard);
+            root.Add(invRow);
+
             _statusLabel = new Label();
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             _statusLabel.style.fontSize   = 10;
@@ -256,11 +314,132 @@ namespace Poly_Ling.Player
             {
                 if (_detailLabel != null) _detailLabel.text = "";
                 _autoUpdateToggle?.SetValueWithoutNotify(false);
+                UpdateArgSteps(null);
                 return;
             }
 
             _autoUpdateToggle?.SetValueWithoutNotify(g.AutoUpdate);
             _detailLabel.text = g.Detail;
+            UpdateArgSteps(g);
+        }
+
+        // ================================================================
+        // 項目の引数
+        // ================================================================
+
+        /// <summary>項目の選択肢を作り直す。前に選んでいた項目番号は保つ。</summary>
+        private void UpdateArgSteps(Poly_Ling.View.ObjectGroupView g)
+        {
+            if (_argStepDropdown == null) return;
+
+            int prev = _argStepDropdown.index;
+            var choices = new List<string>();
+            if (g?.Steps != null)
+                for (int i = 0; i < g.Steps.Length; i++)
+                    choices.Add($"{i}: {g.Steps[i]?.Action}");
+
+            _argStepDropdown.choices = choices;
+            int idx = choices.Count == 0 ? -1 : (prev >= 0 && prev < choices.Count ? prev : 0);
+            _argStepDropdown.SetValueWithoutNotify(idx >= 0 ? choices[idx] : "");
+            UpdateArgKeys();
+        }
+
+        private Poly_Ling.View.ObjectGroupStepView SelectedArgStep()
+        {
+            var g = SelectedGroup();
+            int si = _argStepDropdown?.index ?? -1;
+            if (g?.Steps == null || si < 0 || si >= g.Steps.Length) return null;
+            return g.Steps[si];
+        }
+
+        /// <summary>書けるキーだけを選択肢にする。前に選んでいたキーは保つ。</summary>
+        private void UpdateArgKeys()
+        {
+            if (_argKeyDropdown == null) return;
+
+            string prev = _argKeyDropdown.value;
+            var choices = new List<string>();
+            var st = SelectedArgStep();
+            if (st?.Keys != null)
+                for (int k = 0; k < st.Keys.Length; k++)
+                    if (k < st.Writable.Length && st.Writable[k]) choices.Add(st.Keys[k]);
+
+            _argKeyDropdown.choices = choices;
+            string v = choices.Contains(prev) ? prev : (choices.Count > 0 ? choices[0] : "");
+            _argKeyDropdown.SetValueWithoutNotify(v);
+            _btnArgWrite?.SetEnabled(choices.Count > 0);
+            UpdateArgValue();
+            UpdateInverse();
+        }
+
+        /// <summary>選んだ項目の逆方向の表示とボタンを合わせる。</summary>
+        private void UpdateInverse()
+        {
+            if (_inverseInfo == null) return;
+            var st = SelectedArgStep();
+            bool has = st != null && !string.IsNullOrEmpty(st.InverseMethod);
+            if (!has)
+            {
+                _inverseInfo.text = st == null ? "" : "この項目は逆方向を持ちません（出力は編集できません）";
+                _btnInverseCommit?.SetEnabled(false);
+                _btnInverseDiscard?.SetEnabled(false);
+                return;
+            }
+            _inverseInfo.text =
+                (st.OutputEditPending ? "出力の編集が未確定です。確定するまで、この項目と下流は作り直されません。\n"
+                                      : "出力の頂点の位置を編集すると未確定になります。\n")
+              + $"保つもの：{st.InverseKeeps}\n失うもの：{st.InverseLoses}\n"
+              + "確定すると、出力は入力から作り直した形に置き換わります（編集は丸められます）。";
+            _btnInverseCommit?.SetEnabled(st.OutputEditPending);
+            _btnInverseDiscard?.SetEnabled(st.OutputEditPending);
+        }
+
+        private void OnInverseCommit()
+        {
+            var g = SelectedGroup();
+            int si = _argStepDropdown?.index ?? -1;
+            if (g == null || si < 0) { SetStatus("グループと項目を選んでください"); return; }
+            SendCmd(new CommitModifierOutputEditCommand(ModelIndex, g.Name, si));
+            SetStatus($"「{g.Name}」項目 {si} の出力の編集の確定を送りました");
+            Refresh();
+        }
+
+        private void OnInverseDiscard()
+        {
+            var g = SelectedGroup();
+            int si = _argStepDropdown?.index ?? -1;
+            if (g == null || si < 0) { SetStatus("グループと項目を選んでください"); return; }
+            SendCmd(new DiscardModifierOutputEditCommand(ModelIndex, g.Name, si));
+            SetStatus($"「{g.Name}」項目 {si} の出力の編集の破棄を送りました");
+            Refresh();
+        }
+
+        /// <summary>選んだキーの今の値を入力欄へ出す。</summary>
+        private void UpdateArgValue()
+        {
+            if (_argValueField == null) return;
+            var st = SelectedArgStep();
+            string key = _argKeyDropdown?.value;
+            string val = "";
+            if (st?.Keys != null && !string.IsNullOrEmpty(key))
+                for (int k = 0; k < st.Keys.Length; k++)
+                    if (st.Keys[k] == key) { val = k < st.Values.Length ? st.Values[k] : ""; break; }
+            _argValueField.SetValueWithoutNotify(val);
+        }
+
+        private void OnArgWrite()
+        {
+            var g = SelectedGroup();
+            if (g == null) { SetStatus("グループを選んでください"); return; }
+            int si = _argStepDropdown?.index ?? -1;
+            if (si < 0) { SetStatus("項目を選んでください"); return; }
+            string key = _argKeyDropdown?.value;
+            if (string.IsNullOrEmpty(key)) { SetStatus("書けるキーがありません"); return; }
+            string val = _argValueField?.value ?? "";
+
+            SendCmd(new SetObjectGroupStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { val }));
+            SetStatus($"「{g.Name}」項目 {si} の {key} を書いて作り直しを送りました");
+            Refresh();
         }
 
         private void SetStatus(string text)

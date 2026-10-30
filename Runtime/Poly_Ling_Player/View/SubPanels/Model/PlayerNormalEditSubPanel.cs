@@ -868,8 +868,10 @@ namespace Poly_Ling.Player
             if (_previewBar == null) return;
             bool show = _preview.IsActive && _previewFromPanel;
             _previewBar.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-            if (show)
-                _previewStateLabel.text = $"プレビュー中: {OpLabel(_previewOp)}（値を変えると開始時から計算し直す）";
+            // 隠すときは文字も消す（残すと uiGetValue でプレビュー中と読めてしまう）。
+            _previewStateLabel.text = show
+                ? $"プレビュー中: {OpLabel(_previewOp)}（値を変えると開始時から計算し直す）"
+                : "";
         }
 
         // ================================================================

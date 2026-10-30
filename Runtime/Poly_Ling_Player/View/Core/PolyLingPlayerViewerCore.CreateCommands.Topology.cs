@@ -202,8 +202,9 @@ namespace Poly_Ling.Player
             var h = _edgeRibbonFaceHandler;
             if (h == null) return "辺から帯面ハンドラがありません";
 
-            // 帯の座標は GPU のワールド位置から読む。読む前に 1 回だけ更新する。
-            _viewportManager?.UpdateTransform();
+            // 帯の座標はバインド姿勢のワールド（ModifierSpace.BindWorldPositions）から読む（段 E）。
+            // 頂点の格納値を CPU で読むので GPU の同期は要らない。行列だけ今の値にそろえる。
+            ActiveProject?.CurrentModel?.ComputeWorldMatrices();
 
             if (!h.BuildFromCommand(cmd, out var mo, out string reason)) return reason;
 
@@ -219,7 +220,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 頂点へ藤壺のコマンド。
-        /// メッシュはハンドラが組み（位置は GPU のワールド座標、向きはコマンドのカメラ）、
+        /// メッシュはハンドラが組み（位置はバインド姿勢のワールド座標、向きはコマンドのカメラ）、
         /// 置き方は他の図形生成と同じ PlaceGeneratedMesh を通す。姿勢は入れない。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
@@ -231,8 +232,8 @@ namespace Poly_Ling.Player
             var h = _vertexBillboardPlaceHandler;
             if (h == null) return "頂点へ藤壺ハンドラがありません";
 
-            // 頂点の座標は GPU のワールド位置から読む。読む前に 1 回だけ更新する。
-            _viewportManager?.UpdateTransform();
+            // 頂点の座標はバインド姿勢のワールド（ModifierSpace.BindWorldPositions）から読む（段 E）。
+            ActiveProject?.CurrentModel?.ComputeWorldMatrices();
 
             if (!h.BuildFromCommand(cmd, out var mo, out string reason)) return reason;
 

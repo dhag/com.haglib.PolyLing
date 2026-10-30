@@ -305,8 +305,7 @@ namespace Poly_Ling.Ops
                 categoryIdx++;
             }
 
-            _model.MeshContextList.Clear();
-            _model.MeshContextList.AddRange(newOrder);
+            _model.ReplaceMeshContexts(newOrder);
 
             // 並べ替えで動いた索引参照を付け替える。
             // ここを飛ばすと、entries に入っていない要素（既定でツリーから外れる

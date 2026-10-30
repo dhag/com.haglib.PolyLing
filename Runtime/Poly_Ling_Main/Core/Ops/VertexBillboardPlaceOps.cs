@@ -142,7 +142,7 @@ namespace Poly_Ling.Ops
                 if (src == null || src.VertexCount == 0) continue;
 
                 PlaceObjectMeshGenerator.AppendInstance(
-                    mo, src, positions[i], x, y, z, s, true, partsIds.Take());
+                    mo, src, positions[i], x, y, z, s, true, partsIds.Take(), i);
             }
 
             mo.RecalculateNormals();

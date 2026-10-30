@@ -122,15 +122,33 @@ namespace Poly_Ling.Player
                     if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return true; }
 
                     int gIndex = model.ObjectGroups.IndexOf(g);
-                    RecordObjectGroupUndo(
-                        new ObjectGroupChangeRecord
-                        {
-                            RemovedGroup = g.Clone(),
-                            RemovedIndex = gIndex,
-                        },
-                        $"オブジェクトグループ解除: {g.Name}");
+                    var removedRecord = new ObjectGroupChangeRecord
+                    {
+                        RemovedGroup = g.Clone(),
+                        RemovedIndex = gIndex,
+                    };
+                    string releaseDesc = $"オブジェクトグループ解除: {g.Name}";
+
+                    // 「適用」：出力を普通のメッシュにする。処理器のある項目（サブディビジョン）は
+                    // 処理器が立てたロック・表示を戻すので、一覧のスナップショットごと Undo 1 件にする。
+                    _undoController?.SetModelContext(model);
+                    var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+                    bool released  = ModifierEvaluator.ReleaseGroup(model, g);
 
                     model.RemoveObjectGroup(g);
+
+                    if (released)
+                    {
+                        RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount,
+                            new List<ObjectGroupChangeRecord> { removedRecord }, releaseDesc);
+                        model.IsDirty = true;
+                        _viewportManager.EnterTopologyChanged(project);
+                    }
+                    else
+                    {
+                        RecordObjectGroupUndo(removedRecord, releaseDesc);
+                    }
+
                     _notifyPanels(ChangeKind.ListStructure);
                     return true;
                 }
@@ -164,6 +182,31 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── オブジェクトグループ：項目の引数を書き換えて、その項目だけ作り直す（段 3）
+                case SetObjectGroupStepArgsCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteSetGroupStepArgs(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                // ── オブジェクトグループ：出力の編集の確定・破棄（段 6）
+                case CommitModifierOutputEditCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteModifierOutputEdit(project, model, c.GroupName, c.StepIndex, commit: true);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+                case DiscardModifierOutputEditCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteModifierOutputEdit(project, model, c.GroupName, c.StepIndex, commit: false);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
                 // ── シュリンカー適用
                 case ApplyShrinkCommand c:
                 {
@@ -171,8 +214,9 @@ namespace Poly_Ling.Player
                     var beforeCtx = model.GetMeshContext(c.BeforeMasterIndex);
                     if (beforeCtx?.MeshObject == null) { Fail("変形前のメッシュがありません"); return true; }
 
-                    // 衝突計算に使うワールド座標をこの時点で1回だけ更新する。
-                    _viewportManager.UpdateTransform();
+                    // 衝突計算に使うワールド座標をこの時点で1回だけ合わせる
+                    // （CPU の位置を送ってから変換する。段 B の SettleWorldPositions）。
+                    _viewportManager.SettleWorldPositions(project);
 
                     var stops = ShrinkOperation.ComputeStopParams(
                         model, c.BeforeMasterIndex, c.AfterMasterIndex, c.ColliderMasterIndices,
@@ -321,6 +365,16 @@ namespace Poly_Ling.Player
 
             if (group == null) return;
 
+            // 依存の循環になる登録は拒否する（作り直し整備計画 段 4）。
+            // 既存へ追加・置き換えで、出力先が上流の項目の入力になっているときに起きる。
+            // グループは足さない。生成物はそのまま残り、そのコマンドの Undo で消せる。
+            string cycle = ModifierGraph.CycleReason(model, group, focusInModel: false);
+            if (cycle != null)
+            {
+                Fail($"グループとして残すと依存が循環するので、グループに登録しませんでした: {cycle}");
+                return;
+            }
+
             RecordObjectGroupUndo(
                 new ObjectGroupChangeRecord
                 {
@@ -330,107 +384,20 @@ namespace Poly_Ling.Player
                 $"オブジェクトグループ追加: {group.Name}");
 
             model.AddObjectGroup(group);
-        }
 
-        /// <summary>入れ子で 2 周させないための印。</summary>
-        private bool _autoUpdateRunning;
+            // 作った直後の入力・出力を控える（作り直し整備計画 段 9）。画面の更新の前に
+            // 入力・出力を編集しても、要評価・未確定として扱われるようにする。
+            ModifierEvaluator.PrimeGroup(model, group);
+        }
 
         /// <summary>
-        /// 「ソースが変わったら自動で作り直す」が立っているグループを流す。
-        ///
-        /// 【いつ呼ぶか】
-        ///   ソースの頂点を書き換える操作のあと。今はスキンド化の 2 経路
-        ///   （SkinKindConverter.ToSkinned / MeshFilterToSkinnedConverter.Execute）から。
-        ///   スキンド化は頂点をワールドへ焼き直すので、それを取り込むグループの
-        ///   ダイジェストが変わる（ObjectGroupOps.ComputeSourceDigest は位置を混ぜる）。
-        ///
-        /// 【出力に含むグループは流さない】
-        ///   ソースに含むものだけを対象にする。出力をスキンド化したあとに
-        ///   作り直すと、生成コマンドは MeshFilter 前提の空間で作り直すので、
-        ///   焼き直した頂点を壊す。
-        ///
-        /// 【ダイジェストでは絞らない】
-        ///   スキンド化は「ソースが変わった」ではなく「塗る契機」。
-        ///   WorldMatrix が単位のオブジェクトは焼いても位置が動かず、
-        ///   ダイジェストが変わらないため、絞ると永久に流れない。
-        ///
-        /// 【Undo】
-        ///   ここでは記録しない。呼び出し側が SuspendRecording の中で呼び、
-        ///   外で 1 件だけ積む。
+        /// 作り直しの書き戻し（RunObjectGroupStep の入れ子の Dispatch）の深さ。
+        /// 0 より大きい間は出力の保護（ModifierOutputGuard）を掛けない。
         /// </summary>
-        /// <returns>最後まで流せたグループの数</returns>
-        private int RunAutoUpdateGroups(
-            ProjectContext project, ModelContext model, int modelIndex,
-            IReadOnlyList<ulong> changedObjectIds)
-        {
-            if (project == null || model?.ObjectGroups == null) return 0;
-            if (changedObjectIds == null || changedObjectIds.Count == 0) return 0;
-            if (_autoUpdateRunning) return 0;
+        private int _modifierWriteBackDepth;
 
-            // 対象は先に決める。走らせながら選ぶと、実行でモデルが変わって
-            // 途中から条件が揺れる。
-            var targets = new List<Poly_Ling.Data.ObjectGroup>();
-
-            foreach (var g in model.ObjectGroups)
-            {
-                if (g == null || !g.AutoUpdate || g.StepCount == 0) continue;
-
-                bool hit = false;
-                for (int i = 0; i < changedObjectIds.Count; i++)
-                    if (g.ContainsSource(changedObjectIds[i])) { hit = true; break; }
-                if (!hit) continue;
-
-                // ダイジェストでは絞らない。
-                //
-                // 【なぜ絞ってはいけないか】
-                //   スキンド化は「ソースが変わった」ではなく「塗る契機」。
-                //   変換は頂点をワールドへ焼くが、WorldMatrix が単位のオブジェクトでは
-                //   位置が 1 つも動かないのでダイジェストは変わらない
-                //   （MeshFilterToSkinnedConverter.cs:705-707）。
-                //   IsStale で絞ると、そういうオブジェクトを取り込むグループが
-                //   永久に流れず、ウェイトが塗られないまま残る。
-                //
-                //   流す相手は ContainsSource で既に「変換の対象を取り込むもの」だけに
-                //   絞られている。冪等なので、要更新でなくても流して壊れない。
-
-                targets.Add(g);
-            }
-
-            if (targets.Count == 0) return 0;
-
-            int done = 0;
-            _autoUpdateRunning = true;
-            try
-            {
-                foreach (var g in targets)
-                {
-                    bool ok = true;
-
-                    for (int si = 0; si < g.StepCount; si++)
-                    {
-                        // 退避は作らない。自動で流れるものが実行のたびに
-                        // 複製を増やすと、モデルが静かに膨らむ。
-                        if (!RunObjectGroupStep(
-                                project, model, modelIndex, false, g, si, out string err))
-                        {
-                            Debug.LogWarning(
-                                $"[ObjectGroup] 自動更新が止まりました: {g.Name} 項目 {si}: {err}");
-                            ok = false;
-                            break;
-                        }
-                    }
-
-                    g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
-                    if (ok) done++;
-                }
-            }
-            finally
-            {
-                _autoUpdateRunning = false;
-            }
-
-            return done;
-        }
+        // スキンド化の直後の塗り直し（旧 RunAutoUpdateGroups）は、評価器へ寄せた
+        // （PlayerCommandDispatcher.ModifierEval.cs の ReevaluateAfterSkinning。作り直し整備計画 段 5）。
 
         /// <summary>
         /// オブジェクトグループの 1 項目を実行する。
@@ -555,7 +522,11 @@ namespace Poly_Ling.Player
                     rebuiltArgs[rbKeys.TargetIndexKey] = outIndices[0].ToString(inv);
                 }
 
-                if (rbKeys.HasMode) rebuiltArgs[rbKeys.ModeKey] = rbKeys.ModeArgValue;
+                if (rbKeys.HasMode)
+                {
+                    StripPoseOwnedByOutput(rebuilt, rbKeys.ModeKey, rebuiltArgs);
+                    rebuiltArgs[rbKeys.ModeKey] = rbKeys.ModeArgValue;
+                }
             }
 
             var writeBackCmd = PanelCommandFactory.Create(
@@ -566,9 +537,20 @@ namespace Poly_Ling.Player
 
             int vertsBefore = singleMesh ? outCtx.MeshObject.VertexCount : -1;
 
+            // スキンド化のあとの評価空間（段 5。ModifierSpace）。
+            //   評価できない項目は流さない。梯子を読む項目は、生成物を梯子の格納空間から
+            //   出力の格納空間へ移す行列を、書き戻し（PrimitiveMeshReplaceExisting）へ渡す。
+            if (!ComputeStepSpace(model, step, outCtx, singleMesh, out var spaceWb, out string spaceErr))
+            { error = spaceErr; return false; }
+
             // Dispatch は _pendingResult を退避・復元するので、結果は
             // 戻り値で受け取ること（_pendingResult を見ても復元済みで分からない）。
-            var stepResult = Dispatch(writeBackCmd);
+            // 書き戻し先はグループの出力なので、出力の保護（ModifierOutputGuard）を掛けない。
+            CommandResult stepResult;
+            _modifierWriteBackDepth++;
+            var spaceScope = ModifierSpace.Begin(spaceWb);
+            try     { stepResult = Dispatch(writeBackCmd); }
+            finally { spaceScope.Dispose(); _modifierWriteBackDepth--; }
             if (stepResult != null && !stepResult.Success)
             { error = stepResult.Reason ?? "作り直しに失敗しました"; return false; }
 
@@ -576,6 +558,168 @@ namespace Poly_Ling.Player
             { error = $"作り直しの結果が空になりました（{vertsBefore} → 0）"; return false; }
 
             return true;
+        }
+
+        /// <summary>
+        /// 作ったときの追加先モードが新規オブジェクト・新規モデルなら、置き方の位置と
+        /// 頂点へ焼かなかった回転・拡大は出力の姿勢（BoneTransform）が持っている
+        /// （PolyLingPlayerViewerCore.BuildPrimitiveMeshContext）。書き戻し（ReplaceExisting）は
+        /// 渡った位置・回転・拡大を頂点へ焼くので、そのまま渡すと二重に掛かり、作り直すたびに
+        /// 出力が位置の分だけずれていた（段 8 で確かめた）。書き戻しの引数ではそれらを単位にする。
+        /// 既存へ追加で作ったもの（頂点へ焼いてある）は変えない。
+        /// modeKey は書き換える前の追加先モードのキー（例 placement.addMode）。
+        /// </summary>
+        internal static void StripPoseOwnedByOutput(
+            PanelCommand rebuilt, string modeKey, Dictionary<string, string> args)
+        {
+            if (rebuilt == null || string.IsNullOrEmpty(modeKey) || args == null) return;
+            if (!args.TryGetValue(modeKey, out var modeText)) return;
+            if (!Enum.TryParse(modeText, true, out PrimitiveAddMode mode)) return;
+            if (mode != PrimitiveAddMode.NewObject && mode != PrimitiveAddMode.NewModel) return;
+
+            int dot = modeKey.LastIndexOf('.');
+            string prefix = dot >= 0 ? modeKey.Substring(0, dot + 1) : "";
+
+            void Set(string leaf, string value)
+            {
+                string k = prefix + leaf;
+                if (args.ContainsKey(k)) args[k] = value;
+            }
+
+            Set("worldPosition", "0,0,0");
+
+            bool poseRot, poseScl;
+            switch (rebuilt)
+            {
+                case CreatePrimitiveMeshCommand pc:
+                    poseRot = pc.PoseRotation != Vector3.zero;
+                    poseScl = pc.PoseScale    != Vector3.one;
+                    break;
+                case AddGeneratedMeshCommand ag:
+                    poseRot = !ag.PoseAlreadyBaked;
+                    poseScl = !ag.PoseAlreadyBaked;
+                    break;
+                default:
+                    poseRot = poseScl = false;   // 姿勢へ回転・拡大を入れない生成（辺の帯・頂点へ藤壺など）
+                    break;
+            }
+            if (poseRot) Set("placeRotation", "0,0,0");
+            if (poseScl) Set("placeScale", "1,1,1");
+        }
+
+        /// <summary>
+        /// 項目の評価空間（段 5。ModifierSpace）。評価できなければ false と理由。
+        /// 梯子を読む項目で M が要るときは wb に行列と出力を入れる。作り直しと逆方向（段 6）が同じ判定を使う。
+        /// </summary>
+        private static bool ComputeStepSpace(
+            ModelContext model, ObjectGroupStep step, MeshContext outCtx, bool singleMesh,
+            out ModifierSpace.WriteBack wb, out string error)
+        {
+            wb = null; error = null;
+            model.ComputeWorldMatrices();
+            ModifierEvaluator.Entry spaceEntry = null;
+            foreach (var ge in ModifierEvaluator.GetGraph(model))
+                if (ReferenceEquals(ge.Step, step)) { spaceEntry = ge; break; }
+            if (spaceEntry == null) return true;
+
+            var kind = ModifierSpace.Classify(spaceEntry, out string spaceWhy);
+            if (kind == ModifierSpaceKind.Unsupported)
+            { error = $"スキンド化のあとは作り直せない: {spaceWhy}"; return false; }
+
+            if (kind == ModifierSpaceKind.Transform && singleMesh)
+            {
+                string beltKey = ModifierSpace.SpaceSourceKey(spaceEntry.CommandType);
+                var beltCtx = beltKey != null ? spaceEntry.Input(beltKey) : null;
+                if (ModifierSpace.TryComputeMatrix(beltCtx, outCtx, IsPoseOwnedByOutput(spaceEntry.CommandType, step),
+                                                   out var spaceM))
+                    wb = new ModifierSpace.WriteBack { Matrix = spaceM, Output = outCtx };
+            }
+            return true;
+        }
+
+        /// <summary>判定は ModifierSpace.IsPoseOwnedByOutput に 1 か所（評価器の署名と共有。段 E）。</summary>
+        private static bool IsPoseOwnedByOutput(System.Type t, ObjectGroupStep step)
+            => ModifierSpace.IsPoseOwnedByOutput(t, step);
+
+        /// <summary>
+        /// 項目 1 つの引数を書き換え、その項目だけを作り直す（PolyLing_作り直し整備計画.md 段 3）。
+        ///
+        /// 検査（ObjectGroupOps.TryValidateStepArgs）で落ちたら何も書かない。
+        /// 作り直しに失敗したら引数を元へ戻す（ExecuteReplaceGroupSource と同じ）。
+        /// Undo はオブジェクト一覧のスナップショットとグループの差し替えを 1 件にまとめる。
+        /// 戻り値は失敗理由。成功時は null。
+        /// </summary>
+        private string ExecuteSetGroupStepArgs(ProjectContext project, ModelContext model, SetObjectGroupStepArgsCommand c)
+        {
+            var g = model.FindObjectGroupByName(c.GroupName);
+            if (g == null) return $"グループが見つかりません: {c.GroupName}";
+
+            if (!ObjectGroupOps.TryValidateStepArgs(
+                    project, c.ModelIndex, g, c.StepIndex, c.Keys, c.Values, c.AllowProfileKeys, out string vErr))
+                return vErr;
+
+            var step = g.GetStep(c.StepIndex);
+            int gIndex = model.ObjectGroups.IndexOf(g);
+            var oldSnapshot = g.Clone();
+
+            var oldArgs = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in step.Args) oldArgs[kv.Key] = kv.Value;
+
+            for (int i = 0; i < c.Keys.Length; i++) step.SetArg(c.Keys[i], c.Values[i]);
+
+            _undoController?.SetModelContext(model);
+            var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+            string fail = null;
+            _undoController?.SuspendRecording();
+            try
+            {
+                if (!RunObjectGroupStep(project, model, c.ModelIndex, false, g, c.StepIndex, out string err))
+                    fail = err ?? "作り直しに失敗しました";
+            }
+            finally
+            {
+                _undoController?.ResumeRecording();
+            }
+
+            // 作り直せなかったときは引数を元へ戻す（グループと出力の中身を食い違わせない）。
+            if (fail != null)
+            {
+                step.Args.Clear();
+                foreach (var kv in oldArgs) step.Args[kv.Key] = kv.Value;
+            }
+            else
+            {
+                // 下流へ伝える（段 4）。下流はこのコマンドの終わりに依存の順で流れる。
+                ModifierEvaluator.MarkRebuilt(model, step);
+            }
+
+            g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+
+            RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount,
+                gIndex >= 0
+                    ? new List<ObjectGroupChangeRecord>
+                      {
+                          new ObjectGroupChangeRecord { ReplacedIndex = gIndex, OldGroup = oldSnapshot, NewGroup = g.Clone() },
+                      }
+                    : null,
+                $"グループの引数: {g.Name} 項目 {c.StepIndex}");
+
+            FinishGroupEdit(project, model);
+            if (fail != null) return $"作り直しに失敗したので引数を戻しました: {fail}";
+
+            var outIdx = new List<int>();
+            var outIds = new List<ulong>();
+            foreach (ulong id in step.OutputObjectIds)
+            {
+                var mc = ObjectGroupOps.Resolve(project, id);
+                int idx = mc != null ? model.MeshContextList.IndexOf(mc) : -1;
+                if (idx < 0) continue;
+                outIdx.Add(idx);
+                outIds.Add(id);
+            }
+            if (outIdx.Count > 0) ReportTargets(outIdx.ToArray(), outIds.ToArray());
+            return null;
         }
 
         /// <summary>グループ変更を MeshList スタックへ記録する。</summary>

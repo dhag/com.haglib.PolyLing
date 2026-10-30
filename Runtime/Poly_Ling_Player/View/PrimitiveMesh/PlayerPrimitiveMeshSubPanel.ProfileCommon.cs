@@ -49,8 +49,11 @@ namespace Poly_Ling.Player
         // 回転/拡大縮小アンカー・変換（共通ビルダー＋回転体側）
         // ================================================================
 
-        /// <summary>アンカーX/Y行（スライダー＋テキスト）を作る。</summary>
-        private VisualElement BuildAnchorRow(string label, float min, float max, float val,
+        /// <summary>
+        /// アンカーX/Y行（スライダー＋テキスト）を作る。
+        /// UI 自動操作へ、スライダーを id、数値欄を id + "Value" で登録する。
+        /// </summary>
+        private VisualElement BuildAnchorRow(string id, string label, float min, float max, float val,
             out Slider slider, out FloatField field, Func<bool> suppressed, Action<float> onChange)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
@@ -59,27 +62,35 @@ namespace Poly_Ling.Player
             var ff = new FloatField { value = val }; ff.style.width = 52;
             sl.RegisterValueChangedCallback(e => { if (!suppressed()) onChange(e.newValue); });
             ff.RegisterValueChangedCallback(e => { if (!suppressed()) onChange(e.newValue); });
-            row.Add(lb); row.Add(sl); row.Add(ff);
+            row.Add(lb);
+            row.Add(RowTarget.Add(id, sl, label));
+            row.Add(RowTarget.Add(id + "Value", ff, label + "（数値入力）"));
             slider = sl; field = ff; return row;
         }
 
-        /// <summary>2フィールド行（例: 移動 X/Y、スケール X/Y）。</summary>
-        private VisualElement BuildTf2(string label, float v1, float v2, out FloatField f1, out FloatField f2)
+        /// <summary>
+        /// 2フィールド行（例: 移動 X/Y、スケール X/Y）。
+        /// UI 自動操作へ id + "X" / id + "Y" で登録する。
+        /// </summary>
+        private VisualElement BuildTf2(string id, string label, float v1, float v2, out FloatField f1, out FloatField f2)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lb = new Label(label); lb.style.width = 70; lb.style.fontSize = 10; lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             f1 = new FloatField { value = v1 }; f1.style.flexGrow = 1;
             f2 = new FloatField { value = v2 }; f2.style.flexGrow = 1;
-            row.Add(lb); row.Add(f1); row.Add(f2); return row;
+            row.Add(lb);
+            row.Add(RowTarget.Add(id + "X", f1, label + "（1 つ目）"));
+            row.Add(RowTarget.Add(id + "Y", f2, label + "（2 つ目）"));
+            return row;
         }
 
-        /// <summary>1フィールド行（例: 回転）。</summary>
-        private VisualElement BuildTf1(string label, float v, out FloatField f)
+        /// <summary>1フィールド行（例: 回転）。UI 自動操作へ id で登録する。</summary>
+        private VisualElement BuildTf1(string id, string label, float v, out FloatField f)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lb = new Label(label); lb.style.width = 70; lb.style.fontSize = 10; lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             f = new FloatField { value = v }; f.style.flexGrow = 1;
-            row.Add(lb); row.Add(f); return row;
+            row.Add(lb); row.Add(RowTarget.Add(id, f, label)); return row;
         }
 
         /// <summary>
@@ -138,11 +149,15 @@ namespace Poly_Ling.Player
             {
                 string path = PlayerIoUiKit.AskLoadPath("Select Image", bgKey, getPath(), "png,jpg,jpeg");
                 if (string.IsNullOrEmpty(path)) return;
-                pathField.value = path;
+                // パス欄の変更通知は後から届くため、読み込みより先にパスを直接書き込む
+                // （通知を待つと onLoad が空のパスを見て何もせずに終わる）。
+                pathField.SetValueWithoutNotify(path);
+                setPath(path);
+                RecentPaths.Set(bgKey, path);
                 onLoad();
             }
 
-            c.Add(PlayerIoUiKit.PathRow(pathField, LoadBgImage));
+            c.Add(PR("bg", pathField, LoadBgImage, sectionLabel));
 
             // Load / Clear ボタン行
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
@@ -156,7 +171,8 @@ namespace Poly_Ling.Player
             // ── 下絵操作サブモード ─────────────────────────────────────
             // 通常時は「下絵を調整」ボタン、サブモード中は「下絵調整中」＋「決定」
             // と調整パネル（スケール／原点プリセット／画素数）を表示する。
-            var enterBtn = new Button { text = "下絵を調整" };
+            var enterBtn = RowTarget.Add("bg.adjust", new Button { text = "下絵を調整" },
+                "下絵の調整を始める（キャンバスのドラッグで下絵を動かす）", UiSafety.SafeWrite);
             enterBtn.style.marginBottom = 2;
 
             var adjustPanel = new VisualElement();
@@ -165,7 +181,9 @@ namespace Poly_Ling.Player
             // 「下絵調整中」＋「決定」
             var headRow = new VisualElement(); headRow.style.flexDirection = FlexDirection.Row; headRow.style.marginBottom = 2;
             var adjustingLbl = new Label("下絵調整中"); adjustingLbl.style.flexGrow = 1; adjustingLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            var doneBtn = new Button { text = "決定" }; doneBtn.style.width = 60;
+            var doneBtn = RowTarget.Add("bg.adjustDone", new Button { text = "決定" },
+                "下絵の調整を終える", UiSafety.SafeWrite);
+            doneBtn.style.width = 60;
             headRow.Add(adjustingLbl); headRow.Add(doneBtn);
             adjustPanel.Add(headRow);
 
@@ -173,13 +191,14 @@ namespace Poly_Ling.Player
             var sclSlider = new Slider("スケール", 0.1f, 10f) { value = Mathf.Clamp(getScale(), 0.1f, 10f) };
             sclSlider.style.marginBottom = 2;
             sclSlider.RegisterValueChangedCallback(e => setScale(Mathf.Clamp(e.newValue, 0.1f, 10f)));
-            adjustPanel.Add(sclSlider);
+            adjustPanel.Add(RowTarget.Add("bg.scale", sclSlider, "下絵のスケール"));
 
             // 原点プリセット（画像px基準・Y下向き）
+            // ID はアンカーのプリセット（"左上" "左下"）と重ならないよう bg. を付ける。
             var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
-            SB(presetRow, "原点:中心", () => { var t = getTex(); if (t != null) setOrigin(new Vector2(t.width * 0.5f, t.height * 0.5f)); });
-            SB(presetRow, "左上",     () => { if (getTex() != null) setOrigin(Vector2.zero); });
-            SB(presetRow, "左下",     () => { var t = getTex(); if (t != null) setOrigin(new Vector2(0f, t.height)); });
+            SB(presetRow, new Lx("bg.originCenter",     "原点:中心"), () => { var t = getTex(); if (t != null) setOrigin(new Vector2(t.width * 0.5f, t.height * 0.5f)); });
+            SB(presetRow, new Lx("bg.originTopLeft",    "左上"),     () => { if (getTex() != null) setOrigin(Vector2.zero); });
+            SB(presetRow, new Lx("bg.originBottomLeft", "左下"),     () => { var t = getTex(); if (t != null) setOrigin(new Vector2(0f, t.height)); });
             adjustPanel.Add(presetRow);
 
             // 画素数

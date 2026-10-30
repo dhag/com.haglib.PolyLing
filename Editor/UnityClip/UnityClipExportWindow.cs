@@ -12,7 +12,7 @@
 // ■ 出力
 //   ・クリップごとに <クリップ名>.plmotion.json。フォルダ入力ではサブフォルダ構成を再現する。
 //     同じ出力先で名前が重なったときは <アセットファイル名>_<クリップ名> にする。
-//   ・アバター指定時は <root>_bones.csv（UnityBone v3）と <root>_limits.csv（UnityLimit v1・実測）を 1 回。
+//   ・アバター指定時は <root>_limits.csv（UnityLimit v1・実測）を 1 回（骨 CSV は読む側が無いので書かない）。
 //     ベイクしたマッスルを PolyLing で正しく戻すには、元アバターの実測 limits.csv が要る
 //     （無いボーンは定数表 CanonMuscleTable で近似される。UnityClipApplier 冒頭参照）。
 //
@@ -62,7 +62,6 @@ namespace Poly_Ling.UnityClip.Editor
 
         // ── オプション ────────────────────────────────────────────────────
         private bool _bakeMuscles = true;    // マッスルにベイク（アバター指定時のみ有効。既定オン）
-        private bool _skinnedOnly = true;    // bones.csv: Skinned ボーン + Humanoid 骨のみ
         private bool _writeHeader = true;    // CSV のヘッダ行
         private bool _utf8Bom     = true;    // CSV の UTF-8 BOM
 
@@ -107,15 +106,13 @@ namespace Poly_Ling.UnityClip.Editor
                     "マッスルにベイク（マッスルを持たないクリップだけ）", _bakeMuscles && AvatarIsHuman);
                 if (AvatarIsHuman) _bakeMuscles = shown;
             }
-            _skinnedOnly = EditorGUILayout.ToggleLeft("bones.csv は Skinned ボーン + Humanoid 骨のみ（推奨）", _skinnedOnly);
             _writeHeader = EditorGUILayout.ToggleLeft("CSV にヘッダ行を付ける", _writeHeader);
             _utf8Bom     = EditorGUILayout.ToggleLeft("CSV に UTF-8 BOM を付ける", _utf8Bom);
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
                 "クリップ（またはフォルダ内の全クリップ）を .plmotion.json で書き出します。\n" +
-                "アバターを指定すると <root>_bones.csv と <root>_limits.csv（実測）も書き出します。\n" +
-                "bones.csv のレストはシーン上の現在姿勢です。実行前にレスト姿勢にしてください。\n" +
+                "アバターを指定すると <root>_limits.csv（実測）も書き出します。\n" +
                 "ベイクと実測はポーズを一時変更しますが、完了後に TRS を復元します。",
                 MessageType.Info);
 
@@ -151,14 +148,6 @@ namespace Poly_Ling.UnityClip.Editor
             {
                 Transform rootT = _animator.transform;
                 string baseName = SanitizeFileName(rootT.name);
-                var humanMap = BuildHumanoidMap(_animator);
-                var boneSet  = CollectBones(rootT, humanMap);
-                var ordered  = new List<Transform>();
-                DfsOrder(rootT, boneSet, ordered);
-                string boneCsv = BuildBoneCsv(rootT, ordered, boneSet, humanMap, out int humCount);
-                string bonePath = Path.Combine(_outDir, baseName + "_bones.csv");
-                File.WriteAllText(bonePath, boneCsv, new UTF8Encoding(_utf8Bom));
-                log.AppendLine($"{Path.GetFileName(bonePath)}  ({ordered.Count} bones / Humanoid {humCount})");
 
                 if (AvatarIsHuman)
                 {
@@ -610,39 +599,6 @@ namespace Poly_Ling.UnityClip.Editor
         private static bool IsFinite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 
         // ================================================================
-        // UnityBone CSV v3
-        //   先頭16列は固定: f[0]=="UnityBone" / f[3]=Humanoid名 / f[5..7]=Pos / f[12..15]=RestW
-        //   （PolyLing 本体の読込 LoadSourceRestCsv は VRMA 整備計画 段 ⑤ で削除した。読む側は今は無い）
-        // ================================================================
-        private string BuildBoneCsv(Transform rootT, List<Transform> ordered, HashSet<Transform> set,
-                                    Dictionary<Transform, string> humanMap, out int humCount)
-        {
-            humCount = 0;
-            var sb = new StringBuilder();
-            sb.Append(";UnityBoneCSV,version,3,space,unity,units,m,root,").Append(Esc(rootT.name)).Append('\n');
-            if (_writeHeader)
-                sb.Append("UnityBone,Name,NameEn,Humanoid,Parent,PosX,PosY,PosZ,")
-                  .Append("RestLX,RestLY,RestLZ,RestLW,RestWX,RestWY,RestWZ,RestWW\n");
-
-            foreach (var t in ordered)
-            {
-                string hum = humanMap.TryGetValue(t, out var h) ? h : "";
-                if (hum.Length > 0) humCount++;
-                string parent = (t.parent != null && set.Contains(t.parent) && t != rootT) ? t.parent.name : "";
-                Vector3    lp = rootT.InverseTransformPoint(t.position);
-                Quaternion rl = t.localRotation;
-                Quaternion rw = Quaternion.Inverse(rootT.rotation) * t.rotation;
-                sb.Append("UnityBone,").Append(Esc(t.name)).Append(',').Append("\"\"").Append(',')
-                  .Append(hum).Append(',').Append(Esc(parent)).Append(',')
-                  .Append(F(lp.x)).Append(',').Append(F(lp.y)).Append(',').Append(F(lp.z)).Append(',')
-                  .Append(F(rl.x)).Append(',').Append(F(rl.y)).Append(',').Append(F(rl.z)).Append(',').Append(F(rl.w)).Append(',')
-                  .Append(F(rw.x)).Append(',').Append(F(rw.y)).Append(',').Append(F(rw.z)).Append(',').Append(F(rw.w))
-                  .Append('\n');
-            }
-            return sb.ToString();
-        }
-
-        // ================================================================
         // UnityLimit CSV v1（1 行 = 1 Humanoid ボーン。実測列つき）
         // ================================================================
         private string BuildLimitCsv(Animator animator, out int rowCount, out bool measured)
@@ -808,39 +764,6 @@ namespace Poly_Ling.UnityClip.Editor
                 if (tr != null && !map.ContainsKey(tr)) map[tr] = hbb.ToString();
             }
             return map;
-        }
-
-        private HashSet<Transform> CollectBones(Transform rootT, Dictionary<Transform, string> humanMap)
-        {
-            var set = new HashSet<Transform>();
-            if (!_skinnedOnly)
-            {
-                foreach (var t in rootT.GetComponentsInChildren<Transform>(true)) set.Add(t);
-                return set;
-            }
-            foreach (var smr in rootT.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            {
-                if (smr.rootBone != null) set.Add(smr.rootBone);
-                if (smr.bones != null) foreach (var b in smr.bones) if (b != null) set.Add(b);
-            }
-            foreach (var kv in humanMap) set.Add(kv.Key);
-
-            var withAncestors = new HashSet<Transform>(set);
-            foreach (var t in set)
-                for (var p = t.parent; p != null; p = p.parent) { withAncestors.Add(p); if (p == rootT) break; }
-            withAncestors.Add(rootT);
-            if (withAncestors.Count <= 1)
-            {
-                withAncestors.Clear();
-                foreach (var t in rootT.GetComponentsInChildren<Transform>(true)) withAncestors.Add(t);
-            }
-            return withAncestors;
-        }
-
-        private static void DfsOrder(Transform t, HashSet<Transform> set, List<Transform> outList)
-        {
-            if (set.Contains(t)) outList.Add(t);
-            for (int i = 0; i < t.childCount; i++) DfsOrder(t.GetChild(i), set, outList);
         }
 
         // ================================================================

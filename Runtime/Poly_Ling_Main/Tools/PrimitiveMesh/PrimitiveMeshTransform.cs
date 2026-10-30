@@ -87,6 +87,9 @@ namespace Poly_Ling.PrimitiveMesh
 
             Matrix4x4 m = Matrix4x4.TRS(translation, Quaternion.Euler(eulerDeg), s);
 
+            // 逆方向の控え（ModifierFrameTrace）へ、掛けた行列を写す。
+            Poly_Ling.Ops.ModifierFrameTrace.Transformed(mo, m);
+
             // 法線用行列（逆転置）。非一様スケールでも法線の向きが正しく保たれる。
             Matrix4x4 nm = m.inverse.transpose;
 

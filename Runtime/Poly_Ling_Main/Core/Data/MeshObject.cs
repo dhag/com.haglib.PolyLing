@@ -97,34 +97,30 @@ namespace Poly_Ling.Data
         // GPU転送、Undoスナップショット、ネットワーク同期で使用。
         //
         // 【使い分け】
-        // - 読み取り: Positions プロパティ（キャッシュ自動構築）
+        // - 読み取り: Positions プロパティ（読むたびに今の Vertices[i].Position を写す）
         // - 書き込み: SetPositions()（Vertex.Positionに書き戻し）
-        // - 無効化: InvalidatePositionCache()（Vertex.Positionを直接変更した後）
         //
-        // 【注意】
-        // Vertices[i].Position を直接変更した場合は
-        // InvalidatePositionCache() を呼ぶこと。
-        // AddVertex/RemoveVertex 等のトポロジー変更時は自動で無効化される。
+        // 【控えを捨てる約束はやめた】（作り直し整備計画 段 B）
+        //   以前は控えを持ち、Vertices[i].Position を直接書いたら InvalidatePositionCache() を
+        //   呼ぶ約束だった。Vertex.Position は公開の欄で、書いたことを知る手段が無い。
+        //   書く所は 136 行あり、控えを捨てる呼び出しは約 99 しかなかった（捨て忘れの読み手は
+        //   古い位置を読む）。読むたびに写せば約束が要らない。
+        //   返す配列は使い回す（以前も控えを作り直すときは同じ配列へ写していた）ので、
+        //   持ち続けたい側は複製すること（今の読み手はその場で使うか Clone している）。
+        //   InvalidatePositionCache() は何もしない。呼び出しは残っていても害はない。
         //
 
         [NonSerialized]
         private Vector3[] _positionCache;
 
-        [NonSerialized]
-        private bool _positionCacheDirty = true;
-
         /// <summary>
-        /// Position配列を取得（キャッシュ付き）
-        /// Vertices[i].Position を変更した場合は InvalidatePositionCache() が必要
+        /// Position配列を取得。読むたびに今の Vertices[i].Position を写す（段 B）。
         /// </summary>
         public Vector3[] Positions
         {
             get
             {
-                if (_positionCacheDirty || _positionCache == null || _positionCache.Length != Vertices.Count)
-                {
-                    RebuildPositionCache();
-                }
+                RebuildPositionCache();
                 return _positionCache;
             }
         }
@@ -188,6 +184,20 @@ namespace Poly_Ling.Data
         /// このメッシュの頂点ウェイトは最寄りの親ボーンに割り当てられる。
         /// </summary>
         public bool IgnorePoseInArmature { get; set; } = false;
+
+        /// <summary>
+        /// スキンド化のときに頂点へ焼いた ローカル→バインド の行列を控えてあるか（作り直し整備計画 段 10）。
+        /// スキンド化（MeshFilterToSkinnedConverter Phase 4・SkinKindConverter.ToSkinned）が立て、
+        /// MeshFilter へ戻す（SkinKindConverter.ToMeshFilter）と下ろす。保存する（CSV・JSON・バイナリ）。
+        /// </summary>
+        public bool HasSkinBakeMatrix { get; set; } = false;
+
+        /// <summary>
+        /// スキンド化のときに頂点へ焼いた ローカル→バインド の行列。HasSkinBakeMatrix のときだけ意味を持つ。
+        /// スキンド化は BoneTransform を単位に潰すので、元のローカル座標系はこれでしか引けない。
+        /// ローカルで読む入力（原型・断面）は、この逆で元のローカルへ戻して読む（ModifierSpace.LocalView）。
+        /// </summary>
+        public Matrix4x4 SkinBakeMatrix { get; set; } = Matrix4x4.identity;
 
         /// <summary>
         /// 頂点法線を保持する（自動再計算を行わない）。
@@ -265,6 +275,16 @@ namespace Poly_Ling.Data
         public bool IsMirrorBranchRoot { get; set; } = false;
 
         /// <summary>
+        /// ミラー分岐のミラー側も、実体側と同じ向きに動かすか（分岐ルートにだけ意味がある）。
+        /// 既定（false）のミラー側の向きは実体側の鏡像 S·R·S で、ローカル回転を同じ値にすると
+        /// ミラー軸まわり以外の 2 軸は実体側と逆向きに動く。
+        /// true の枝では、ミラー側の向きを鏡像からさらにミラー軸まわりに 180° 回す。
+        /// 3 軸とも、同じ値のローカル回転が実体側の動きの鏡像になる。
+        /// 今はヒエラルキー書き出し（MeshFilter）だけが見る。
+        /// </summary>
+        public bool MirrorBranchSameSense { get; set; } = false;
+
+        /// <summary>
         /// エクスポート時のローカルトランスフォーム
         /// </summary>
         public BoneTransform BoneTransform { get; set; } = new BoneTransform();
@@ -310,7 +330,7 @@ namespace Poly_Ling.Data
         //      Humanoid割当は per-bone を正とし、同一 Humanoidボーンを複数ボーンが
         //      主張しない一意性を不変条件として維持する。
         //
-        //   4. 永続化は CSV/JSON 対称
+        //   4. 永続化は CSV / JSON / バイナリ対称
         //      両経路で同じ付帯データを読み書きする（片方のみの実装を残さない）。
         //      座標系変換は I/O 境界のみで行い、POCO は生値（Unity左手系）を保持する。
         //

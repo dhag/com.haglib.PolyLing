@@ -113,6 +113,12 @@ namespace Poly_Ling.Player
         /// <summary>代理が作業中だけの一時オブジェクトか（IEditSpaceAdapter.TemporaryProxy）。</summary>
         public bool TemporaryProxy => Adapter != null && Adapter.TemporaryProxy;
 
+        /// <summary>
+        /// 閉じるときに代理を消すか（グループの項目の断面。代理は開くときに作った線分オブジェクト）。
+        /// 代理の追加・削除は通常の Undo に残る。反映は 1 回ずつ通常の Undo に残る（段 6）。
+        /// </summary>
+        public bool DeleteProxyOnClose;
+
         /// <summary>開く前の代理のビルボード（常設の代理を閉じるときに戻す）。</summary>
         public BillboardMode PrevProxyBillboard = BillboardMode.Off;
 

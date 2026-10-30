@@ -47,6 +47,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
+            // オブジェクトグループの項目の出力で、手の編集が未確定（段 F）。未確定のときだけ書く。
+            if (Poly_Ling.Ops.ModifierEvaluator.IsOutputEdited(mc))
+                sb.AppendLine("modifierOutputEdited,True");
             // 協働編集: 安定オブジェクトID
             // objectId は位置非依存の識別子。保存/読込を跨いで同一オブジェクトを指す。
             // 担当者名（EditorName）は作業中だけの一時ロックなので書かない（操作経路統一計画.md L-1）。
@@ -56,6 +59,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）。
             // この行が無いファイルは旧形式。読込側で頂点ウェイトから求め直す。
             sb.AppendLine($"skinKind,{mc.MeshObject?.SkinKind ?? SkinKind.MeshFilter}");
+            // スキンド化のときに焼いた ローカル→バインド の行列（段 10）。控えがあるときだけ書く。
+            // 16 個は Matrix4x4 の索引 0..15（列優先）の順。
+            if (mc.MeshObject != null && mc.MeshObject.HasSkinBakeMatrix)
+            {
+                var sbm = mc.MeshObject.SkinBakeMatrix;
+                sb.Append("skinBakeMatrix");
+                for (int k = 0; k < 16; k++) sb.Append(',').Append(F(sbm[k]));
+                sb.AppendLine();
+            }
             sb.AppendLine($"mirrorType,{mc.MirrorType}");
             sb.AppendLine($"mirrorAxis,{mc.MirrorAxis}");
             sb.AppendLine($"mirrorDistance,{F(mc.MirrorDistance)}");
@@ -77,6 +89,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"detachedMirrorObjectId,{mc.DetachedMirrorObjectId}");
             sb.AppendLine($"excludeFromExport,{mc.ExcludeFromExport}");
             sb.AppendLine($"mirrorBranchRoot,{mc.IsMirrorBranchRoot}");
+            if (mc.MirrorBranchSameSense)
+                sb.AppendLine($"mirrorBranchSameSense,{mc.MirrorBranchSameSense}");
 
             // ミラーペア情報（Real側のみ出力）
             if (!string.IsNullOrEmpty(mirrorPeerName))
@@ -87,6 +101,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // BoneTransform
             var bt = mc.BoneTransform ?? new BoneTransform();
             sb.AppendLine($"boneTransform,{bt.UseLocalTransform},{F(bt.Position.x)},{F(bt.Position.y)},{F(bt.Position.z)},{F(bt.Rotation.x)},{F(bt.Rotation.y)},{F(bt.Rotation.z)},{F(bt.Scale.x)},{F(bt.Scale.y)},{F(bt.Scale.z)}");
+
+            // 作業軸の値（作業軸オブジェクトだけ。規約4：.mfproj の meshDTOList[].workAxis・バイナリ PLRS v5 と揃える）
+            // workAxis,ox,oy,oz,qx,qy,qz,qw,length,isVisible
+            if (mc.IsWorkAxis && mc.WorkAxis != null)
+            {
+                var wa = mc.WorkAxis;
+                sb.AppendLine(
+                    $"workAxis,{F(wa.Origin.x)},{F(wa.Origin.y)},{F(wa.Origin.z)}," +
+                    $"{F(wa.Rotation.x)},{F(wa.Rotation.y)},{F(wa.Rotation.z)},{F(wa.Rotation.w)}," +
+                    $"{F(wa.Length)},{wa.IsVisible}");
+            }
         }
 
         /// <summary>
@@ -201,7 +226,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // Write: SpringBone 付帯データ（Type == Bone のボーンに付く）
         //   規約: MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
         //   グループ参照は JSON と同じ index（ModelContext.SpringBoneColliderGroupNames
-        //   への index）を ';' 連結で格納する（規約4: CSV/JSON 対称）。
+        //   への index）を ';' 連結で格納する（規約4: CSV / JSON / バイナリ対称）。
         //   centerBoneName は bone名のまま格納（POCO実体が string）。
         // ================================================================
 
@@ -303,6 +328,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var mbd = mc.MorphBaseData;
                 sb.AppendLine($"morphName,{EscapeCsv(mbd.MorphName)}");
                 sb.AppendLine($"morphPanel,{mbd.Panel}");
+                // 作成日時（規約4：.mfproj の morphBaseData.createdAt・バイナリ PLRS v8 と揃える）
+                sb.AppendLine($"morphCreatedAt,{EscapeCsv(mbd.CreatedAt.ToString("o", CultureInfo.InvariantCulture))}");
 
                 // 基準位置
                 if (mbd.BasePositions != null)
@@ -311,6 +338,16 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     {
                         var p = mbd.BasePositions[i];
                         sb.AppendLine($"mb,{i},{F(p.x)},{F(p.y)},{F(p.z)}");
+                    }
+                }
+
+                // 基準法線（規約4：.mfproj の morphBaseData.baseNormals・バイナリ PLRS と揃える）
+                if (mbd.HasNormals)
+                {
+                    for (int i = 0; i < mbd.BaseNormals.Length; i++)
+                    {
+                        var n = mbd.BaseNormals[i];
+                        sb.AppendLine($"mbn,{i},{F(n.x)},{F(n.y)},{F(n.z)}");
                     }
                 }
 

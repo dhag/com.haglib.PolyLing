@@ -2,7 +2,7 @@
 // 作業用ローカル軸 (WorkAxisContext) のシリアライズ用データ構造。
 //
 // 作業軸オブジェクト（MeshType.WorkAxis）の行の MeshDTO.workAxis に保持され、
-// .mfproj (JSON) とフォルダ形式 (CSV) の両方で同じ値を書き出す（規約4: CSV/JSON 対称）。
+// .mfproj (JSON) とフォルダ形式 (CSV) の両方で同じ値を書き出す（規約4: CSV / JSON / バイナリ対称）。
 //
 // 値はすべて Unity ワールド座標系のまま保存する。WorkPlaneDTO と同じく
 // 変換は行わない。
@@ -48,7 +48,7 @@ namespace Poly_Ling.Serialization
     /// 作業軸辞書（WorkAxisLibrary）の 1 件ぶんのDTO。
     ///
     /// ProjectDTO.workAxisLibrary に登録順で並ぶ。CSV 側は
-    /// workaxis_library.csv（WorkAxisLibraryCsvIO）が同じ値を持つ（規約4: CSV/JSON 対称）。
+    /// workaxis_library.csv（WorkAxisLibraryCsvIO）が同じ値を持つ（規約4: CSV / JSON / バイナリ対称）。
     ///
     /// 表示フラグ（WorkAxisDTO.isVisible）は辞書には入らない。
     /// 呼び出しで書き戻すのは Origin / Rotation / Length だけ（WorkAxisEntry.ApplyTo 参照）。

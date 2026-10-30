@@ -445,6 +445,19 @@ namespace Poly_Ling.Player
         /// 指定時は SyncMeshPositionsAndTransform + UpdateTransform の軽量経路を実行。
         /// null の場合は PresentAll で全 slot Prepare を実行する。
         /// </param>
+        /// <summary>
+        /// 頂点ドラッグ中か（DragBegin から DragEnd まで）。
+        /// オブジェクトグループの項目のうち重いもの（ModifierEvaluator.EvaluatePending）は、
+        /// この間は流さず、離したときに流す（PolyLing_作り直し整備計画.md 段 4）。
+        /// </summary>
+        public bool IsVerticesDragging { get; private set; }
+
+        /// <summary>
+        /// DragEnd の最後に呼ぶ口。ディスパッチャの評価（EvaluateModifiersAfterDrag）を繋ぐ。
+        /// 代入で繋ぐ（配線が 2 回走っても 2 回呼ばれないように）。
+        /// </summary>
+        public Action OnVerticesDragEnded;
+
         public void EnterVerticesMoved(
             ProjectContext project,
             VerticesMovedPhase phase,
@@ -457,6 +470,7 @@ namespace Poly_Ling.Player
             switch (phase)
             {
                 case VerticesMovedPhase.DragBegin:
+                    IsVerticesDragging = true;
                     EnterTransformDragging();
                     // ドラッグ中は法線線分の始点も方向も変わり、位置のみの軽量更新が
                     // 成立しないため非表示にする。Dragging フェーズは PresentAll を
@@ -487,6 +501,7 @@ namespace Poly_Ling.Player
                     }
                     break;
                 case VerticesMovedPhase.DragEnd:
+                    IsVerticesDragging = false;
                     ExitTransformDragging();
                     // 抑止を解除する。直後の PresentAll → PrepareNormals が
                     // Normal モードで法線メッシュを再構築する。
@@ -503,6 +518,9 @@ namespace Poly_Ling.Player
             OnRefreshGizmoOverlay?.Invoke();
             OnRefreshBoneOverlay?.Invoke();
             RefreshToolOverlays();
+
+            // ドラッグを離したら、ドラッグ中に印だけ立てた項目を流す（段 4）。
+            if (phase == VerticesMovedPhase.DragEnd) OnVerticesDragEnded?.Invoke();
         }
 
         /// <summary>
@@ -687,6 +705,55 @@ namespace Poly_Ling.Player
         /// </summary>
         /// <param name="project">現在のプロジェクト (PresentAll に渡す)</param>
         /// <param name="model">Undo スタックから取得した ModelContext (project.CurrentModel と異なり得る)</param>
+        /// <summary>
+        /// 描画バッファが model の今の描画オブジェクトと合っているか（作り直し整備計画 段 A・段 B）。
+        /// 合っていなければ位置を送るだけでは足りず、作り直しが要る。
+        /// </summary>
+        public bool BuffersMatchModel(Poly_Ling.Context.ModelContext model)
+            => _renderer != null && _renderer.AdapterMatchesModel(0, model);
+
+        /// <summary>
+        /// GPU の位置を CPU（MeshObject の頂点の位置）に合わせる唯一の入口（作り直し整備計画 段 B）。
+        ///
+        /// 【何をするか】
+        ///   描画バッファが今のモデルと合っていなければ（載せる集合・実体・面の構成の違い）
+        ///   EnterTopologyChanged で作り直す。合っていれば全メッシュの位置を送り、変換行列を
+        ///   作り直して変換し（ビルボードの行列はカメラで変わる）、画面へ配る。
+        ///
+        /// 【どこで呼ぶか】
+        ///   ・書き込みのあるコマンドの終わり（PlayerCommandDispatcher.DispatchAuthorized）。
+        ///     コマンドの間は GPU ＝ CPU が保たれる
+        ///   ・GPU のワールド位置を読んで計算する直前（帯・頂点へ藤壺・縮み・法線移植など）
+        ///   以前は呼び出し側がそれぞれ SyncMeshPositionsAndTransform / UpdateTransform を
+        ///   呼ぶ約束で、書き手が呼び忘れると GPU が古いまま残った。
+        ///
+        /// 【頂点ドラッグの最中は何もしない】ドラッグは EnterVerticesMoved の軽い経路が受け持つ。
+        /// </summary>
+        public void SettleWorldPositions(ProjectContext project)
+        {
+            if (IsVerticesDragging) return;
+            var model = project?.CurrentModel;
+            if (model == null || _renderer == null) return;
+
+            if (!BuffersMatchModel(model))
+            {
+                EnterTopologyChanged(project);
+                return;
+            }
+
+            var adapter = _renderer.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
+            var bm = adapter.BufferManager;
+            if (bm == null) return;
+
+            bm.UpdateAllPositions(model.MeshContextList);
+            bm.UpdateMirrorPositions();
+#pragma warning disable CS0618
+            UpdateTransform();
+            PresentAll(project);
+#pragma warning restore CS0618
+        }
+
         public void EnterUndoApplied(ProjectContext project, Poly_Ling.Context.ModelContext model)
         {
             // Undo は MeshContext ごと差し替わり得る。作り直された SelectionState へ

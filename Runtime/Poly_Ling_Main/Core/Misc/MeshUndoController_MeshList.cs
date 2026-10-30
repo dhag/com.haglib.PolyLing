@@ -89,18 +89,37 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// モデルの置き換え（外部から届いたモデルで差し替え）を Undo 記録する。
-        /// 置き換え前と後を ModelDTO（.mfproj と同じ全データ）で控える（ModelReplaceRecord）。
+        /// モデルの置き換え（外部から届いたモデル・置換読込で差し替え）を Undo 記録する。
+        /// 置き換え前と後の実体そのものを持つ（ModelReplaceRecord。外した実体は Clear しない）。
         /// 呼出し前に SetProjectContext で Context が設定されていること。
         /// </summary>
-        public void RecordModelReplace(int modelIndex,
-            Poly_Ling.Serialization.ModelDTO oldModel, Poly_Ling.Serialization.ModelDTO newModel)
+        public void RecordModelReplace(int modelIndex, ModelContext oldModel, ModelContext newModel)
         {
             if (_projectStack == null) return;
             if (oldModel == null || newModel == null) return;
             var record = new ModelReplaceRecord(modelIndex, oldModel, newModel);
             {
-                string __dbgDesc = $"Replace Model: {oldModel.name} -> {newModel.name} (idx={modelIndex})";
+                string __dbgDesc = $"Replace Model: {oldModel.Name} -> {newModel.Name} (idx={modelIndex})";
+                PLDiag.UndoRecord("Project", __dbgDesc, record);
+                _projectStack.Record(record, __dbgDesc);
+            }
+            FocusProjectStack();
+        }
+
+        /// <summary>
+        /// モデルの削除を Undo 記録する。外した実体そのものを持つ（ProjectContext.DetachModelAt で外したもの）。
+        /// Undo で同じ実体を入れ直し、Redo で再び外す。
+        /// 呼出し前に SetProjectContext で Context が設定されていること。
+        /// </summary>
+        public void RecordModelRemove(int removedIndex, ModelContext removedModel, int newModelIndex)
+        {
+            if (_projectStack == null) return;
+            if (removedModel == null) return;
+            var record = ModelOperationRecord.CreateRemove(
+                removedIndex, removedModel, newModelIndex,
+                default(CameraSnapshot), default(CameraSnapshot));
+            {
+                string __dbgDesc = $"Remove Model: {removedModel.Name} (idx={removedIndex})";
                 PLDiag.UndoRecord("Project", __dbgDesc, record);
                 _projectStack.Record(record, __dbgDesc);
             }

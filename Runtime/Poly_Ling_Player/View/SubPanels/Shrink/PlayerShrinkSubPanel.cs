@@ -129,10 +129,12 @@ namespace Poly_Ling.Player
         private Label         _warningLabel;
         [UiControl(Ignore = true)]
         private VisualElement _mainContent;
-        [UiControl(Ignore = true, Rows = true)]
-        private VisualElement _beforeListContainer;
-        [UiControl(Ignore = true, Rows = true)]
-        private VisualElement _afterListContainer;
+        // ビフォー・アフターは RadioButtonGroup（UI 自動操作の uiSetValue で選べる型）。選択肢は候補の並び
+        // （_candidates）で、値はその並びの位置（-1 で未選択）。以前は行ごとに作るラベルで、自動操作から選べなかった。
+        [UiControl("before", Description = "ビフォー（変形対象）。値は候補の行の番号（選択肢は uiGetValue の choices）")]
+        private RadioButtonGroup _beforeGroup;
+        [UiControl("after", Description = "アフター（目標形状）。値は候補の行の番号（選択肢は uiGetValue の choices）")]
+        private RadioButtonGroup _afterGroup;
         [UiControl(Ignore = true, Rows = true)]
         private VisualElement _colliderListContainer;
         [UiControl("offset", Description = "面からの余白")]
@@ -185,15 +187,17 @@ namespace Poly_Ling.Player
 
             // ── ビフォー
             _mainContent.Add(SecLabel("ビフォー（変形対象）"));
-            _beforeListContainer = new VisualElement();
-            _beforeListContainer.style.marginBottom = 4;
-            _mainContent.Add(_beforeListContainer);
+            _beforeGroup = new RadioButtonGroup(null, new List<string>()) { value = -1 };
+            _beforeGroup.style.marginBottom = 4;
+            _beforeGroup.RegisterValueChangedCallback(e => OnPickChanged(e.newValue, isBefore: true));
+            _mainContent.Add(_beforeGroup);
 
             // ── アフター
             _mainContent.Add(SecLabel("アフター（目標形状）"));
-            _afterListContainer = new VisualElement();
-            _afterListContainer.style.marginBottom = 4;
-            _mainContent.Add(_afterListContainer);
+            _afterGroup = new RadioButtonGroup(null, new List<string>()) { value = -1 };
+            _afterGroup.style.marginBottom = 4;
+            _afterGroup.RegisterValueChangedCallback(e => OnPickChanged(e.newValue, isBefore: false));
+            _mainContent.Add(_afterGroup);
 
             _mainContent.Add(Sep());
 
@@ -378,23 +382,8 @@ namespace Poly_Ling.Player
             _warningLabel.style.display = DisplayStyle.None;
             _mainContent.style.display  = DisplayStyle.Flex;
 
-            RefreshPickList(_beforeListContainer, _beforeIndex, idx =>
-            {
-                if (_beforeIndex == idx) return;
-                CancelComputation();
-                _beforeIndex = idx;
-                if (_afterIndex == idx) _afterIndex = -1;
-                Refresh();
-            });
-
-            RefreshPickList(_afterListContainer, _afterIndex, idx =>
-            {
-                if (_afterIndex == idx) return;
-                CancelComputation();
-                _afterIndex = idx;
-                if (_beforeIndex == idx) _beforeIndex = -1;
-                Refresh();
-            });
+            RefreshPickGroup(_beforeGroup, _beforeIndex);
+            RefreshPickGroup(_afterGroup,  _afterIndex);
 
             RefreshColliderList();
 
@@ -441,29 +430,45 @@ namespace Poly_Ling.Player
         // リスト描画
         // ================================================================
 
-        private void RefreshPickList(VisualElement container, int selectedIndex, Action<int> onPick)
+        /// <summary>候補の並びを選択肢にし、選んでいる候補（masterIndex）を値にする。通知は出さない。</summary>
+        private void RefreshPickGroup(RadioButtonGroup group, int selectedIndex)
         {
-            container.Clear();
-
+            if (group == null) return;
+            var labels = new List<string>(_candidates.Count);
+            int pos = -1;
             for (int i = 0; i < _candidates.Count; i++)
             {
-                var c   = _candidates[i];
-                int idx = c.index;
-
-                var row = new Label($"  {c.name}  [V:{c.vertexCount}]");
-                row.style.paddingTop    = 2;
-                row.style.paddingBottom = 2;
-                row.style.paddingLeft   = 4;
-                row.style.fontSize      = 10;
-
-                if (idx == selectedIndex)
-                    row.style.backgroundColor = new StyleColor(new Color(0.24f, 0.48f, 0.9f, 0.5f));
-
-                row.RegisterCallback<ClickEvent>(_ => onPick(idx));
-                container.Add(row);
+                var c = _candidates[i];
+                labels.Add($"{c.name}  [V:{c.vertexCount}]");
+                if (c.index == selectedIndex) pos = i;
             }
+            group.choices = labels;
+            group.SetValueWithoutNotify(pos);
+            PlayerLayoutRoot.ApplyDarkTheme(group);
+        }
 
-            PlayerLayoutRoot.ApplyDarkTheme(container);
+        /// <summary>
+        /// ビフォー・アフターを選んだとき（画面・uiSetValue とも）。値は候補の並びの位置。
+        /// 処理は以前の行のクリックと同じ（計算を捨て、反対側と同じなら反対側を外し、描き直す）。
+        /// </summary>
+        private void OnPickChanged(int pos, bool isBefore)
+        {
+            int idx = pos >= 0 && pos < _candidates.Count ? _candidates[pos].index : -1;
+            if (isBefore)
+            {
+                if (_beforeIndex == idx) return;
+                CancelComputation();
+                _beforeIndex = idx;
+                if (idx >= 0 && _afterIndex == idx) _afterIndex = -1;
+            }
+            else
+            {
+                if (_afterIndex == idx) return;
+                CancelComputation();
+                _afterIndex = idx;
+                if (idx >= 0 && _beforeIndex == idx) _beforeIndex = -1;
+            }
+            Refresh();
         }
 
         private void RefreshColliderList()

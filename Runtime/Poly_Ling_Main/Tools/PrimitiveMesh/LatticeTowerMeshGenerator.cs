@@ -894,7 +894,7 @@ namespace Poly_Ling.PrimitiveMesh
             float scale = p.Scale <= 0f ? 1f : p.Scale;
             PlaceObjectMeshGenerator.AppendInstance(
                 mo, src, new Vector3(0f, p.Height, 0f),
-                q * Vector3.right, Vector3.up, q * Vector3.forward, scale, false, 0);
+                q * Vector3.right, Vector3.up, q * Vector3.forward, scale, false, 0, 0);
 
             mo.RecalculateNormals();
             return mo;

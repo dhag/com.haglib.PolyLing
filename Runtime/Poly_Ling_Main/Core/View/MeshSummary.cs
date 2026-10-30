@@ -94,6 +94,7 @@ namespace Poly_Ling.View
         public bool IgnorePoseInArmature { get; }
         public bool PreserveNormals { get; }
         public bool IsMirrorBranchRoot { get; }
+        public bool MirrorBranchSameSense { get; }
 
         /// <summary>
         /// ビルボード表示。保存も転送もしない設定なので、スナップショット経由
@@ -172,7 +173,7 @@ namespace Poly_Ling.View
             MirrorGeometryDerived = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
             IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
-            PreserveNormals = false; IsMirrorBranchRoot = false;
+            PreserveNormals = false; IsMirrorBranchRoot = false; MirrorBranchSameSense = false;
             Billboard = BillboardMode.Off;
             ObjectId = 0UL; EditorName = "";
         }
@@ -194,7 +195,8 @@ namespace Poly_Ling.View
             int mirrorAxis = 1,
             bool isMirrorBranchRoot = false,
             bool mirrorGeometryDerived = false,
-            BillboardMode billboard = BillboardMode.Off)
+            BillboardMode billboard = BillboardMode.Off,
+            bool mirrorBranchSameSense = false)
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
@@ -211,6 +213,7 @@ namespace Poly_Ling.View
             IgnorePoseInArmature = ignorePoseInArmature;
             PreserveNormals = preserveNormals;
             IsMirrorBranchRoot = isMirrorBranchRoot;
+            MirrorBranchSameSense = mirrorBranchSameSense;
             Billboard = billboard;
             ObjectId = objectId; EditorName = editorName ?? "";
         }
@@ -271,7 +274,8 @@ namespace Poly_Ling.View
                 ctx.MirrorAxis,
                 ctx.IsMirrorBranchRoot,
                 ctx.MirrorGeometryDerived,
-                ctx.Billboard);
+                ctx.Billboard,
+                ctx.MirrorBranchSameSense);
         }
 
         public override string ToString() => $"[{MasterIndex}] {Name} ({Type}) V:{VertexCount} F:{FaceCount}";

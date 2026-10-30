@@ -344,10 +344,10 @@ namespace Poly_Ling.Player
         {
             // 選択点の移動など
             var tfFold = FoldSection(pe, T("SelectionTransform"), false);
-            tfFold.Add(BuildTf2("移動 X/Y",   0f, 0f, out _revTfMoveX,  out _revTfMoveY));
-            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out _revTfScaleX, out _revTfScaleY));
-            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out _revTfScaleAxis));
-            tfFold.Add(BuildTf1("回転 (°)",    0f, out _revTfRot));
+            tfFold.Add(BuildTf2("tf.move",  "移動 X/Y",   0f, 0f, out _revTfMoveX,  out _revTfMoveY));
+            tfFold.Add(BuildTf2("tf.scale", "スケール X/Y", 1f, 1f, out _revTfScaleX, out _revTfScaleY));
+            tfFold.Add(BuildTf1("tf.scaleAxis", "スケール軸 (°)", 0f, out _revTfScaleAxis));
+            tfFold.Add(BuildTf1("tf.rotate",    "回転 (°)",    0f, out _revTfRot));
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", ApplyRevTransform);
             SB(applyRow, "リセット", () =>
@@ -365,14 +365,16 @@ namespace Poly_Ling.Player
             revMagToggle.RegisterValueChangedCallback(ev => { _revMagnet.Enabled = ev.newValue; RefreshRevCanvas(); });
             var revFalloff = new EnumField(_revMagnet.Falloff); revFalloff.style.flexGrow = 1;
             revFalloff.RegisterValueChangedCallback(ev => _revMagnet.Falloff = (FalloffType)ev.newValue);
-            revMagRow.Add(revMagToggle); revMagRow.Add(revFalloff);
+            revMagRow.Add(RowTarget.Add("magnet.enabled", revMagToggle, "マグネットを使う"));
+            revMagRow.Add(RowTarget.Add("magnet.falloff", revFalloff, "マグネットの減衰の形"));
             magFold.Add(revMagRow);
-            magFold.Add(BuildAnchorRow("半径", 0.05f, 2f, _revMagnet.Radius, out _revMagnetRadius, out _,
+            magFold.Add(BuildAnchorRow("magnet.radius", "半径", 0.05f, 2f, _revMagnet.Radius, out _revMagnetRadius, out _,
                 () => false, v => { _revMagnet.Radius = v; RefreshRevCanvas(); }));
 
             // アンカー
             var anchorFold = FoldSection(pe, T("AnchorSection"), false);
-            _revAnchorEnterBtn = new Button(() => SetRevAnchorMode(true)) { text = "アンカー設定" };
+            _revAnchorEnterBtn = RowTarget.Add("anchor.enter", new Button(() => SetRevAnchorMode(true)) { text = "アンカー設定" },
+                "アンカーの調整を始める", UiSafety.SafeWrite);
             _revAnchorEnterBtn.style.marginBottom = 2;
             anchorFold.Add(_revAnchorEnterBtn);
 
@@ -380,7 +382,9 @@ namespace Poly_Ling.Player
             {
                 var headRow = new VisualElement(); headRow.style.flexDirection = FlexDirection.Row; headRow.style.marginBottom = 2;
                 var lbl = new Label("アンカー調整中（キャンバスをドラッグで移動）"); lbl.style.fontSize = 10; lbl.style.flexGrow = 1; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-                var done = new Button(() => SetRevAnchorMode(false)) { text = "決定" }; done.style.width = 60;
+                var done = RowTarget.Add("anchor.done", new Button(() => SetRevAnchorMode(false)) { text = "決定" },
+                    "アンカーの調整を終える", UiSafety.SafeWrite);
+                done.style.width = 60;
                 headRow.Add(lbl); headRow.Add(done); _revAnchorPanel.Add(headRow);
 
                 var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
@@ -390,9 +394,9 @@ namespace Poly_Ling.Player
                 SB(presetRow, "左下", () => ApplyRevAnchorPreset(Canvas2DAnchor.Preset.BottomLeft));
                 _revAnchorPanel.Add(presetRow);
 
-                _revAnchorPanel.Add(BuildAnchorRow("X", 0f, 2f, 0f, out _revAnchorXSlider, out _revAnchorXField,
+                _revAnchorPanel.Add(BuildAnchorRow("anchor.x", "X", 0f, 2f, 0f, out _revAnchorXSlider, out _revAnchorXField,
                     () => _revAnchorSuppress, v => SetRevAnchorComponent(true, v)));
-                _revAnchorPanel.Add(BuildAnchorRow("Y", -1f, 2f, 0f, out _revAnchorYSlider, out _revAnchorYField,
+                _revAnchorPanel.Add(BuildAnchorRow("anchor.y", "Y", -1f, 2f, 0f, out _revAnchorYSlider, out _revAnchorYField,
                     () => _revAnchorSuppress, v => SetRevAnchorComponent(false, v)));
             }
             anchorFold.Add(_revAnchorPanel);

@@ -37,8 +37,9 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) { Fail("no current model"); return true; }
 
-                    // プリズムの構築に使うワールド座標をこの時点で1回だけ更新する。
-                    _viewportManager.UpdateTransform();
+                    // プリズムの構築に使うワールド座標をこの時点で1回だけ合わせる
+                    // （CPU の位置を送ってから変換する。段 B の SettleWorldPositions）。
+                    _viewportManager.SettleWorldPositions(project);
 
                     var ntSamples = NormalTransplantOperation.ComputeSamples(
                         model, c.BeforeMasterIndex, c.AfterMasterIndex, c.TargetMasterIndices,
@@ -561,10 +562,10 @@ namespace Poly_Ling.Player
                                 ? MirrorBranchTolerance.Tolerant
                                 : MirrorBranchTolerance.Strict);
 
-                        // スキンド化はソースの頂点をワールドへ焼き直すので、
-                        // それを取り込むグループのダイジェストが変わる。
-                        // ウェイトを塗り直すのはここ（変換が {bone,1.0} を書いたあと）。
-                        RunAutoUpdateGroups(project, model, c.ModelIndex, mfsChangedIds);
+                        // 変換した描画オブジェクトを入力に持つ項目を、依存の順に流し直す（段 5）。
+                        // 揺れ鎖が梯子へ塗り（変換が {bone,1.0} を書いたあと）、フリル・パイプが引き継ぐ。
+                        // 流したあとは全項目の署名を控え直し、焼き直しを入力の変化として二重に流さない。
+                        ReevaluateAfterSkinning(model, mfsChangedIds);
                     }
                     finally
                     {
@@ -661,9 +662,11 @@ namespace Poly_Ling.Player
                         foreach (var r in skResults) if (r.Converted) skDone++;
 
                         // ToSkinned は全頂点へ {bone, 1.0} を書く（SkinKindConverter.cs:284）。
-                        // ウェイトを塗り直すのはそのあと。
+                        // 塗り直し・引き継ぎはそのあと、評価器が依存の順に流す（段 5）。
                         if (skDone > 0)
-                            RunAutoUpdateGroups(project, model, c.ModelIndex, skChangedIds);
+                            ReevaluateAfterSkinning(model, skChangedIds);
+                        else
+                            ModifierEvaluator.PrimeAll(model);
                     }
                     finally
                     {

@@ -67,6 +67,28 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// IsMeshRef の索引が指すオブジェクトを、どの空間の座標として読むか。
+    /// PLParamAttribute.MeshRefSpace が使う（作り直し整備計画 段 10）。
+    /// </summary>
+    public enum PLMeshRefSpace
+    {
+        /// <summary>未指定。グループに残るコマンドの入力キーでは PanelCommandFactoryAudit.RunAll が数える。</summary>
+        Unspecified = 0,
+
+        /// <summary>
+        /// 格納値のまま読む（梯子・原型・断面・ケージ）。スキンド化済みのときは、スキンド化で控えた
+        /// ローカル→バインド の行列の逆で元のローカルへ戻して読む（ModifierSpace.LocalView）。
+        /// </summary>
+        Local = 1,
+
+        /// <summary>
+        /// モデル空間（バインド姿勢のワールド）で読む。評価器はこの入力の署名に
+        /// VertexToBindWorldMatrix を混ぜ、姿勢の変化も入力の変化として扱う。
+        /// </summary>
+        Model = 2,
+    }
+
+    /// <summary>
     /// 作り直しで「出来たものを既存の出力先へ書き戻す」ときの役割。
     /// PLParamAttribute.RebuildRole が使う。
     /// </summary>
@@ -198,12 +220,31 @@ namespace Poly_Ling.Data
         ///   ToArgs は enum を整数で出すので、IsWriteActive が名前を整数へ直して比べる。
         ///   "|" で区切ると、いずれかに一致すれば書き込み先
         ///   （例 "addMode=AddToExisting|ReplaceExisting"）。空なら無条件で書き込み先。
+        ///   文字列の引数は空のときだけを "キー=" と書ける。
+        ///   "&amp;" で節を並べると、すべての節を満たすとき書き込み先（段 D。
+        ///   例 "placement.keepAsGroup=true&amp;edgeSetName="）。入れ子の型のメンバでは各節に接頭辞が付く。
+        ///   読むのは担当者判定・出力の保護・依存グラフで、どれも PanelCommandFactory.IsWriteActive を通す。
         ///   キーと値の妥当性は PanelCommandFactoryAudit.RunAll が検査する。
         /// </summary>
         public string WriteWhen { get; set; } = "";
 
         /// <summary>WriteWhen が指定されているか。</summary>
         public bool HasWriteWhen => !string.IsNullOrEmpty(WriteWhen);
+
+        /// <summary>
+        /// IsMeshRef の索引が指すオブジェクトを、生成器がどの空間で読むか（段 10）。
+        /// 評価器が署名の取り方（Model なら行列を混ぜる）と、スキンド化済みの入力の読み方
+        /// （Local なら控えた行列でローカルへ戻す）を決めるのに使う。
+        /// </summary>
+        public PLMeshRefSpace MeshRefSpace { get; set; } = PLMeshRefSpace.Unspecified;
+
+        /// <summary>
+        /// 生成器の生成物が、この IsMeshRef の索引が指すオブジェクトの格納空間で出来る（作り直し整備計画 6 章・段 I のあと）。
+        /// 作成・作り直しとも、生成物をこの入力の 格納→バインド と出力の枠の バインド→格納 で出力の格納空間へ移す
+        /// （ModifierSpace.SpaceSourceKey・TryComputeMatrix）。梯子を読む項目は BeltSourceIndex が同じ扱い（宣言は要らない）。
+        /// 単数の索引（int）の引数にだけ付ける。
+        /// </summary>
+        public bool OutputSpaceSource { get; set; } = false;
 
         /// <summary>
         /// このパラメータがプロファイル（断面の点列・輪郭のループ群）の本体であることを示す。

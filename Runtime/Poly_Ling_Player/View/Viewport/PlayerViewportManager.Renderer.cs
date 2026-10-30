@@ -261,7 +261,14 @@ namespace Poly_Ling.Player
             if (ctxIdx < 0) { PLDiag.Sync("SyncPos ctxIdx=-1 (mc not found)"); return; }
 
             int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
-            if (unifiedIdx < 0) { PLDiag.Sync($"SyncPos unifiedIdx=-1 (ctxIdx={ctxIdx})"); return; }
+            if (unifiedIdx < 0)
+            {
+                PLDiag.Sync($"SyncPos unifiedIdx=-1 (ctxIdx={ctxIdx})");
+                // 描画バッファに載っていない（隠したオブジェクトなど）ときも、位置は変わっている。
+                // 評価器へは知らせる（隠した梯子・参照面を動かしても下流が流れなかった。段 8）。
+                NotifyModifierInputMoved(model, mc, adapter, bm);
+                return;
+            }
 
             // 頂点ドラッグ中は毎フレーム通る。既定では出さない（PLDiag.EditSync）。
             PLDiag.Sync($"SyncPos UpdatePositions ctxIdx={ctxIdx} unifiedIdx={unifiedIdx} V={mc.MeshObject.VertexCount}");
@@ -333,18 +340,30 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // サブディビジョンの子（親から作った滑らかなメッシュ）も追随させる。
-            // ミラー側と同じく位置だけを書き、面構成の変更は RebuildAdapter 側が受け持つ。
-            Poly_Ling.Ops.SubdivisionSync.SyncFromCage(model, mc, child =>
+            // mc を入力に持つオブジェクトグループの項目へ知らせる（評価器のきっかけ 2）。
+            // ドラッグ中にも追随する項目（サブディビジョンの子など）はここで位置を書き、
+            // それ以外は要評価の印だけ立つ。面構成の変更は RebuildAdapter 側が受け持つ。
+            NotifyModifierInputMoved(model, mc, adapter, bm);
+
+            // ④ 次フレームのワイヤー/頂点メッシュ再構築を予約
+            adapter.NotifyTransformChanged();
+        }
+
+        /// <summary>
+        /// mc を入力に持つオブジェクトグループの項目へ、位置が変わったことを知らせる（評価器のきっかけ 2）。
+        /// ドラッグ中にも追随する項目の出力は、描画バッファに載っていればここで GPU へ書く。
+        /// </summary>
+        private static void NotifyModifierInputMoved(
+            Poly_Ling.Context.ModelContext model, Poly_Ling.Data.MeshContext mc,
+            UnifiedSystemAdapter adapter, UnifiedBufferManager bm)
+        {
+            Poly_Ling.Ops.ModifierEvaluator.SyncFromInput(model, mc, child =>
             {
                 int childCtxIdx = model.MeshContextList.IndexOf(child);
                 if (childCtxIdx < 0) return;
                 int childUnifiedIdx = adapter.ContextToUnifiedMeshIndex(childCtxIdx);
                 if (childUnifiedIdx >= 0) bm.UpdatePositions(child.MeshObject, childUnifiedIdx);
             });
-
-            // ④ 次フレームのワイヤー/頂点メッシュ再構築を予約
-            adapter.NotifyTransformChanged();
         }
 
         /// <summary>

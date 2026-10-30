@@ -96,7 +96,7 @@ namespace Poly_Ling.Player
         private List<MeshObject> ResolvePlaceSources(int[] masterIndices, bool includeChildren)
             => MeshSourceMultiPick.Resolve(
                 masterIndices, includeChildren, GetSubtreeMeshList,
-                idx => GetMeshObjectAt?.Invoke(idx));
+                idx => Poly_Ling.Ops.ModifierSpace.LocalView(GetMeshObjectAt?.Invoke(idx)));   // 原型はローカルで読む（段 10）
 
         /// <summary>
         /// 生成したメッシュへパーツID / サブIDを割り当てる。

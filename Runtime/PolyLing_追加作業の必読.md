@@ -212,9 +212,13 @@ Instruction、「なぜ」が Note として入る。
 
 ---
 
-## E. シリアライザを変えるとき
+## E. シリアライザを変えるとき（規約 4：CSV / JSON / バイナリ対称）
 
-保存形式は 3 つある。**1 つに項目を足したら、3 つとも足す。**
+保存形式は 3 つある。**1 つに項目を足したら、3 つとも足す（読みと書きの両方）。**
+コード中の「規約4」はこの決まりを指す。保存しない実行時だけの状態（強調表示など）は 3 つのどれにも書かない。
+リモートの JSON（`project_bundle` / `hierarchyBundle` / `model_bundle`）は保存と同じ
+`ProjectSerializer.FromProjectContext` / `ModelSerializer.FromModelContext` で組む（テクスチャ画像を足すだけ）。
+別の組み方を作らない。
 
 | 形式 | 場所 | 使い道 |
 |---|---|---|
@@ -229,7 +233,14 @@ Instruction、「なぜ」が Note として入る。
 MeshContext の欄の多くは MeshObject に置かれている。ジオメトリで MeshObject を差し替えても消えないよう、
 MeshObject に欄を足したら `CopySummaryAttributes` にも足す。
 
-### 確認（ファイルで行う）
+### 確認（JSON を基準に、バイナリと CSV を往復させて比べる）
+
+`queryProjectSyncDiff` を `via=binary` と `via=csv` の 2 回流す。今のプロジェクトを「保存の JSON」と
+「その形式で往復させたものの JSON」で作って項目ごとに比べる（binary はファイル不要、csv は一時フォルダを使って消す）。
+どちらも `diffCount` が 0 になること。0 でなければ `report` のパス（例 `models[].meshDTOList[].xxx`）の
+項目がその形式に入っていないか、読みで戻していない。
+
+### 確認（CSV とバイナリ。ファイルで行う）
 
 1. `saveProjectCsv` で A を保存
 2. `saveProjectBinary` で .plrf を保存

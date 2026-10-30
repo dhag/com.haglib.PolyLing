@@ -136,7 +136,9 @@ namespace Poly_Ling.Player
 
             _mcRowButtons.Clear();
             if (_mcParts.Count == 0) c.Add(GearHint(T("MagicCircleNoPart")));
-            for (int i = 0; i < _mcParts.Count; i++) c.Add(MagicPartRow(i));
+            // 部品の数だけ並ぶデータ行なので固定の ID を付けられない。
+            // 行の入れ物として登録し、検査の対象から外す。
+            for (int i = 0; i < _mcParts.Count; i++) c.Add(RowTarget.AddRows(MagicPartRow(i)));
 
             // 追加ボタン
             var add1 = new VisualElement(); add1.style.flexDirection = FlexDirection.Row; add1.style.marginTop = 2;

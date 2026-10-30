@@ -481,6 +481,34 @@ namespace Poly_Ling.Player
         /// 隠す対象は PlayerLayoutRoot の台帳（AddSection で種別付きで作った全セクション）から
         /// 引くので、セクションを足しても登録漏れは起きない。
         /// </summary>
+        /// <summary>
+        /// パネルを切り替えるときに破棄する未確定のプレビュー（メッシュブレンド・シュリンカー・
+        /// 面に張り付け・なめらかにする）。結果は MeshObject に書かれているので、元へ戻す。
+        /// </summary>
+        private void CancelUncommittedPreviews()
+        {
+            _blendSubPanel?.CancelIfActive();
+            _shrinkSubPanel?.CancelIfActive();
+            _shrinkFaceSubPanel?.CancelIfActive();
+            _surfaceSnapHandler?.CancelIfActive();
+            _smoothEdgesHandler?.CancelIfActive();
+        }
+
+        /// <summary>
+        /// Undo・Redo の前に、すべてのプレビューを取り消して元へ戻す（作り直し整備計画 6 章）。
+        /// プレビューは結果を MeshObject に直接書き、終わるときに控えた元の値を書き戻す。
+        /// Undo のあとに終わると、Undo で戻した中身へ前の値を上書きする。先に戻してから Undo する。
+        /// パネル切替の分（CancelUncommittedPreviews）に、モーフ・変形・法線編集・法線移植を足したもの。
+        /// </summary>
+        private void CancelPreviewsBeforeUndo()
+        {
+            CancelUncommittedPreviews();
+            _morphSubPanel?.CancelIfActive();
+            _deformHandler?.Revert();
+            _normalEditSubPanel?.CancelPreview();
+            _normalTransplantSubPanel?.CancelIfActive();
+        }
+
         private void HideRightArea(RightPanelKind kind)
         {
             // ── 未確定プレビューの破棄（区画に関係なく、切替のたびに行う）──
@@ -488,11 +516,7 @@ namespace Poly_Ling.Player
             // 書かれている。パネルが見えたままでも、別のパネルで編集を始める前に破棄しないと
             // 未確定の形状が残り、他の編集がそれを取り込む（頂点方式と面方式のシュリンカーは
             // 同じ MeshObject を触るため、一方が変形後の座標をバックアップに取り込む）。
-            _blendSubPanel?.CancelIfActive();
-            _shrinkSubPanel?.CancelIfActive();
-            _shrinkFaceSubPanel?.CancelIfActive();
-            _surfaceSnapHandler?.CancelIfActive();
-            _smoothEdgesHandler?.CancelIfActive();
+            CancelUncommittedPreviews();
 
             // UI 自動操作の強調枠と保留中のスクロールは、パネル切替のたびに消す。
             _uiAutomation?.OnRightPanelsHidden();

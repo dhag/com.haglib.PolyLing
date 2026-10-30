@@ -76,11 +76,11 @@ namespace Poly_Ling.Player
             hint.style.marginBottom = 2;
             bc.Add(hint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(WB("ImportBelt", T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_pipeBelts, false);
                 RefreshPipeInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             // ── 自動検索 ──
             BuildMeshSourceRow(bc, _pipePick, T("AutoDetectSource"));
@@ -91,11 +91,11 @@ namespace Poly_Ling.Player
             autoHint.style.marginBottom = 2;
             bc.Add(autoHint);
 
-            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(WB("AutoDetectBelts", T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_pipeBelts, _pipePick.Current, false);
                 RefreshPipeInfo();
-            }));
+            }, UiSafety.SafeWrite));
 
             _pipeInfoLabel = new Label(BeltsInfoText(_pipeBelts));
             _pipeInfoLabel.style.fontSize   = 10;
@@ -150,7 +150,7 @@ namespace Poly_Ling.Player
                                v => { _pipeP.EdgeSizeFront = v; D(); }),
                 BackSeg   = IR(T("BackSegments"), PipeParams.EdgeSegmentsMin, PipeParams.EdgeSegmentsMax, () => _pipeP.SegmentsBack,
                                v => { _pipeP.SegmentsBack = v; D(); RefreshPipeSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), PipeParams.EdgeSizeMin, PipeParams.EdgeSizeMax, () => _pipeP.EdgeSizeBack,
+                BackSize  = SR(EdgeSizeBackLx, PipeParams.EdgeSizeMin, PipeParams.EdgeSizeMax, () => _pipeP.EdgeSizeBack,
                                v => { _pipeP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _pipeP.EdgeInward,
                                v => { _pipeP.EdgeInward = v; D(); }),

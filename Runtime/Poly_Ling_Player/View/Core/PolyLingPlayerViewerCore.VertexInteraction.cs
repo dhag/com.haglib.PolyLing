@@ -58,6 +58,10 @@ namespace Poly_Ling.Player
                 // 選択しただけでは更新されずセクションが出ない問題を防ぐ）。
                 foreach (var (section, refresh) in _sectionRefreshPairs)
                     if (section?.style.display == DisplayStyle.Flex) refresh();
+                // ギズモは選択から組むので、ここで描き直す。クリック・コマンド（selectElements・
+                // selectAllElements）とも ApplyElementSet → ここを通る。以前は次のホバー
+                // （EnterHoverChanged → OnRefreshGizmoOverlay）まで前のギズモが残っていた。
+                UpdateGizmoOverlay();
             };
 
             _moveToolHandler = new MoveToolHandler(_selectionOps)

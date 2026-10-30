@@ -275,6 +275,31 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public MeshSelectionEntry[] PendingSelectionEntries;
 
+        // === 書き込み先の受け渡し（作り直し整備計画 段 12） ===
+        //
+        // 頂点編集の履歴は書き込み先が替わっても消さないので、Undo・Redo する記録の
+        // 相手は今の選択（ResolvedMeshContext / ActiveMeshContext）と一致しないことがある。
+        // 記録は自分の書き込み先（MeshUndoTarget）を引き直し、ここで後処理
+        // （OnUndoRedoPerformed）へ渡す。後処理は使ったら空に戻す。
+
+        /// <summary>
+        /// スナップショット・面追加の記録が書いた描画オブジェクト。
+        /// 後処理はこの相手の表面メッシュを作り直す。
+        /// </summary>
+        public List<MeshContext> AppliedMeshContexts { get; } = new List<MeshContext>();
+
+        /// <summary>
+        /// SelectionChangeRecord の戻し先。CurrentSelectionSnapshot をこの相手へ戻す。
+        /// null なら従来どおり ActiveMeshContext。
+        /// </summary>
+        public MeshContext CurrentSelectionTarget;
+
+        /// <summary>
+        /// 複数メッシュの記録（PendingMeshMoveEntries / PendingSelectionEntries）の索引が指すモデル。
+        /// null なら ParentModelContext。
+        /// </summary>
+        public ModelContext PendingTargetModel;
+
         /// <summary>
         /// トポロジー変更後に呼ぶコールバック。
         /// 設定されている場合（Player環境）はApplyToMesh()の代わりに呼ばれる。

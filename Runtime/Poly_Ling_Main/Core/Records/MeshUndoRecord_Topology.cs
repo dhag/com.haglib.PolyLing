@@ -151,6 +151,36 @@ namespace Poly_Ling.UndoSystem
         public List<LineGroup> LineGroupsBefore;
         public List<LineGroup> LineGroupsAfter;
 
+        /// <summary>
+        /// 書き込み先（面を足した描画オブジェクト）。記録側が渡し、渡さなければ
+        /// 記録の時点の解決先を MeshUndoStack が詰める。Undo・Redo の時点で引き直す（段 12）。
+        /// </summary>
+        public MeshUndoTarget Target;
+
+        /// <summary>
+        /// 書き込み先の MeshObject を引く。控えてあるのに見つからなければ null（書かない）。
+        /// 控えが無ければ従来どおり ctx の解決先。書いた相手は後処理へ渡す。
+        /// </summary>
+        private MeshObject ResolveMeshObject(MeshUndoContext ctx)
+        {
+            if (!Target.IsSet) return ctx.MeshObject;
+            var mc = Target.Resolve();
+            if (mc?.MeshObject == null) return null;
+            if (!ctx.AppliedMeshContexts.Contains(mc)) ctx.AppliedMeshContexts.Add(mc);
+            return mc.MeshObject;
+        }
+
+        /// <summary>
+        /// 面・頂点を書き換えたあとの反映。Player は OnTopologyChanged（後処理が
+        /// AppliedMeshContexts の相手を作り直す）。ApplyToMesh は ctx の解決先の
+        /// メッシュへ書くので、書き込み先が解決先と同じときだけ呼ぶ。
+        /// </summary>
+        private void NotifyApplied(MeshUndoContext ctx, MeshObject written)
+        {
+            if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
+            else if (ReferenceEquals(written, ctx.MeshObject)) ctx.ApplyToMesh();
+        }
+
         public AddFaceOperationRecord(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices,
             List<LineGroup> lineGroupsBefore = null, List<LineGroup> lineGroupsAfter = null)
         {
@@ -167,66 +197,66 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            var mo = ResolveMeshObject(ctx);
+            if (mo == null) return;
 
-            if (AddedFace != null && FaceIndex >= 0 && FaceIndex < ctx.MeshObject.FaceCount)
+            if (AddedFace != null && FaceIndex >= 0 && FaceIndex < mo.FaceCount)
             {
-                ctx.MeshObject.Faces.RemoveAt(FaceIndex);
+                mo.Faces.RemoveAt(FaceIndex);
             }
 
             var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
             foreach (var (idx, _) in sortedVertices)
             {
-                if (idx < ctx.MeshObject.VertexCount)
+                if (idx < mo.VertexCount)
                 {
-                    ctx.MeshObject.Vertices.RemoveAt(idx);
-                    AdjustFaceIndicesAfterVertexRemoval(ctx.MeshObject, idx);
+                    mo.Vertices.RemoveAt(idx);
+                    AdjustFaceIndicesAfterVertexRemoval(mo, idx);
                 }
             }
 
             // 線分群は変更前へ戻す（頂点を消した後。控えは消す前の索引で書かれている）。
             if (LineGroupsBefore != null)
-                Poly_Ling.Ops.LineGroupOps.RestoreList(ctx.MeshObject, LineGroupsBefore);
+                Poly_Ling.Ops.LineGroupOps.RestoreList(mo, LineGroupsBefore);
 
-            if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
-            else ctx.ApplyToMesh();
+            NotifyApplied(ctx, mo);
         }
 
         public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            var mo = ResolveMeshObject(ctx);
+            if (mo == null) return;
 
             var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
             foreach (var (idx, vtx) in sortedVertices)
             {
-                if (idx >= ctx.MeshObject.Vertices.Count)
+                if (idx >= mo.Vertices.Count)
                 {
-                    ctx.MeshObject.Vertices.Add(vtx.Clone());
+                    mo.Vertices.Add(vtx.Clone());
                 }
                 else
                 {
-                    ctx.MeshObject.Vertices.Insert(idx, vtx.Clone());
+                    mo.Vertices.Insert(idx, vtx.Clone());
                 }
-                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshObject, idx);
+                AdjustFaceIndicesAfterVertexInsertion(mo, idx);
             }
 
             if (AddedFace != null && FaceIndex >= 0)
             {
-                if (FaceIndex >= ctx.MeshObject.Faces.Count)
+                if (FaceIndex >= mo.Faces.Count)
                 {
-                    ctx.MeshObject.Faces.Add(AddedFace.Clone());
+                    mo.Faces.Add(AddedFace.Clone());
                 }
                 else
                 {
-                    ctx.MeshObject.Faces.Insert(FaceIndex, AddedFace.Clone());
+                    mo.Faces.Insert(FaceIndex, AddedFace.Clone());
                 }
             }
 
             if (LineGroupsAfter != null)
-                Poly_Ling.Ops.LineGroupOps.RestoreList(ctx.MeshObject, LineGroupsAfter);
+                Poly_Ling.Ops.LineGroupOps.RestoreList(mo, LineGroupsAfter);
 
-            if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
-            else ctx.ApplyToMesh();
+            NotifyApplied(ctx, mo);
         }
 
         private void AdjustFaceIndicesAfterVertexRemoval(MeshObject meshObject, int removedIndex)

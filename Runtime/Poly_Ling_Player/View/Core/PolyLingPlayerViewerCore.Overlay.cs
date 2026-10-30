@@ -318,6 +318,22 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// 操作モード・カレントビューと、今の選択からギズモを組めるか（組めたら原点）を文字で返す
+        /// （querySelectionState。段 I の切り分け用）。UpdateGizmoOverlay と同じ手順で組み直すだけで、画面には描かない。
+        /// </summary>
+        private string DescribeViewState()
+        {
+            string s = $"mode={_interactionMode} view={ActiveViewKind()} activePanel={(_activePanel != null ? "あり" : "なし")}";
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null) return s + " gizmo=ToolContext なし";
+            var provider = GizmoProviderFor(_interactionMode);
+            if (provider == null) return s + " gizmo=プロバイダなし";
+            return provider.TryBuildGizmoData(ctx, out var data)
+                ? s + $" gizmo=組める origin={data.Origin}"
+                : s + " gizmo=組めない";
+        }
+
         private void UpdateGizmoOverlay()
         {
             // 作業軸はポインタが乗っていないビューポートにも出す。

@@ -536,3 +536,12 @@ ufbx 0.23.1（クラウド上で gcc でビルド。プロジェクトには戻�
 
 - 速さは段 9 の変更後に測り直していない。
 - テスト用に `SandBox/fbx6/` へ ufbx のテストの 6.x ファイル 2 本を置いた。
+
+## 6b. 残件の締め（2026-10-31。この計画は完了）
+
+- ufbx と値が違うもの・読み込みの速さ：記録のみ。直さない。
+- CMU の後に VMD を標本化すると関節がずれる件：直した。原因は `UnityClipApplier.ResetAllBones` が `PoseLayer.Clear()` で層を消し、`BonePoseData` の行列のキャッシュ（`_dirty`）を無効にしていなかったこと。`ClearLayer` に替えた。確認は `PolyLing_BVH対応計画.md` の 9。
+- MCP の書き出しコマンドが `model_index` を見ない件：直した。`exportMotionToBvh`・`exportMotionToFbx`・`exportVmdToMotion` と、モデルの書き出し 7 つ（PMX・MQO・OBJ・STL・VRM・glTF・FBX の `OnExport*`）が `cmd.ModelIndex` のモデルを使う。パネルは今のモデルの番号を渡すので動きは変わらない。確認：`model_index=7`（無い番号）で `exportMotionToBvh`・`exportFbxFile` が「モデルがありません」、`model_index=0`（今のモデルは 2）で書き出せた。
+- 書き出しの後の表示の引き直し：`SettleWorldPositions` に替えた（`PolyLing_BVH対応計画.md` の 9）。
+- `ビルド用/PolyLing_Data/Plugins/` の古い `UnityFbxSdkNative.dll`、ビルド版での書き出しの確認：道具で届かないので `PolyLing_残件.md` の 6 へ移した。
+- Scripting Define Symbols の空の `Standalone:` 行：動作に影響せず、ProjectSettings は書き込み先の外。直さない。

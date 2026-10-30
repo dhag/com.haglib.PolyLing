@@ -316,9 +316,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>現在のモデルのオブジェクトグループをシナリオとして登録する。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "現在のモデルのオブジェクトグループをシナリオとして登録する。描画オブジェクトへの参照と出力先は落とす。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "現在のモデルのオブジェクトグループをシナリオとして登録する。描画オブジェクトへの参照（ObjectId）と出力先は落とし、つながりは書き換えて残す：同じグループの前の項目の出力を指す参照は @<項目 ID>.masterIndices、グループの外を指す参照はシナリオの引数 <項目 ID>_<キー>（既定値は今の索引）にする。内と外が混じる参照・出力が複数の項目を指す参照は断る。")]
     [PLResult("name",  PLResultKind.Text,    Description = "作ったシナリオの名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "項目の数")]
+    [PLResult("params", PLResultKind.Integer, Description = "グループの外を指す参照から作ったシナリオの引数の数")]
     [PLResult("count", PLResultKind.Integer, Description = "登録後のシナリオの数")]
     public sealed class SaveScenarioFromGroupCommand : PanelCommand
     {

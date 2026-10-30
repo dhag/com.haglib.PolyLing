@@ -459,7 +459,7 @@ namespace Poly_Ling.Fbx
             var cp = new double[vCount * 3];
             for (int v = 0; v < vCount; v++)
             {
-                var pos = verts[v].Position + off;
+                var pos = MirrorBranchOps.SameSenseFlip(src.SameSenseAxis, verts[v].Position + off);
                 cp[v * 3]     = -pos.x * UnitScale;
                 cp[v * 3 + 1] =  pos.y * UnitScale;
                 cp[v * 3 + 2] =  pos.z * UnitScale;
@@ -511,7 +511,7 @@ namespace Poly_Ling.Fbx
                     else                                     nn = Vector3.up;
                     nn = nn.normalized;
                     if (nn != Vector3.up) allUp = false;
-                    cornerNormal.Add(nn);
+                    cornerNormal.Add(MirrorBranchOps.SameSenseFlip(src.SameSenseAxis, nn));
                 }
 
                 int slot = Mathf.Clamp(f.MaterialIndex, 0, subCount - 1);
@@ -706,6 +706,7 @@ namespace Poly_Ling.Fbx
                     {
                         if (vi < 0 || vi >= vCount) continue;
                         Vector3 d = src.MirrorDelta ? MirrorBranchOps.MirrorNormal(src.MirrorAxis, o) : o;
+                        d = MirrorBranchOps.SameSenseFlip(src.SameSenseAxis, d);
                         sum[vi] = sum.TryGetValue(vi, out var acc) ? acc + d : d;
                     }
 

@@ -154,7 +154,66 @@ namespace Poly_Ling.Player
             }
         }
 
-        private void RefreshP2dCanvas() => _p2dCanvas?.MarkDirtyRepaint();
+        private void RefreshP2dCanvas()
+        {
+            _p2dCanvas?.MarkDirtyRepaint();
+            RefreshP2dLoopList();
+        }
+
+        /// <summary>
+        /// ループ一覧を、内容（ループ数・各ループの点数・穴フラグ・選択中のループ）が変わったときだけ作り直す。
+        /// ループを変える操作はどれもキャンバスの再描画を通るので、ここで一覧も合わせる。
+        /// </summary>
+        private void RefreshP2dLoopList(bool building = false)
+        {
+            // 別の図形へ切り替えて外れた一覧は触らない（登録先の組が違うため）。
+            // 設定画面を作っている最中はまだ画面に付いていないので building で通す。
+            if (_p2dLoopListEl == null || _p2dLoops == null) return;
+            if (!building && _p2dLoopListEl.panel == null) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append(_p2dSelLoop).Append('|');
+            foreach (var lp in _p2dLoops)
+                sb.Append(lp.Points.Count).Append(lp.IsHole ? 'h' : 'o').Append(',');
+            string sig = sb.ToString();
+            if (sig == _p2dLoopListSig) return;
+            _p2dLoopListSig = sig;
+
+            const string holeIdPrefix = "P2dLoopHole";
+            const string selIdPrefix  = "P2dLoopSelect";
+            _uiDynamic.Remove(e => e.Id != null
+                && (e.Id.StartsWith(holeIdPrefix, StringComparison.Ordinal)
+                    || e.Id.StartsWith(selIdPrefix, StringComparison.Ordinal)));
+            _p2dLoopListEl.Clear();
+
+            for (int i = 0; i < _p2dLoops.Count; i++)
+            {
+                int li = i;
+                var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
+                var selBtn = new Button(() =>
+                {
+                    _p2dSelLoop = li; _p2dSel.Clear(); _p2dSelPt = -1; RefreshP2dCanvas(); RefreshP2dPointUI();
+                })
+                { text = $"Loop {i} ({_p2dLoops[i].Points.Count}pt)" };
+                selBtn.style.flexGrow = 1; selBtn.style.fontSize = 9; selBtn.style.height = 18;
+                selBtn.style.backgroundColor = (i == _p2dSelLoop)
+                    ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
+                    : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+                // 穴フラグの切替は Undo に入れる（P2dBegin/P2dCommit）
+                var holeTog = new Toggle(T("IsHole")) { value = _p2dLoops[i].IsHole };
+                holeTog.RegisterValueChangedCallback(e =>
+                {
+                    if (_p2dLoops == null || li >= _p2dLoops.Count) return;
+                    P2dBegin();
+                    _p2dLoops[li].IsHole = e.newValue;
+                    P2dCommit("穴フラグ切替");
+                    D(); RefreshP2dCanvas();
+                });
+                row.Add(_uiDynamic.Add($"{selIdPrefix}{i}", selBtn, $"ループ {i} を選ぶ", UiSafety.SafeWrite));
+                row.Add(_uiDynamic.Add($"{holeIdPrefix}{i}", holeTog, $"ループ {i} を穴にする"));
+                _p2dLoopListEl.Add(row);
+            }
+        }
 
         private bool P2dGetSelPt(out Loop loop, out Vector2 pt)
         {
@@ -424,10 +483,10 @@ namespace Poly_Ling.Player
         private void BuildP2dAnchorTransformUI(VisualElement pe)
         {
             var tfFold = FoldSection(pe, T("SelectionTransform"), false);
-            tfFold.Add(BuildTf2("移動 X/Y",   0f, 0f, out _p2dTfMoveX,  out _p2dTfMoveY));
-            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out _p2dTfScaleX, out _p2dTfScaleY));
-            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out _p2dTfScaleAxis));
-            tfFold.Add(BuildTf1("回転 (°)",    0f, out _p2dTfRot));
+            tfFold.Add(BuildTf2("tf.move",  "移動 X/Y",   0f, 0f, out _p2dTfMoveX,  out _p2dTfMoveY));
+            tfFold.Add(BuildTf2("tf.scale", "スケール X/Y", 1f, 1f, out _p2dTfScaleX, out _p2dTfScaleY));
+            tfFold.Add(BuildTf1("tf.scaleAxis", "スケール軸 (°)", 0f, out _p2dTfScaleAxis));
+            tfFold.Add(BuildTf1("tf.rotate",    "回転 (°)",    0f, out _p2dTfRot));
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", ApplyP2dTransform);
             SB(applyRow, "リセット", () =>
@@ -445,13 +504,15 @@ namespace Poly_Ling.Player
             p2dMagToggle.RegisterValueChangedCallback(ev => { _p2dMagnet.Enabled = ev.newValue; RefreshP2dCanvas(); });
             var p2dFalloff = new EnumField(_p2dMagnet.Falloff); p2dFalloff.style.flexGrow = 1;
             p2dFalloff.RegisterValueChangedCallback(ev => _p2dMagnet.Falloff = (FalloffType)ev.newValue);
-            p2dMagRow.Add(p2dMagToggle); p2dMagRow.Add(p2dFalloff);
+            p2dMagRow.Add(RowTarget.Add("magnet.enabled", p2dMagToggle, "マグネットを使う"));
+            p2dMagRow.Add(RowTarget.Add("magnet.falloff", p2dFalloff, "マグネットの減衰の形"));
             magFold.Add(p2dMagRow);
-            magFold.Add(BuildAnchorRow("半径", 0.05f, 5f, _p2dMagnet.Radius, out _p2dMagnetRadius, out _,
+            magFold.Add(BuildAnchorRow("magnet.radius", "半径", 0.05f, 5f, _p2dMagnet.Radius, out _p2dMagnetRadius, out _,
                 () => false, v => { _p2dMagnet.Radius = v; RefreshP2dCanvas(); }));
 
             var anchorFold = FoldSection(pe, T("AnchorSection"), false);
-            _p2dAnchorEnterBtn = new Button(() => SetP2dAnchorMode(true)) { text = "アンカー設定" };
+            _p2dAnchorEnterBtn = RowTarget.Add("anchor.enter", new Button(() => SetP2dAnchorMode(true)) { text = "アンカー設定" },
+                "アンカーの調整を始める", UiSafety.SafeWrite);
             _p2dAnchorEnterBtn.style.marginBottom = 2;
             anchorFold.Add(_p2dAnchorEnterBtn);
 
@@ -459,7 +520,9 @@ namespace Poly_Ling.Player
             {
                 var headRow = new VisualElement(); headRow.style.flexDirection = FlexDirection.Row; headRow.style.marginBottom = 2;
                 var lbl = new Label("アンカー調整中（キャンバスをドラッグで移動）"); lbl.style.fontSize = 10; lbl.style.flexGrow = 1; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-                var done = new Button(() => SetP2dAnchorMode(false)) { text = "決定" }; done.style.width = 60;
+                var done = RowTarget.Add("anchor.done", new Button(() => SetP2dAnchorMode(false)) { text = "決定" },
+                    "アンカーの調整を終える", UiSafety.SafeWrite);
+                done.style.width = 60;
                 headRow.Add(lbl); headRow.Add(done); _p2dAnchorPanel.Add(headRow);
 
                 var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
@@ -469,9 +532,9 @@ namespace Poly_Ling.Player
                 SB(presetRow, "左下", () => ApplyP2dAnchorPreset(Canvas2DAnchor.Preset.BottomLeft));
                 _p2dAnchorPanel.Add(presetRow);
 
-                _p2dAnchorPanel.Add(BuildAnchorRow("X", -5f, 5f, 0f, out _p2dAnchorXSlider, out _p2dAnchorXField,
+                _p2dAnchorPanel.Add(BuildAnchorRow("anchor.x", "X", -5f, 5f, 0f, out _p2dAnchorXSlider, out _p2dAnchorXField,
                     () => _p2dAnchorSuppress, v => SetP2dAnchorComponent(true, v)));
-                _p2dAnchorPanel.Add(BuildAnchorRow("Y", -5f, 5f, 0f, out _p2dAnchorYSlider, out _p2dAnchorYField,
+                _p2dAnchorPanel.Add(BuildAnchorRow("anchor.y", "Y", -5f, 5f, 0f, out _p2dAnchorYSlider, out _p2dAnchorYField,
                     () => _p2dAnchorSuppress, v => SetP2dAnchorComponent(false, v)));
             }
             anchorFold.Add(_p2dAnchorPanel);

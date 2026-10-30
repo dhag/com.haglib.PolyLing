@@ -513,14 +513,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     }
                 }
                 // グループの子（GroupChildren）：エントリの後ろに ,<子の数>,<名前:重み>…。
-                //   子が無ければ何も足さない（旧形式と同じ行）。名前と重みは最後の ':' で分ける。
+                //   子が 0 件でも数（0）を書く（後ろに作成日時の列が続くため）。名前と重みは最後の ':' で分ける。
                 //   PolyLing_Blender不具合修正計画.md の 9。
-                if (me.GroupChildren != null && me.GroupChildren.Count > 0)
+                int childCount = me.GroupChildren?.Count ?? 0;
+                sb.Append($",{childCount}");
+                for (int ci = 0; ci < childCount; ci++)
                 {
-                    sb.Append($",{me.GroupChildren.Count}");
-                    foreach (var c in me.GroupChildren)
-                        sb.Append($",{Esc($"{c.Name ?? ""}:{Fl(c.Weight)}")}");
+                    var c = me.GroupChildren[ci];
+                    sb.Append($",{Esc($"{c.Name ?? ""}:{Fl(c.Weight)}")}");
                 }
+                // 作成日時（規約4：.mfproj の morphExpressions[].createdAt・バイナリ PLRM v12 と揃える）
+                sb.Append($",{Esc(me.CreatedAt.ToString("o", CultureInfo.InvariantCulture))}");
                 sb.AppendLine();
             }
 
@@ -590,6 +593,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     float cw = float.TryParse(tok.Substring(colon + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out var w2) ? w2 : 1f;
                     me.GroupChildren.Add(new MorphGroupChild(tok.Substring(0, colon), cw));
                 }
+
+                // 作成日時（子の後ろ。列が無い旧ファイルは読込時刻のまま）
+                int dateAt = childAt + 1 + childCount;
+                if (dateAt < cols.Length && DateTime.TryParse(Unesc(cols[dateAt]), CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind, out var meCreated))
+                    me.CreatedAt = meCreated;
 
                 model.MorphExpressions.Add(me);
                 exprIdx++;

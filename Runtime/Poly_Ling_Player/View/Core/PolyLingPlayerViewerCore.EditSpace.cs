@@ -137,6 +137,20 @@ namespace Poly_Ling.Player
         // コマンドの受け口
         // ================================================================
 
+        /// <summary>
+        /// 作業空間の反映・取消し・閉じるが書く既存の描画オブジェクト（出力の保護の判定に使う。段 8）。
+        /// 反映は元データ（UV なら元の描画オブジェクト、断面なら線分オブジェクト）を書く。
+        /// グループの項目の断面（元が無い）は項目の引数だけを書き、作り直しは書き戻しの経路で通る。
+        /// 取消し・閉じるは代理だけを書く。開いていなければ null（通常の判定）。
+        /// </summary>
+        private System.Collections.Generic.IList<MeshContext> EditSpaceWriteTargets(PanelCommand cmd)
+        {
+            if (_editSpace == null) return null;
+            var list = new System.Collections.Generic.List<MeshContext>();
+            if (cmd is ApplyEditSpaceCommand && _editSpace.Source != null) list.Add(_editSpace.Source);
+            return list;
+        }
+
         /// <summary>作業空間のコマンドの受け口。失敗理由を返す（成功なら null）。</summary>
         private string ExecuteEditSpaceCommand(
             PanelCommand cmd, ModelContext model, CommandDataBuilder data, EditSpaceTouched touched)
@@ -146,6 +160,7 @@ namespace Poly_Ling.Player
             {
                 case OpenUvEditSpaceCommand c:            reason = OpenUvEditSpace(c, model);     break;
                 case OpenProfileEditSpaceCommand c:       reason = OpenProfileEditSpace(c, model); break;
+                case OpenGroupProfileEditSpaceCommand c:  reason = OpenGroupProfileEditSpace(c, model); break;
                 case SetEditSpacePlaneConstraintCommand c: reason = SetEditSpacePlaneConstraint(model, c.Enabled); break;
                 case SetEditSpacePlateUnderlayCommand c:   reason = SetEditSpacePlateUnderlay(model, c, data); break;
                 case ClearEditSpacePlateUnderlayCommand _: reason = ClearEditSpacePlateUnderlay(model, data); break;
@@ -217,7 +232,8 @@ namespace Poly_Ling.Player
         private string EditSpaceBlockReason(PanelCommand cmd)
         {
             // 断面系の代理はモデルに常設のオブジェクトなので断らない（設計方針 9.2 の対象外）。
-            if (_editSpace == null || !_editSpace.TemporaryProxy) return null;
+            // ただしグループ断面の代理は閉じると消える一時オブジェクトなので断る（DeleteProxyOnClose）。
+            if (_editSpace == null || !(_editSpace.TemporaryProxy || _editSpace.DeleteProxyOnClose)) return null;
             switch (cmd)
             {
                 // 保存・書き出し
@@ -260,13 +276,37 @@ namespace Poly_Ling.Player
 
         /// <summary>コマンドを通らない経路（自動検証パネル）用。作業空間を開いていれば理由。</summary>
         private string EditSpaceBlockReason()
-            => _editSpace != null && _editSpace.TemporaryProxy ? EditSpaceBlockMessage : null;
+            => _editSpace != null && (_editSpace.TemporaryProxy || _editSpace.DeleteProxyOnClose) ? EditSpaceBlockMessage : null;
 
         /// <summary>作業空間が操作できる状態か。できなければ理由。</summary>
+        /// <summary>
+        /// 元・代理の描画オブジェクトを ObjectId で引き直す。
+        /// オブジェクト一覧のスナップショットの Undo（グループの項目の作り直しなど）は描画オブジェクトを
+        /// 複製で置き換える（ObjectId は保たれる）ので、控えた実体がモデルから外れることがある。
+        /// </summary>
+        private static void RebindEditSpaceObjects(EditSpaceSession s)
+        {
+            var model = s?.Model;
+            if (model == null) return;
+            MeshContext Find(MeshContext mc)
+            {
+                if (mc == null || model.IndexOf(mc) >= 0 || mc.ObjectId == 0UL) return mc;
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var c = model.GetMeshContext(i);
+                    if (c != null && c.ObjectId == mc.ObjectId) return c;
+                }
+                return mc;
+            }
+            s.Proxy  = Find(s.Proxy);
+            s.Source = Find(s.Source);
+        }
+
         private string CheckEditSpaceUsable(ModelContext model)
         {
             var s = _editSpace;
             if (s == null) return "作業空間が開いていません";
+            RebindEditSpaceObjects(s);
             if (!ReferenceEquals(model, s.Model)) return "作業空間を開いたモデルが現在のモデルではありません";
             if (s.IsBroken) return "元または代理の描画オブジェクトがモデルにありません。終了してください";
             return null;
@@ -476,6 +516,91 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>
+        /// オブジェクトグループの項目の断面で作業空間を開く（段 6「断面の線分 → 断面」）。
+        /// 項目の断面から線分の代理を作ってモデルへ足す（通常の Undo に残る）。閉じるときに消す。
+        /// </summary>
+        private string OpenGroupProfileEditSpace(OpenGroupProfileEditSpaceCommand c, ModelContext model)
+        {
+            if (_editSpace != null) return "作業空間が既に開いています。先に終了してください";
+            var project = ActiveProject;
+            if (project == null) return "プロジェクトがありません";
+            if (!ReferenceEquals(project.CurrentModel, model)) return "今のモデルでだけ開けます";
+
+            if (!PlayerPrimitiveMeshSubPanel.TryParseKind(c.Kind, out var kind))
+                return $"断面の種類 '{c.Kind}' がありません（revolution / profile2d / frillA / frillB / pipe）";
+
+            int modelIdx = project.CurrentModelIndex;
+            string why = GroupProfileEditSpaceAdapter.ReadItemProfile(project, modelIdx, c.GroupName, c.StepIndex, kind, out var prof);
+            if (why != null) return why;
+
+            // ── 代理を作る（ここまで副作用なし） ──
+            string name = model.GenerateUniqueMeshName($"{c.GroupName}#{c.StepIndex}_{PlayerPrimitiveMeshSubPanel.KindName(kind)}");
+            var proxyMo = GroupProfileEditSpaceAdapter.BuildLineMesh(prof, name);
+            if (proxyMo == null || proxyMo.FaceCount == 0) return "項目の断面から線分を作れません";
+
+            var unityMesh = proxyMo.ToUnityMesh();
+            unityMesh.name      = name;
+            unityMesh.hideFlags = HideFlags.HideAndDontSave;
+            var proxy = new MeshContext
+            {
+                MeshObject = proxyMo,
+                Name       = name,
+                UnityMesh  = unityMesh,
+                IsVisible  = true,
+            };
+            proxy.ParentModelContext = model;
+            proxy.DoubleSidedDisplay = true;
+
+            var session = new EditSpaceSession
+            {
+                Adapter            = new GroupProfileEditSpaceAdapter(
+                                         () => ActiveProject, DispatchFromPanel, modelIdx, c.GroupName, c.StepIndex, kind),
+                Model              = model,
+                Source             = null,
+                FaceCount          = proxyMo.FaceCount,
+                PrevPanel          = _activePanel,
+                PrevViewport       = _activeViewport,
+                PrevShowBindPose   = project.ShowBindPose,
+                PrevProxyBillboard = BillboardMode.Off,
+                DeleteProxyOnClose = true,
+            };
+
+            if (project.ShowBindPose)
+            {
+                string r = DispatchFromPanel(new SetPoseDisplayModeCommand(modelIdx, false));
+                if (r != null) return $"現在ポーズ表示へ切り替えられません（{r}）";
+            }
+
+            var undo = _editOps?.UndoController;
+            var oldSelected = model.CaptureAllSelectedIndices();
+            int proxyIdx    = model.Add(proxy);
+            model.ComputeWorldMatrices();
+            model.SelectMeshContextExclusive(proxyIdx);
+            model.SelectMesh(proxyIdx);
+            var newSelected = model.CaptureAllSelectedIndices();
+            if (undo != null)
+            {
+                undo.SetModelContext(model);
+                undo.RecordMeshContextAdd(proxy, proxyIdx, oldSelected, newSelected,
+                    null, null, null, model.CurrentMaterialIndex, null, 0);
+            }
+
+            proxy.Billboard = BillboardMode.ScreenAligned;
+            session.Proxy   = proxy;
+            session.Locked  = true;
+            _editSpace      = session;
+
+            _viewportManager.EnterTopologyChanged(project);
+            ApplyEditSpaceBillboardDisplay(project);
+            FocusEditSpaceView(project, proxy, session);
+            ApplyAllUnderlays();
+
+            NotifyPanels(ChangeKind.ListStructure);
+            session.LastMessage = $"開きました（{c.GroupName}#{c.StepIndex} の断面。線分 {proxyMo.FaceCount}）";
+            return null;
+        }
+
         /// <summary>基準ビュー（BillboardView）をカレントにし、代理の表示位置へカメラを寄せる。</summary>
         private void FocusEditSpaceView(ProjectContext project, MeshContext proxy, EditSpaceSession session)
         {
@@ -642,6 +767,7 @@ namespace Poly_Ling.Player
         {
             var s = _editSpace;
             if (s == null) return "作業空間が開いていません";
+            RebindEditSpaceObjects(s);
             if (!ReferenceEquals(model, s.Model))
             {
                 // 開いたモデルがもうプロジェクトに無い（読み込み直し等）なら、作業空間を捨てるだけ。
@@ -660,9 +786,15 @@ namespace Poly_Ling.Player
             int modelIdx = project?.CurrentModelIndex ?? 0;
 
             // 断面系：代理は常設のオブジェクトなので消さない。ビルボードを開く前へ戻す。
+            // グループの項目の断面（段 6）は、開くときに作った代理を消す（通常の Undo に残る）。
             if (!s.TemporaryProxy)
             {
                 if (s.Proxy != null) s.Proxy.Billboard = s.PrevProxyBillboard;
+                if (s.DeleteProxyOnClose && s.ProxyIndex >= 0)
+                {
+                    string dr = DispatchFromPanel(new DeleteMeshesCommand(modelIdx, new[] { s.ProxyIndex }));
+                    if (dr != null) return $"代理を消せません（{dr}）";
+                }
                 _editSpace = null;
 
                 RestoreEditSpaceCamera(s);

@@ -35,8 +35,9 @@ namespace Poly_Ling.Player
         public Action NotifyTopologyChanged;
 
         /// <summary>
-        /// 描画オブジェクトの全頂点のワールド位置を GPU から読む口。読めなければ null。
-        /// Viewer が配線する。帯の座標はこの値だけから組む。
+        /// 描画オブジェクトの全頂点のバインド姿勢のワールド位置を読む口。読めなければ null。
+        /// Viewer が ModifierSpace.BindWorldPositions を配線する（モデル空間で読む入力の決まり。段 E）。
+        /// 帯の座標はこの値だけから組む。
         /// </summary>
         public Func<MeshContext, Vector3[]> GetWorldPositions;
 

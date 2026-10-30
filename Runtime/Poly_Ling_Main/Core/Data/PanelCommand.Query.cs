@@ -155,6 +155,40 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// オブジェクトグループの項目 1 つの引数（キーと今の値、書けるか）を返す。モデルは変えない。
+    /// 書けないキーの理由は ObjectGroupOps.ArgWriteBlockReason（setObjectGroupStepArgs と同じ判定）。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目 1 つの引数（キー・今の値・書けるか）を返す。setObjectGroupStepArgs で書くキーを探すのに使う。モデルは変えない。")]
+    [PLResult("entry",        PLResultKind.Entry,        Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("action",       PLResultKind.Text,         Description = "項目のコマンド名")]
+    [PLResult("steps",        PLResultKind.Integer,      Description = "グループの項目数")]
+    [PLResult("keys",         PLResultKind.TextArray,    Description = "引数のキー（キー順）")]
+    [PLResult("values",       PLResultKind.TextArray,    Description = "今の値。keys と同じ並び")]
+    [PLResult("writable",     PLResultKind.IntegerArray, Description = "書けるか。1 = 書ける。keys と同じ並び")]
+    [PLResult("blockReasons", PLResultKind.TextArray,    Description = "書けない理由。書けるキーは空。keys と同じ並び")]
+    [PLResult("outputObjectIds", PLResultKind.TextArray, Description = "項目の出力の ObjectId")]
+    public class QueryObjectGroupStepArgsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
+        public string GroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        public int StepIndex { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryObjectGroupStepArgsCommand(int modelIndex, string groupName, int stepIndex, string resultName = null)
+            : base(modelIndex)
+        {
+            GroupName  = groupName;
+            StepIndex  = stepIndex;
+            ResultName = resultName;
+        }
+    }
+
+    /// <summary>
     /// 描画オブジェクト 1 個のボーンウェイトの行き先を数え、結果辞書へ書く。モデルは変えない。
     ///
     /// 【何のためにあるか】
@@ -369,6 +403,113 @@ namespace Poly_Ling.Data
     public class QueryCommandAuditCommand : PanelCommand
     {
         public QueryCommandAuditCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>
+    /// 生成コマンドを全件、モディファイアとしての型（A 単発・B 入力あり・C 組立）に分けて返す。
+    /// 各コマンドについて、グループに記録されるか・書き戻せるか・読む入力・逆方向を返す。
+    /// 型と属性だけを見る（ModifierInventory）。モデルもプロジェクトも見ない。
+    /// </summary>
+    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "生成コマンドを全件、A（単発）・B（入力あり）・C（組立）に分類し、グループに記録されるか・作り直しで出力先へ書き戻せるか・読む入力・逆方向を返す。モデルもプロジェクトも見ない。")]
+    [PLResult("report",    PLResultKind.Text,      Description = "一覧の全文（タブ区切り、1 行 1 コマンド）")]
+    [PLResult("actions",   PLResultKind.TextArray, Description = "action 名")]
+    [PLResult("kinds",     PLResultKind.TextArray, Description = "型 A / B / C。actions と同じ並び")]
+    [PLResult("captures",  PLResultKind.TextArray, Description = "グループへの記録のされ方（None / OnKeepAsGroup / Always / ViaSteps / Assembly）")]
+    [PLResult("rebuilds",  PLResultKind.TextArray, Description = "作り直しで書き戻すキー。書き戻せないものは空")]
+    [PLResult("inputs",    PLResultKind.TextArray, Description = "読む入力のキー（読み書きの別）。カンマ区切り")]
+    [PLResult("profiles",  PLResultKind.TextArray, Description = "プロファイル本体のキー。カンマ区切り")]
+    [PLResult("inverses",  PLResultKind.TextArray, Description = "逆方向。→action は逆方向のコマンド、←action はそのコマンドの逆方向であること")]
+    public class QueryModifierInventoryCommand : PanelCommand
+    {
+        public QueryModifierInventoryCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>
+    /// オブジェクトグループの項目（モディファイア）の依存のグラフを照会する（PolyLing_作り直し整備計画.md 段 4）。
+    /// 依存の順に、項目・入力・出力・下流・状態（流すか・外した理由・循環）・要評価の印・
+    /// 最後の評価の結果を返す。モデルは変えない。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目の依存のグラフを照会する。依存の順に、項目（グループ名#項目番号）・action・入力・出力・下流・状態（Evaluate=評価器が流す / Handler=処理器が流す / Excluded=外した / Cycle=循環）・外した理由・要評価の印・最後の評価の結果と理由、最後の流しの記録を返す。モデルは変えない。")]
+    [PLResult("entries",    PLResultKind.Integer,      Description = "項目の数")]
+    [PLResult("labels",     PLResultKind.TextArray,    Description = "項目（グループ名#項目番号）。依存の順。循環の項目は末尾")]
+    [PLResult("actions",    PLResultKind.TextArray,    Description = "項目のコマンド名。labels と同じ並び")]
+    [PLResult("inputs",     PLResultKind.TextArray,    Description = "入力（名前(ObjectId) のカンマ区切り）")]
+    [PLResult("outputs",    PLResultKind.TextArray,    Description = "出力（名前(ObjectId) のカンマ区切り）")]
+    [PLResult("downstream", PLResultKind.TextArray,    Description = "直接の下流の項目の番号（labels の位置）のカンマ区切り")]
+    [PLResult("statuses",   PLResultKind.TextArray,    Description = "Evaluate / Handler / Excluded / Cycle")]
+    [PLResult("reasons",    PLResultKind.TextArray,    Description = "Excluded・Cycle の理由")]
+    [PLResult("dirty",      PLResultKind.IntegerArray, Description = "要評価の印。1 = 入力が変わったのにまだ流していない")]
+    [PLResult("results",    PLResultKind.TextArray,    Description = "最後の評価の結果（None / Ok / Failed / Blocked / Rebuilt）")]
+    [PLResult("messages",   PLResultKind.TextArray,    Description = "最後の評価の理由・説明（失敗の理由、梯子・断面の扱いなど）")]
+    [PLResult("lastPass",   PLResultKind.Text,         Description = "最後の流しの記録（契機・作り直した数・失敗・止めた数と各項目）")]
+    [PLResult("pending",    PLResultKind.IntegerArray, Description = "出力の編集が未確定か。1 = 未確定（逆方向を持つ項目だけ）")]
+    public class QueryModifierGraphCommand : PanelCommand
+    {
+        public QueryModifierGraphCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>
+    /// 選択と画面の状態を照会する（作り直し整備計画 段 I の切り分け用）。
+    /// オブジェクト・ボーンの選択、オブジェクトごとの頂点・辺・面・線分の選択の数、
+    /// 操作モード・カレントビューと、今の選択からギズモを組めるか（組めたら原点）を返す。
+    /// ギズモはその場で組み直して返すので、画面の描き直しの時点に左右されない。モデルは変えない。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "選択と画面の状態を照会する。カレントのモデル・選択カテゴリ・オブジェクトとボーンの選択（索引と名前）、オブジェクトごとの頂点・辺・面・線分の選択の数、操作モード・カレントビュー、今の選択からギズモを組めるか（組めたら原点）を返す。ギズモはその場で組み直すので、画面の描き直しの時点に左右されない。モデルは変えない。")]
+    [PLResult("currentModelIndex", PLResultKind.Integer,   Description = "カレントのモデルの索引")]
+    [PLResult("activeCategory",    PLResultKind.Text,      Description = "選択カテゴリ")]
+    [PLResult("selectedMeshes",    PLResultKind.TextArray, Description = "オブジェクトとして選ばれているもの（索引:名前。並びは選択の順）")]
+    [PLResult("selectedBones",     PLResultKind.TextArray, Description = "ボーンとして選ばれているもの（索引:名前）")]
+    [PLResult("elementSelections", PLResultKind.TextArray, Description = "頂点・辺・面・線分の選択を持つオブジェクト（索引:名前 v=頂点 e=辺 f=面 l=線分）")]
+    [PLResult("viewState",         PLResultKind.Text,      Description = "操作モード・カレントビュー・ギズモを組めるか（組めたら原点）")]
+    public class QuerySelectionStateCommand : PanelCommand
+    {
+        public QuerySelectionStateCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>ギズモの診断ログ（AxisGizmo.GizmoDebugLog）を入れる・切る（段 I の切り分け用）。</summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "ギズモの診断ログ（[GizmoDbg]。Unity のログへ出る）を入れる・切る。既定は切。起動し直すと切に戻る。")]
+    [PLResult("enabled", PLResultKind.Flag, Description = "入っているか")]
+    public sealed class SetGizmoDebugLogCommand : PanelCommand
+    {
+        [PLParam(Description = "true で入れる、false で切る", Required = true)]
+        public bool Enabled { get; }
+
+        public SetGizmoDebugLogCommand(int modelIndex, bool enabled) : base(modelIndex) { Enabled = enabled; }
+    }
+
+    /// <summary>
+    /// オブジェクトグループの項目 1 つの逆方向（出力の編集 → 入力）を照会する（作り直し整備計画 段 6）。
+    /// 確定したら何が保たれ何が失われるか、今の編集がどれだけ丸められるかを、書かずに試して返す。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目 1 つの逆方向（出力の頂点の位置の編集を入力へ戻す）を照会する。逆方向の方法・保つもの・失うもの、出力の編集が未確定か、確定したときに書き直す入力と、確定後の出力と今の出力のずれ（編集が丸められる量）を、モデルを変えずに試して返す。")]
+    [PLResult("action",      PLResultKind.Text,    Description = "項目のコマンド名")]
+    [PLResult("method",      PLResultKind.Text,    Description = "逆方向の方法（beltFrames / vertexFrames / boltPattern / radialPlace / towerDeck / lushFrames / copiedVertices / ribbonCenters / surfacePaste）。空なら逆方向を持たない")]
+    [PLResult("chainCount",  PLResultKind.Integer, Description = "連ねた逆方向の段の数（書く入力が別の項目の出力なら、その項目の逆方向へ連ねる。段 14）。組めなければ 0")]
+    [PLResult("chain",       PLResultKind.TextArray, Description = "連ねた経路。上流から順に、項目・action・方法・書くもの・保つもの・失うもの・その段だけのずれ。組めなければ断った理由の 1 行")]
+    [PLResult("keeps",       PLResultKind.Text,    Description = "逆方向で保つもの")]
+    [PLResult("loses",       PLResultKind.Text,    Description = "逆方向で失うもの")]
+    [PLResult("pending",     PLResultKind.Integer, Description = "出力の編集が未確定か。1 = 未確定")]
+    [PLResult("canCommit",   PLResultKind.Integer, Description = "確定できるか。1 = できる")]
+    [PLResult("reason",      PLResultKind.Text,    Description = "確定できないときの理由")]
+    [PLResult("writes",      PLResultKind.Text,    Description = "確定で書き直す入力の説明（連ねたときは経路全体で実際に書くもの）")]
+    [PLResult("frames",      PLResultKind.Integer, Description = "枠の数")]
+    [PLResult("failedFrames",PLResultKind.Integer, Description = "姿勢を決められなかった枠の数")]
+    [PLResult("maxDeviation",  PLResultKind.Number, Description = "確定後の出力と今の出力の頂点のずれの最大")]
+    [PLResult("meanDeviation", PLResultKind.Number, Description = "確定後の出力と今の出力の頂点のずれの平均")]
+    public class QueryModifierInverseCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
+        public string GroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        public int StepIndex { get; }
+
+        public QueryModifierInverseCommand(int modelIndex, string groupName, int stepIndex)
+            : base(modelIndex)
+        {
+            GroupName = groupName;
+            StepIndex = stepIndex;
+        }
     }
 
     /// <summary>

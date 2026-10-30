@@ -393,14 +393,18 @@ namespace Poly_Ling.Player
 
                 // ── BoneTransform 値設定
                 case SetBoneTransformValueCommand c:
+                {
                     if (model == null) { Fail("no current model"); return true; }
+                    // begin なしの呼び出しは通常モード：前回 begin したモードを引き継がず、
+                    // ポーズ層・原点だけ移動・スキン固定のリバインドには入らない。
+                    bool inDrag = _boneSliderDragActive;
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
                         if (ctx == null) continue;
 
                         // C(ポーズ一時): BonePoseData の "Manual" 層へ差分として書く
-                        if (_activeBoneEditMode == BoneMoveMode.PoseLayer)
+                        if (inDrag && _activeBoneEditMode == BoneMoveMode.PoseLayer)
                         {
                             ApplyPoseLayerField(ctx, c.TargetField, c.Value);
                             continue;
@@ -425,7 +429,7 @@ namespace Poly_Ling.Player
 
                     // 原点だけ移動: 対象 MeshFilter の自頂点を「開始ワールド位置を保つ」よう
                     // 再ローカル化する。ObjectMoveTool.ApplyWorldDelta / ApplyWorldRotation と同じ式。
-                    if (_boneOriginOnly && _boneOriginStartWorld.Count > 0)
+                    if (inDrag && _boneOriginOnly && _boneOriginStartWorld.Count > 0)
                     {
                         foreach (var okv in _boneOriginStartWorld)
                         {
@@ -452,7 +456,7 @@ namespace Poly_Ling.Player
                     }
 
                     // A(スキン固定): World が変わったボーンの BindPose を追従更新し、SkinningMatrix を開始時と同一に保つ
-                    if (_activeBoneEditMode == BoneMoveMode.BoneOnlyRebind && _boneRebindStartSkinning.Count > 0)
+                    if (inDrag && _activeBoneEditMode == BoneMoveMode.BoneOnlyRebind && _boneRebindStartSkinning.Count > 0)
                     {
                         foreach (var kv in _boneRebindStartSkinning)
                         {
@@ -470,6 +474,7 @@ namespace Poly_Ling.Player
                     _viewportManager.UpdateTransform();
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
+                }
 
                 // ── UV展開
                 case ApplyUvUnwrapCommand c:
@@ -934,6 +939,7 @@ namespace Poly_Ling.Player
 
                     // A/B: 確定モードと開始状態を保持
                     _activeBoneEditMode = c.Mode;
+                    _boneSliderDragActive = true;
                     _boneRebindStartSkinning.Clear();
                     _boneRebindStartBindPose.Clear();
                     _boneFreezeBefore = null;
@@ -987,6 +993,8 @@ namespace Poly_Ling.Player
                 // ── BoneTransform スライダー終了：Undo記録
                 case EndBoneTransformSliderDragCommand c:
                 {
+                    // ここで begin〜end の区間を閉じる。以後 begin なしの値設定は通常モード。
+                    _boneSliderDragActive = false;
                     if (model == null || _undoController == null) { _boneTransformBeforeSnapshots.Clear(); Fail("no current model"); return true; }
                     if (_boneTransformBeforeSnapshots.Count == 0) { Fail("ドラッグ開始が記録されていません"); return true; }
 

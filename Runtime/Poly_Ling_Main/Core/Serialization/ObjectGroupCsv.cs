@@ -15,6 +15,7 @@
 //        g,name,action0,output0,stash,autoUpdate,sourceDigest,goal
 //        action0 と output0 は項目 0 の要約で、version 1.0 の読み手が
 //        ここだけを見て 1 項目のグループとして読めるようにしてある。
+//   gd … 作成日時（gd,ISO 8601）。g 行の直後に 1 行
 //   gp … 前提条件 1 件
 //   gc … 成功条件 1 件
 //   gt … 札 1 件
@@ -40,6 +41,8 @@
 //         ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
 //   1.6 … ga 行を追加（シナリオの引数）。行の無い 1.5 以前は引数なしとして読む。
 //   1.7 … gr 行を追加（シナリオの出力）。行の無い 1.6 以前は出力なしとして読む。
+//   1.8 … gd 行を追加（グループの作成日時。規約4：.mfproj の objectGroups[].createdAt・
+//         バイナリ PLRM v12 と揃える）。行の無い 1.7 以前は読込時刻のまま。
 //   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 / 1.4 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
@@ -64,7 +67,7 @@ namespace Poly_Ling.Serialization
     public static class ObjectGroupCsv
     {
         /// <summary>書き出す版。</summary>
-        public const string Version = "1.7";
+        public const string Version = "1.8";
 
         // ================================================================
         // 書き
@@ -93,6 +96,8 @@ namespace Poly_Ling.Serialization
                     $"g,{Esc(g.Name ?? "")},{Esc(first?.Action ?? "")}," +
                     $"{(first?.FirstOutputId ?? 0UL)},{g.StashObjectId}," +
                     $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")},{Esc(g.Goal ?? "")}");
+
+                sb.AppendLine($"gd,{Esc(g.CreatedAt.ToString("o", CultureInfo.InvariantCulture))}");
 
                 if (g.Preconditions != null)
                     foreach (string s in g.Preconditions)
@@ -199,6 +204,7 @@ namespace Poly_Ling.Serialization
                     EnsureStep();
                 cur.EnsureScenarioItemIds();
                 Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(cur);
+                Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(cur);
             }
 
             foreach (var line in lines)
@@ -229,6 +235,13 @@ namespace Poly_Ling.Serialization
                         cur.Steps.Clear();
                         curStep = null;
                         result.Add(cur);
+                        break;
+
+                    case "gd":
+                        if (cur == null || cols.Length < 2) break;
+                        if (DateTime.TryParse(Unesc(cols[1]), CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out var gdt))
+                            cur.CreatedAt = gdt;
                         break;
 
                     case "gp":
@@ -361,6 +374,7 @@ namespace Poly_Ling.Serialization
                 switch (cols[0])
                 {
                     case "g":  max = 8; group = cols.Length > 1 ? Unesc(cols[1]) : ""; seenGv = false; break;
+                    case "gd":
                     case "gp":
                     case "gc":
                     case "gt": max = 2; break;

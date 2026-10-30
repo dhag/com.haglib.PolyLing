@@ -147,7 +147,12 @@ namespace Poly_Ling.Player
                         ObjectGroupOps.AppendStep(project, modelIndex, group, ec, outIds);
                 }
 
-                if (group != null) model.AddObjectGroup(group);
+                if (group != null)
+                {
+                    model.AddObjectGroup(group);
+                    // 作った直後の入力・出力を控える（作り直し整備計画 段 9。CaptureObjectGroup を通らないため）。
+                    ModifierEvaluator.PrimeGroup(model, group);
+                }
             }
             finally
             {

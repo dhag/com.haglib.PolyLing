@@ -133,6 +133,24 @@ namespace Poly_Ling.Player
                     }
                     if (sources.Count == 0) { Fail("ブレンド元がありません"); return true; }
 
+                    // 基準（作り直し整備計画 段 13）。渡されたら宛先の今の形ではなくこれを基準にする。
+                    MeshContext baseCtx = null;
+                    if (c.BaseMasterIndex >= 0)
+                    {
+                        baseCtx = model.GetMeshContext(c.BaseMasterIndex);
+                        if (baseCtx?.MeshObject == null) { Fail("基準のメッシュがありません"); return true; }
+                        if (baseCtx.MeshObject.VertexCount != destCtx.MeshObject.VertexCount)
+                        {
+                            Fail($"基準と書き込み先の頂点数が違います（{baseCtx.MeshObject.VertexCount} と {destCtx.MeshObject.VertexCount}）");
+                            return true;
+                        }
+                    }
+
+                    // 選択は引数に残らないので、選択頂点だけのブレンドをグループに残すと
+                    // 作り直しの結果がそのときの選択で変わる。残さない。
+                    if (c.KeepAsGroup && c.SelectedVerticesOnly)
+                    { Fail("選択頂点だけのブレンドはグループとして残せません（選択は引数に残らず、作り直しの結果が選択で変わるため）"); return true; }
+
                     // ToolContext 構築（UndoController・CommandQueue 接続済み）。
                     // Undo の対象メッシュ指定は BlendOperation が SetMeshObjectFor で行う。
                     var blendCtx = BuildSkinWeightToolCtx(model);
@@ -147,17 +165,37 @@ namespace Poly_Ling.Player
 
                     var __blendBeforeIds = c.KeepAsGroup ? SnapshotObjectIds() : null;
 
-                    BlendOperation.ApplyBlend(
+                    int blendWriteIndex = BlendOperation.ApplyBlend(
                         model, preview, sources,
                         c.RecalculateNormals, c.SelectedVerticesOnly,
-                        c.MatchMode, c.CreateNewObject, blendCtx);
+                        c.MatchMode, c.CreateNewObject, blendCtx,
+                        baseCtx, out int blendBaseIndex);
+                    if (blendWriteIndex < 0)
+                    {
+                        preview.End(model, null);   // 隠したソースの表示を戻す
+                        Fail("ブレンドを適用できませんでした");
+                        return true;
+                    }
 
                     if (c.KeepAsGroup)
                     {
-                        // 新規オブジェクトを作らない設定では宛先そのものが出力先になる。
-                        // 作る設定では新しく増えた ObjectId が出力先。
-                        CaptureObjectGroup(c, __blendBeforeIds,
-                            c.CreateNewObject ? -1 : c.DestMasterIndex);
+                        // 作り直し整備計画 段 13：基準を入力、書き込み先を出力として記録する。
+                        //   宛先を書き換える設定 … 基準＝バックアップ、出力＝宛先
+                        //   複製を作る設定       … 基準＝元の宛先、出力＝複製
+                        // 記録の前にコマンドをその形へ組み直す（記録のあとに MeshRef を差し替えない）。
+                        // 増えた ObjectId の最大はバックアップなので、出力は明示して渡す。
+                        var blendWriteCtx = model.GetMeshContext(blendWriteIndex);
+                        var recordCmd = new ApplyBlendCommand(
+                            c.ModelIndex,
+                            c.SourceModelIndices, c.SourceMasterIndices, c.SourceWeights,
+                            blendWriteIndex,
+                            c.CreateNewObject, c.RecalculateNormals, c.SelectedVerticesOnly,
+                            c.MatchMode, c.KeepAsGroup,
+                            blendBaseIndex);
+                        CaptureObjectGroup(recordCmd, __blendBeforeIds, -1,
+                            blendWriteCtx != null && blendWriteCtx.ObjectId != 0UL
+                                ? new List<ulong> { blendWriteCtx.ObjectId }
+                                : null);
                     }
 
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
@@ -209,6 +247,9 @@ namespace Poly_Ling.Player
                                     project, model, c.ModelIndex, c.KeepStash, g, si, out string stepErr))
                             { rbFail = stepErr; break; }
                             rbDone++;
+
+                            // 下流へ伝える（段 4）。下流はこのコマンドの終わりに依存の順で流れる。
+                            ModifierEvaluator.MarkRebuilt(model, g.GetStep(si));
                         }
                     }
                     finally
@@ -749,7 +790,9 @@ namespace Poly_Ling.Player
                 if (collected.Contains(peer)) continue;
 
                 MeshObjectSnapshot before = null;
-                if (_undoController != null)
+                // 記録を止めているとき（作り直し・依存の評価）は書き込み先を設定しない。
+                // SetMeshObjectFor は頂点編集の履歴を消す（段 5）。
+                if (_undoController != null && !_undoController.IsRecordingSuspended)
                 {
                     _undoController.MeshUndoContext.ParentModelContext = model;
                     _undoController.SetMeshObjectFor(peer, peer.UnityMesh);

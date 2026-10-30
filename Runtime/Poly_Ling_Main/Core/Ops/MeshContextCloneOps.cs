@@ -75,18 +75,46 @@ namespace Poly_Ling.Ops
             MeshContext src, MeshContextCloneKind kind, string newName = null)
         {
             if (src == null) return null;
+            var dst = new MeshContext();
+            CopyState(src, dst, kind, newName);
+            return dst;
+        }
+
+        /// <summary>
+        /// src の中身を、既にある dst へ写す（dst の実体は替えない）。写す項目は Clone と同じ。
+        ///
+        /// 【何のためにあるか】（作り直し整備計画 段 A）
+        ///   一覧のスナップショットの Undo・Redo は、以前は描画オブジェクトを複製で丸ごと置き換えていた。
+        ///   実体が替わると、参照を持ち続けている所（ミラー対・選択の状態・評価器の控えのグラフ・
+        ///   並び替えの記録・ツールのプレビューなど）が置き換え前のオブジェクトを指したまま残る。
+        ///   Undo は実体を替えず、中身だけを戻す。そのための写し方をここに 1 つだけ持つ。
+        ///
+        /// 【写さないもの】UnityMesh（呼び出し側が作り直す）・ParentModelContext。
+        /// 【新品と同じにするもの】作業中の位置（WorkingPositions）・要素の選択・ミラー表示の控え・
+        ///   パーツ辞書の控え。新しい実体を作っていた頃と同じ状態にする。
+        /// </summary>
+        public static void CopyState(
+            MeshContext src, MeshContext dst, MeshContextCloneKind kind, string newName = null)
+        {
+            if (src == null || dst == null) return;
 
             var mo = src.MeshObject?.Clone();
             if (mo != null && !string.IsNullOrEmpty(newName)) mo.Name = newName;
 
             // MeshObject を先に入れる。委譲プロパティの setter が効く状態を作るため。
-            var dst = new MeshContext { MeshObject = mo };
+            dst.MeshObject = mo;
 
             if (mo == null && !string.IsNullOrEmpty(newName))
             {
                 // MeshObject が無いと Name も持てない。ここに来るのは壊れた入力だけ。
                 Debug.LogWarning($"[MeshContextCloneOps] MeshObject が無いので名前を設定できない: {newName}");
             }
+
+            // ── 新品と同じにするもの（既にある実体へ写すときに効く）
+            dst.WorkingPositions = null;
+            dst.Selection.ClearAll();
+            dst.ClearSymmetryCache();
+            dst.TakePendingPartsSetsBackup();
 
             // ── 識別と担当
             if (kind == MeshContextCloneKind.StateSnapshot)
@@ -98,7 +126,24 @@ namespace Poly_Ling.Ops
                 dst.PartsSelectionSetList = src.PartsSelectionSetList != null
                     ? src.PartsSelectionSetList.Where(s => s != null).Select(s => s.Clone()).ToList()
                     : new List<Poly_Ling.Selection.PartsSelectionSet>();
+
+                // 出力の来歴（段 F）。中身と一緒に戻すので、確定の Undo で未確定に戻る。
+                dst.ModifierForwardSig = src.ModifierForwardSig;
             }
+            else
+            {
+                dst.ObjectId   = 0;
+                dst.EditorName = "";
+                dst.PartsSelectionSetList = new List<Poly_Ling.Selection.PartsSelectionSet>();
+                dst.ModifierForwardSig = 0UL;   // 別オブジェクトなので項目の出力ではない
+            }
+
+            // ── 作業軸の値（正本。MeshContext.WorkAxis）。以前は写しておらず、
+            //   一覧のスナップショットの Undo で作業軸が作業軸でなくなっていた（段 A で確かめた）。
+            dst.WorkAxis = src.WorkAxis != null
+                ? new Poly_Ling.Context.WorkAxisContext(src.WorkAxis)
+                : null;
+            dst.IsMirrorFromMemo = src.IsMirrorFromMemo;
 
             // ── 表示・編集状態
             dst.IsVisible = src.IsVisible;
@@ -132,6 +177,12 @@ namespace Poly_Ling.Ops
                 dst.HasBakedMirrorChild    = src.HasBakedMirrorChild;
                 dst.DetachedMirrorObjectId = src.DetachedMirrorObjectId;
             }
+            else
+            {
+                dst.BakedMirrorSourceIndex = -1;
+                dst.HasBakedMirrorChild    = false;
+                dst.DetachedMirrorObjectId = 0;
+            }
 
             // ── モーフ
             dst.MorphBaseData      = src.MorphBaseData?.Clone();
@@ -144,8 +195,6 @@ namespace Poly_Ling.Ops
             dst.PMXMaterialNames  = src.PMXMaterialNames != null
                 ? new List<string>(src.PMXMaterialNames)
                 : new List<string>();
-
-            return dst;
         }
     }
 }

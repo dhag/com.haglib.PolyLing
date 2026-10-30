@@ -36,10 +36,12 @@ using Poly_Ling.Tools.SpringBoneRig;
 namespace Poly_Ling.Data
 {
     [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
+    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]   // PlayerCommandDispatcher.SpringBone.cs
     public class PlaceSpringBoneLadderChainsCommand : PanelCommand
     {
         [PLParam(Description = "はしごの取り込み元になる描画オブジェクトの masterIndex",
-                 Required = true, IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, WriteWhen = "paintWeights=true")]
+                 Required = true, IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, WriteWhen = "paintWeights=true",
+                 MeshRefSpace = PLMeshRefSpace.Model)]   // SpringBoneLadderPlacer が VertexToBindWorldMatrix で読む
         public int SourceMasterIndex { get; }
 
         [PLParam(Description = "取り込み方。AutoLadder=開始タグ三角形から自動検索 / AutoRing=円環を自動検索 / SelectionSet=パーツ選択辞書の面から。Baked は使えない",
@@ -54,7 +56,8 @@ namespace Poly_Ling.Data
         public SpringBoneLadderMode Mode { get; }
 
         [PLParam(Description = "親にするボーンの masterIndex。-1 で親を付けない",
-                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 MeshRefSpace = PLMeshRefSpace.Model)]   // BindWorldMatrix で読む
         public int AttachMasterIndex { get; }
 
         [PLParam(Description = "作るボーンの名前の接頭辞", Required = true)]

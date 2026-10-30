@@ -237,31 +237,47 @@ namespace Poly_Ling.PrimitiveMesh
 
             var left  = new List<Vector3>(pick.Count);
             var right = new List<Vector3>(pick.Count);
+            var leftSrc  = new List<Vertex>(pick.Count);
+            var rightSrc = new List<Vertex>(pick.Count);
             foreach (int r in pick)
             {
-                left .Add(src.Vertices[verts[1 + r * k + p.RailA]].Position);
-                right.Add(src.Vertices[verts[1 + r * k + p.RailB]].Position);
+                var lv = src.Vertices[verts[1 + r * k + p.RailA]];
+                var rv = src.Vertices[verts[1 + r * k + p.RailB]];
+                left .Add(lv.Position); leftSrc .Add(lv);
+                right.Add(rv.Position); rightSrc.Add(rv);
             }
 
             // ── 頂点 ── 原型と同じ並び。
+            // 写した頂点は元のパイプの頂点のウェイトを持つ（スキンド化のあとの作り直しで、出力へ書くとき
+            // ウェイトの無い頂点は飛ぶため。ModifierSpace.PrepareForOutput）。開始タグは始点のウェイト。
             int baseIdx = dst.VertexCount;
             Vector3 t0 = sp - (left[0]  - sp);   // 開始タグ（始点に対して点対称）
             Vector3 t1 = sp - (right[0] - sp);
-            AddVertex(dst, t0);
-            AddVertex(dst, t1);
-            AddVertex(dst, sp);
+            var sv = src.Vertices[start];
+            AddVertex(dst, t0, sv);
+            AddVertex(dst, t1, sv);
+            AddVertex(dst, sp, sv);
             for (int i = 0; i < left.Count; i++)
             {
-                AddVertex(dst, left[i]);
-                AddVertex(dst, right[i]);
+                AddVertex(dst, left[i],  leftSrc[i]);
+                AddVertex(dst, right[i], rightSrc[i]);
             }
-            AddVertex(dst, ep);
+            AddVertex(dst, ep, src.Vertices[end]);
 
             int iT0 = baseIdx, iT1 = baseIdx + 1, iS = baseIdx + 2;
             int L(int i) => baseIdx + 3 + i * 2;
             int R(int i) => baseIdx + 3 + i * 2 + 1;
             int iE = dst.VertexCount - 1;
             int last = left.Count - 1;
+
+            // 逆方向（段 14）：写した頂点を元のパイプの頂点に結び付ける。開始タグは始点・左右から導くので結び付けない。
+            Poly_Ling.Ops.ModifierFrameTrace.RecordSource(dst, new[] { iS }, src, start);
+            for (int i = 0; i < pick.Count; i++)
+            {
+                Poly_Ling.Ops.ModifierFrameTrace.RecordSource(dst, new[] { L(i) }, src, verts[1 + pick[i] * k + p.RailA]);
+                Poly_Ling.Ops.ModifierFrameTrace.RecordSource(dst, new[] { R(i) }, src, verts[1 + pick[i] * k + p.RailB]);
+            }
+            Poly_Ling.Ops.ModifierFrameTrace.RecordSource(dst, new[] { iE }, src, end);
 
             // ── 面 ── 原型（HairToBelt）の向き。Reverse で全部反転する。
             bool rev = p.Reverse;
@@ -307,8 +323,17 @@ namespace Poly_Ling.PrimitiveMesh
             return result;
         }
 
-        private static void AddVertex(MeshObject mo, Vector3 pos)
-            => mo.Vertices.Add(new Vertex(pos, Vector2.zero));
+        /// <summary>頂点を足す。weightFrom があれば、そのウェイト（ミラー側も）を写す。</summary>
+        private static void AddVertex(MeshObject mo, Vector3 pos, Vertex weightFrom)
+        {
+            var v = new Vertex(pos, Vector2.zero);
+            if (weightFrom != null)
+            {
+                v.BoneWeight       = weightFrom.BoneWeight;
+                v.MirrorBoneWeight = weightFrom.MirrorBoneWeight;
+            }
+            mo.Vertices.Add(v);
+        }
 
         private static void AddTri(MeshObject mo, int a, int b, int c, bool reverse)
         {

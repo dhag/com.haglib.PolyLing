@@ -61,6 +61,13 @@ namespace Poly_Ling.HierarchyIO
         /// <summary>反転軸（1=X / 2=Y / 4=Z）。MirrorDelta が false なら未使用。</summary>
         public int MirrorAxis = 1;
 
+        /// <summary>
+        /// 同じ向き（MirrorBranchSameSense）の枝のミラー側で、向きに掛けた F の軸（1=X / 2=Y / 4=Z）。
+        /// 0 = なし。0 でなければ、VertexOffset を足した頂点・法線・モーフ差分（MirrorDelta の反転の後）に
+        /// MirrorBranchOps.SameSenseFlip(SameSenseAxis, v) を掛ける。
+        /// </summary>
+        public int SameSenseAxis;
+
         /// <summary>載せるモーフ（ShapeIndex は並びの番号）。</summary>
         public readonly List<MorphShapeSlot> Morphs = new List<MorphShapeSlot>();
     }

@@ -398,4 +398,99 @@ namespace Poly_Ling.Data
         public SetObjectGroupAutoUpdateCommand(int modelIndex, string groupName, bool autoUpdate)
             : base(modelIndex) { GroupName = groupName; AutoUpdate = autoUpdate; }
     }
+
+    /// <summary>
+    /// オブジェクトグループの項目 1 つの引数を書き換え、その項目だけを作り直す
+    /// （PolyLing_作り直し整備計画.md 段 3）。
+    ///
+    /// 書けないキー（入力・出力先の参照、作り直しが上書きするもの、入力の中身と取り方）は
+    /// ObjectGroupOps.ArgWriteBlockReason が決める。書いた結果がコマンドの型で読み直せないとき
+    /// （PanelCommandFactory.Create が通らないとき）は何も書かずに失敗を返す。
+    /// 書き換えと作り直しは Undo 1 件。
+    /// </summary>
+    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+        Effects = PLCommandEffect.Topology | PLCommandEffect.ObjectAttribute,
+        Verification = PLCommandVerification.Visual,
+        Description = "オブジェクトグループの項目 1 つの引数を書き換え、その項目だけを作り直す（出力の ObjectId は変わらない）。入力・出力先の参照や入力の中身は書けない。値はコマンドの型で読み直せないと拒否する。")]
+    public class SetObjectGroupStepArgsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
+        public string GroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        public int StepIndex { get; }
+
+        [PLParam(TextKey = "ObjectGroupArgKeys", Description = "書く引数のキー。queryObjectGroupStepArgs の keys の名前", Required = true)]
+        public string[] Keys { get; }
+
+        [PLParam(TextKey = "ObjectGroupArgValues", Description = "書く値。keys と同じ並び。カンマを含む値（配列など）は二重引用符で包む", Required = true)]
+        public string[] Values { get; }
+
+        /// <summary>
+        /// 断面（プロファイル）のキーも書いてよいか。断面の作業空間の反映（段 6）だけが立てる。
+        /// MCP からは立てられない（スキーマに出さない）。
+        /// </summary>
+        [PLParam(Ignore = true, Description = "断面のキーも書いてよいか（内部用）")]
+        public bool AllowProfileKeys { get; }
+
+        public SetObjectGroupStepArgsCommand(int modelIndex, string groupName, int stepIndex, string[] keys, string[] values,
+                                             bool allowProfileKeys = false)
+            : base(modelIndex)
+        {
+            GroupName = groupName;
+            StepIndex = stepIndex;
+            Keys      = keys   ?? System.Array.Empty<string>();
+            Values    = values ?? System.Array.Empty<string>();
+            AllowProfileKeys = allowProfileKeys;
+        }
+    }
+
+    /// <summary>
+    /// 逆方向を持つ項目の出力の編集を確定する（PolyLing_作り直し整備計画.md 段 6）。
+    /// 逆方向で入力（梯子の頂点・項目の引数・選択辞書の頂点）を書き直し、正方向で出力を作り直し、
+    /// 下流を依存の順に流す。出力の編集は作り直した形に置き換わる（丸められる）。Undo 1 回で全部戻る。
+    /// 確定の前に queryModifierInverse で保つもの・失うもの・ずれを見ること。
+    /// </summary>
+    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+        Effects = PLCommandEffect.Topology | PLCommandEffect.VertexPosition | PLCommandEffect.ObjectAttribute,
+        Verification = PLCommandVerification.Visual,
+        Description = "逆方向を持つ項目の出力の位置の編集を確定する。逆方向で入力（梯子の頂点・項目の引数・選択辞書の頂点）を書き直し、正方向で出力を作り直し、下流を流す。出力は作り直した形に置き換わる（編集は丸められる）。書き直す入力が別の項目の出力なら、その項目の逆方向へ連ねて一番上流の入力まで書き直す（逆方向を持たない項目があれば断る）。Undo 1 回で入力・途中の出力・出力・下流が戻る。")]
+    public class CommitModifierOutputEditCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
+        public string GroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        public int StepIndex { get; }
+
+        public CommitModifierOutputEditCommand(int modelIndex, string groupName, int stepIndex)
+            : base(modelIndex)
+        {
+            GroupName = groupName;
+            StepIndex = stepIndex;
+        }
+    }
+
+    /// <summary>
+    /// 逆方向を持つ項目の出力の編集を捨てる（段 6）。今の入力から正方向で作り直す。Undo 1 回で戻る。
+    /// </summary>
+    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+        Effects = PLCommandEffect.Topology | PLCommandEffect.VertexPosition,
+        Verification = PLCommandVerification.Visual,
+        Description = "逆方向を持つ項目の出力の未確定の編集を捨て、今の入力から作り直す。Undo 1 回で戻る。")]
+    public class DiscardModifierOutputEditCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
+        public string GroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        public int StepIndex { get; }
+
+        public DiscardModifierOutputEditCommand(int modelIndex, string groupName, int stepIndex)
+            : base(modelIndex)
+        {
+            GroupName = groupName;
+            StepIndex = stepIndex;
+        }
+    }
 }

@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
                 BackSeg   = IR(T("BackSegments"), EmblemMeshGenerator.EmblemParams.EdgeSegmentsMin,
                                EmblemMeshGenerator.EmblemParams.EdgeSegmentsMax, () => _emblemP.SegmentsBack,
                                v => { _emblemP.SegmentsBack = v; D(); RefreshEmblemSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), EmblemMeshGenerator.EmblemParams.EdgeSizeMin,
+                BackSize  = SR(EdgeSizeBackLx, EmblemMeshGenerator.EmblemParams.EdgeSizeMin,
                                EmblemMeshGenerator.EmblemParams.EdgeSizeMax, () => _emblemP.EdgeSizeBack,
                                v => { _emblemP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _emblemP.EdgeInward,

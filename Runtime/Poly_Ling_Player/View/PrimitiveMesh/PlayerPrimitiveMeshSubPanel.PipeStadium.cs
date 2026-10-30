@@ -185,7 +185,7 @@ namespace Poly_Ling.Player
 
         /// <summary>フタの張り方のドロップダウン（すべてふさぐ / すべて抜く / 円の部分だけ抜く）。</summary>
         private VisualElement PipeStadiumCapDD(
-            string label,
+            Lx label,
             System.Func<PipeStadiumCapMode> get, System.Action<PipeStadiumCapMode> set)
         {
             var dd = new DropdownField(
@@ -194,7 +194,7 @@ namespace Poly_Ling.Player
             dd.label = label;
             dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(_ => set((PipeStadiumCapMode)dd.index));
-            return dd;
+            return RowTarget.Add(label.Key, dd, label.Text);
         }
 
         /// <summary>長さ X / 奥行き Z の表示を今のパラメータで書き直す。</summary>

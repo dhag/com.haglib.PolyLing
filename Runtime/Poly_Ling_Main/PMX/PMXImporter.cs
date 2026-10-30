@@ -291,20 +291,6 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            // Tポーズ変換（メッシュ作成後に実行）
-            if (settings.ConvertToTPose && settings.ShouldImportBones && document.Bones.Count > 0)
-            {
-                // ボーン名からインデックスへのマッピングを再構築
-                var boneNameToIndex = new Dictionary<string, int>();
-                for (int i = 0; i < document.Bones.Count; i++)
-                {
-                    boneNameToIndex[document.Bones[i].Name] = i;
-                }
-
-                ConvertToTPose(result.MeshContexts, document, boneNameToIndex, settings);
-                //Debug.Log($"[PMXImporter] Converted to T-Pose");
-            }
-
             // 剛体をインポート（Type=RigidBody の空MeshObject + RigidBodyData）
             // ジョイントの剛体参照解決のため、剛体コンテキストの開始indexを記録する。
             int rigidBodyContextBase = -1;
@@ -336,6 +322,28 @@ namespace Poly_Ling.PMX
                 var faceMeta = PMXFaceMetaReader.Load(document.FilePath);
                 if (faceMeta != null)
                     PMXFaceMetaReader.Apply(faceMeta, result.MeshContexts);
+            }
+
+            // Tポーズ変換。
+            // モーフメッシュ・剛体・ジョイントを作り終えてから行う。以前はメッシュ作成直後に
+            // 行っており、あとから作るモーフの差分と剛体・ジョイントの位置が A ポーズのまま残った
+            // （読み込み後に applyTPose したときと結果が食い違った。残件解決計画 段 5、2026-10-28）。
+            // ミラーペア構築より前に行う順番は従来どおり。
+            if (settings.ConvertToTPose && settings.ShouldImportBones && document.Bones.Count > 0)
+            {
+                // ボーン名からインデックスへのマッピングを再構築
+                var boneNameToIndex = new Dictionary<string, int>();
+                for (int i = 0; i < document.Bones.Count; i++)
+                {
+                    boneNameToIndex[document.Bones[i].Name] = i;
+                }
+
+                // TPoseConverter は種別（IsSkinned）を見て、スキンドが無いと頂点の焼き込みと
+                // BindPose の撮り直しを飛ばす。種別の確定（末尾の RecomputeAll）より前に呼ぶので、
+                // ここで一度確定させておく（MQOImporter と同じ）。
+                // 末尾の RecomputeAll は、ミラーペア構築などでウェイトが変わったあとの確定として残す。
+                SkinKindOps.RecomputeAll(result.MeshContexts);
+                ConvertToTPose(result.MeshContexts, document, boneNameToIndex, settings);
             }
 
             // ミラーペア検出・構築（常に実行）

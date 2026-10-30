@@ -97,6 +97,18 @@ namespace Poly_Ling.Serialization
             }
         }
 
+        /// <summary>
+        /// 作者・参照元の並びから空欄を除いた写し。CSV（vrmmeta.csv は空欄の行を省く）と
+        /// バイナリ（WriteStringListInt は空欄を書かない）と揃える（規約4：CSV / JSON / バイナリ対称）。
+        /// </summary>
+        private static List<string> NonEmptyList(List<string> src)
+        {
+            var list = new List<string>();
+            if (src == null) return list;
+            foreach (var s in src) if (!string.IsNullOrEmpty(s)) list.Add(s);
+            return list;
+        }
+
         /// <summary>VRM メタ情報 POCO → DTO。null は null のまま。</summary>
         public static VrmMetaDTO ToVrmMetaDTO(VrmMetaData m)
         {
@@ -105,12 +117,10 @@ namespace Poly_Ling.Serialization
             {
                 name                 = m.Name ?? "",
                 version              = m.Version ?? "",
-                authors              = (m.Authors != null)
-                                       ? new List<string>(m.Authors) : new List<string>(),
+                authors              = NonEmptyList(m.Authors),
                 copyrightInformation = m.CopyrightInformation ?? "",
                 contactInformation   = m.ContactInformation ?? "",
-                references           = (m.References != null)
-                                       ? new List<string>(m.References) : new List<string>(),
+                references           = NonEmptyList(m.References),
                 thirdPartyLicenses   = m.ThirdPartyLicenses ?? "",
                 thumbnailPath        = m.ThumbnailPath ?? "",
 
@@ -136,12 +146,10 @@ namespace Poly_Ling.Serialization
             {
                 Name                 = d.name ?? "",
                 Version              = d.version ?? "",
-                Authors              = (d.authors != null)
-                                       ? new List<string>(d.authors) : new List<string>(),
+                Authors              = NonEmptyList(d.authors),
                 CopyrightInformation = d.copyrightInformation ?? "",
                 ContactInformation   = d.contactInformation ?? "",
-                References           = (d.references != null)
-                                       ? new List<string>(d.references) : new List<string>(),
+                References           = NonEmptyList(d.references),
                 ThirdPartyLicenses   = d.thirdPartyLicenses ?? "",
                 ThumbnailPath        = d.thumbnailPath ?? "",
 
@@ -655,7 +663,7 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
-        // TPoseBackup ⇔ TPoseBackupDTO（規約4：CSV/JSON 対称）
+        // TPoseBackup ⇔ TPoseBackupDTO（規約4：CSV / JSON / バイナリ対称）
         //   参照は MeshContext index（実体が index キー）。座標系変換なし（生値）。
         // ================================================================
 

@@ -104,19 +104,8 @@ namespace Poly_Ling.UndoSystem
         {
             var model = new ModelContext(Name ?? "Model");
 
-            // メッシュ復元
-            if (MeshSnapshots != null)
-            {
-                foreach (var meshSnapshot in MeshSnapshots)
-                {
-                    var meshContext = meshSnapshot?.ToMeshContext();
-                    if (meshContext != null)
-                    {
-                        meshContext.ParentModelContext = model;
-                        model.MeshContextList.Add(meshContext);
-                    }
-                }
-            }
+            // メッシュ復元（一覧へ入れる道を通す。段 C）
+            model.ReplaceMeshContexts(RestoreMeshContexts());
 
             // カテゴリ別選択インデックス復元（v2.0）
             if (SelectedDrawableMeshIndices != null)
@@ -152,20 +141,8 @@ namespace Poly_Ling.UndoSystem
             // 名前
             model.Name = Name;
 
-            // メッシュ復元
-            model.MeshContextList.Clear();
-            if (MeshSnapshots != null)
-            {
-                foreach (var meshSnapshot in MeshSnapshots)
-                {
-                    var meshContext = meshSnapshot?.ToMeshContext();
-                    if (meshContext != null)
-                    {
-                        meshContext.ParentModelContext = model;
-                        model.MeshContextList.Add(meshContext);
-                    }
-                }
-            }
+            // メッシュ復元（一覧へ入れる道を通す。段 C）
+            model.ReplaceMeshContexts(RestoreMeshContexts());
 
             // カテゴリ別選択インデックス復元（v2.0）
             model.ClearAllCategorySelection();
@@ -182,6 +159,19 @@ namespace Poly_Ling.UndoSystem
             model.CurrentMaterialIndex = CurrentMaterialIndex;
             model.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
             model.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+        }
+
+        // ヘルパー：メッシュの復元（null は飛ばす）
+        private List<MeshContext> RestoreMeshContexts()
+        {
+            var list = new List<MeshContext>();
+            if (MeshSnapshots == null) return list;
+            foreach (var meshSnapshot in MeshSnapshots)
+            {
+                var meshContext = meshSnapshot?.ToMeshContext();
+                if (meshContext != null) list.Add(meshContext);
+            }
+            return list;
         }
 
         // ヘルパー：マテリアル参照のキャプチャ
@@ -272,7 +262,11 @@ namespace Poly_Ling.UndoSystem
         public CameraSnapshot NewCameraState;
 
         // Add/Remove用
-        public ModelContextSnapshot ModelSnapshot;
+        //   追加・削除したモデルの実体そのもの（作り直し整備計画 6 章）。Undo・Redo で同じ実体を
+        //   外し・入れ直す（ProjectContext.DetachModelAt は Clear しない）。以前は ModelContextSnapshot
+        //   （名前・メッシュ・材質・選択だけ）から作り直していたので、オブジェクトグループ・表情・
+        //   Humanoid などが落ち、頂点編集の記録・評価器の控えも古い実体を指していた。
+        public ModelContext Model;
 
         // Rename用
         public string OldName;
@@ -297,7 +291,7 @@ namespace Poly_Ling.UndoSystem
                 Operation = ModelOperationType.Add,
                 NewModelIndex = addedIndex,
                 OldModelIndex = oldModelIndex,
-                ModelSnapshot = ModelContextSnapshot.Capture(addedModel),
+                Model = addedModel,
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -318,7 +312,7 @@ namespace Poly_Ling.UndoSystem
                 Operation = ModelOperationType.Remove,
                 OldModelIndex = removedIndex,
                 NewModelIndex = newModelIndex,
-                ModelSnapshot = ModelContextSnapshot.Capture(removedModel),
+                Model = removedModel,
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -365,6 +359,25 @@ namespace Poly_Ling.UndoSystem
             };
         }
 
+        /// <summary>持っている実体を一覧から外す（Clear しない）。実体で位置を引き、見つからなければ何もしない。</summary>
+        private void DetachOwnModel(ProjectContext ctx, int fallbackIndex)
+        {
+            int index = Model != null ? ctx.IndexOf(Model) : -1;
+            if (index < 0) return;
+            ctx.DetachModelAt(index);
+        }
+
+        /// <summary>持っている実体を index へ入れ直してカレントにする。既に一覧にいれば入れない。</summary>
+        private void InsertOwnModel(ProjectContext ctx, int index)
+        {
+            if (Model == null) return;
+            if (ctx.IndexOf(Model) >= 0) return;
+            if (index < 0) index = 0;
+            if (index > ctx.ModelCount) index = ctx.ModelCount;
+            ctx.InsertModel(index, Model);
+            ctx.CurrentModelIndex = index;
+        }
+
         public void Undo(ProjectContext ctx)
         {
             if (ctx == null) return;
@@ -372,11 +385,8 @@ namespace Poly_Ling.UndoSystem
             switch (Operation)
             {
                 case ModelOperationType.Add:
-                    // 追加されたモデルを削除
-                    if (NewModelIndex >= 0 && NewModelIndex < ctx.ModelCount)
-                    {
-                        ctx.RemoveModelAt(NewModelIndex);
-                    }
+                    // 追加されたモデルを外す（実体は持ったまま。Redo で同じ実体を入れ直す）
+                    DetachOwnModel(ctx, NewModelIndex);
                     // 元のモデルに戻す
                     if (OldModelIndex >= 0 && OldModelIndex < ctx.ModelCount)
                     {
@@ -387,13 +397,8 @@ namespace Poly_Ling.UndoSystem
                     break;
 
                 case ModelOperationType.Remove:
-                    // 削除されたモデルを復元
-                    if (ModelSnapshot != null)
-                    {
-                        var restoredModel = ModelSnapshot.ToModelContext();
-                        ctx.InsertModel(OldModelIndex, restoredModel);
-                        ctx.CurrentModelIndex = OldModelIndex;
-                    }
+                    // 削除したモデルを同じ実体のまま入れ直す
+                    InsertOwnModel(ctx, OldModelIndex);
                     // カメラ復元
                     ctx.OnCameraRestoreRequested?.Invoke(OldCameraState);
                     break;
@@ -430,23 +435,15 @@ namespace Poly_Ling.UndoSystem
             switch (Operation)
             {
                 case ModelOperationType.Add:
-                    // モデルを再追加
-                    if (ModelSnapshot != null)
-                    {
-                        var restoredModel = ModelSnapshot.ToModelContext();
-                        ctx.InsertModel(NewModelIndex, restoredModel);
-                        ctx.CurrentModelIndex = NewModelIndex;
-                    }
+                    // 追加したモデルを同じ実体のまま入れ直す
+                    InsertOwnModel(ctx, NewModelIndex);
                     // カメラ復元
                     ctx.OnCameraRestoreRequested?.Invoke(NewCameraState);
                     break;
 
                 case ModelOperationType.Remove:
-                    // モデルを再削除
-                    if (OldModelIndex >= 0 && OldModelIndex < ctx.ModelCount)
-                    {
-                        ctx.RemoveModelAt(OldModelIndex);
-                    }
+                    // モデルを再び外す（実体は持ったまま）
+                    DetachOwnModel(ctx, OldModelIndex);
                     // 新しいモデルに切り替え
                     if (NewModelIndex >= 0 && NewModelIndex < ctx.ModelCount)
                     {
@@ -487,53 +484,47 @@ namespace Poly_Ling.UndoSystem
     // ================================================================
 
     /// <summary>
-    /// モデルの置き換え（外部から届いたモデルで差し替え）の Undo 記録。
+    /// モデルの置き換え（外部から届いたモデル・置換読込で差し替え）の Undo 記録。
     ///
-    /// 【なぜ ModelDTO で控えるか】
-    ///   ModelContextSnapshot は名前・メッシュ・材質・選択しか持たず、表情・Humanoid・揺れものが落ちる。
-    ///   また RemoveModelAt は外したモデルを Clear(true) するので、実体を持っておくこともできない。
-    ///   .mfproj と同じ全データ（ModelBundle.BuildDto。テクスチャ画像込み）で控え、戻すたびに組み直す。
+    /// 【実体そのものを持つ】（作り直し整備計画 6 章）
+    ///   置き換え前と後の ModelContext をそのまま持ち、Undo・Redo で同じ実体を入れ替える
+    ///   （ProjectContext.ReplaceModelAt は外した実体を Clear しない）。以前は ModelDTO で控えて
+    ///   戻すたびに組み直していたが、実体が替わるので頂点編集の記録・評価器の控えが古い実体を指し、
+    ///   DTO に入らない SourceDocument・PmxModelInfo も落ちていた。
     /// </summary>
     public class ModelReplaceRecord : IUndoRecord<ProjectContext>
     {
         public UndoOperationInfo Info { get; set; }
 
-        /// <summary>置き換えたモデルの位置。</summary>
+        /// <summary>置き換えたモデルの位置（今の位置は実体で引き直す。見つからないときに使う）。</summary>
         public int ModelIndex;
 
         /// <summary>置き換え前のモデル。</summary>
-        public Poly_Ling.Serialization.ModelDTO OldModel;
+        public ModelContext OldModel;
 
         /// <summary>置き換え後のモデル。</summary>
-        public Poly_Ling.Serialization.ModelDTO NewModel;
+        public ModelContext NewModel;
 
-        public ModelReplaceRecord(int modelIndex,
-            Poly_Ling.Serialization.ModelDTO oldModel, Poly_Ling.Serialization.ModelDTO newModel)
+        public ModelReplaceRecord(int modelIndex, ModelContext oldModel, ModelContext newModel)
         {
             ModelIndex = modelIndex;
             OldModel   = oldModel;
             NewModel   = newModel;
         }
 
-        public void Undo(ProjectContext ctx) => Swap(ctx, OldModel);
+        public void Undo(ProjectContext ctx) => Swap(ctx, NewModel, OldModel);
 
-        public void Redo(ProjectContext ctx) => Swap(ctx, NewModel);
+        public void Redo(ProjectContext ctx) => Swap(ctx, OldModel, NewModel);
 
-        private void Swap(ProjectContext ctx, Poly_Ling.Serialization.ModelDTO dto)
+        private void Swap(ProjectContext ctx, ModelContext from, ModelContext to)
         {
-            if (ctx == null || dto == null) return;
-            if (ModelIndex < 0 || ModelIndex >= ctx.ModelCount) return;
+            if (ctx == null || to == null) return;
+            int index = from != null ? ctx.IndexOf(from) : -1;
+            if (index < 0) index = ModelIndex;
+            if (index < 0 || index >= ctx.ModelCount) return;
 
-            var model = Poly_Ling.Serialization.ModelBundle.ToModel(dto);
-            if (model == null) return;
-            // 組み直したモデルはワールド行列を持たない（ToModelContext は作らない）。置いた直後の後始末
-            // （PolyLingPlayerViewerCore.RefreshAfterModelPlaced の ComputeWorldMatrices）と同じく、ここで作る。
-            // 作らないと、階層を持つモデルは Undo・Redo の後に部品が原点へ集まって描かれる。
-            model.ComputeWorldMatrices();
-
-            ctx.RemoveModelAt(ModelIndex);
-            ctx.InsertModel(ModelIndex, model);
-            ctx.CurrentModelIndex = ModelIndex;
+            ctx.ReplaceModelAt(index, to);
+            ctx.CurrentModelIndex = index;
             ctx.OnModelsChanged?.Invoke();
         }
     }

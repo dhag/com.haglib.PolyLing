@@ -35,6 +35,11 @@ namespace Poly_Ling.Revolution
         public const int RadialSegmentsMin = 3;
         public const int RadialSegmentsMax = 64;
 
+        /// <summary>角の分割角（度）の下限・上限。上限は RadialSegmentsMin=3 のときの半ステップ。
+        /// 生成時には実際の半ステップ未満へさらに制限する。</summary>
+        public const float CornerSplitAngleMin = 0f;
+        public const float CornerSplitAngleMax = 60f;
+
         /// <summary>らせんの巻き数の下限・上限</summary>
         public const int SpiralTurnsMin = 1;
         public const int SpiralTurnsMax = 10;
@@ -81,6 +86,10 @@ namespace Poly_Ling.Revolution
         [PLParam(TextKey = "RadialSegments", Description = "円周方向の分割数", Min = RadialSegmentsMin,
                  Max = RadialSegmentsMax, Step = 1)]
         public int RadialSegments;
+        [PLParam(TextKey = "CornerSplitAngle",
+                 Description = "各分割角を ±この角度の 2 本に割って角を面取りする（度）。0 で従来どおり",
+                 Min = CornerSplitAngleMin, Max = CornerSplitAngleMax)]
+        public float CornerSplitAngle;
         [PLParam(TextKey = "CloseTop", Description = "上端にフタを張る")]
         public bool CloseTop;
         [PLParam(TextKey = "CloseBottom", Description = "下端にフタを張る")]
@@ -156,6 +165,7 @@ namespace Poly_Ling.Revolution
         {
             MeshName = "Revolution",
             RadialSegments = 24,
+            CornerSplitAngle = 0f,
             CloseTop = true,
             CloseBottom = true,
             CloseLoop = false,
@@ -186,6 +196,7 @@ namespace Poly_Ling.Revolution
         {
             if (MeshName != o.MeshName) return false;
             if (RadialSegments != o.RadialSegments) return false;
+            if (!Mathf.Approximately(CornerSplitAngle, o.CornerSplitAngle)) return false;
             if (CloseTop != o.CloseTop || CloseBottom != o.CloseBottom) return false;
             if (CloseLoop != o.CloseLoop || Spiral != o.Spiral) return false;
             if (SpiralTurns != o.SpiralTurns) return false;

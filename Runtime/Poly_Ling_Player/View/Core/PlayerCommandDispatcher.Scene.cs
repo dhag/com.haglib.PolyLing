@@ -48,7 +48,10 @@ namespace Poly_Ling.Player
                 case ScenarioRecordingState.Paused:    modes.Add("scenarioRecordingPaused"); break;
                 case ScenarioRecordingState.Ended:     modes.Add("scenarioRecordingEnded");  break;
             }
-            if (_scenarioRun != null)         modes.Add("scenarioRun");
+            // 流し終えたあとも、やめる（stopScenarioRun）までは状態を残している（出力・案内バーの表示のため）。
+            // 「流している途中」と区別して出す（記録の scenarioRecordingEnded と同じ形）。
+            if (_scenarioRun != null)
+                modes.Add(_scenarioRun.Stop == ScenarioRunStop.Finished ? "scenarioRunEnded" : "scenarioRun");
             var fromViewer = OnQueryActiveModes?.Invoke();
             if (fromViewer != null) modes.AddRange(fromViewer);
 

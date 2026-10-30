@@ -122,6 +122,18 @@ namespace Poly_Ling.Data
             => IsSkinned ? Matrix4x4.identity : WorldMatrixInverse;
 
         /// <summary>
+        /// 頂点をバインド姿勢のワールドへ出すために掛ける行列（ポーズを含まない）。
+        /// スキンドは頂点が既にバインド空間なので単位行列、MeshFilter は BindWorldMatrix。
+        /// 作り直し（オブジェクトグループの評価）はこの空間で入力を読む（作り直し整備計画 段 5）。
+        /// </summary>
+        public Matrix4x4 VertexToBindWorldMatrix
+            => IsSkinned ? Matrix4x4.identity : BindWorldMatrix;
+
+        /// <summary>バインド姿勢のワールドを頂点の格納空間へ落とす行列。VertexToBindWorldMatrix の逆。</summary>
+        public Matrix4x4 BindWorldToVertexMatrix
+            => IsSkinned ? Matrix4x4.identity : BindWorldMatrixInverse;
+
+        /// <summary>
         /// 左右で対になるボーンの MeshContextList 索引（-1 = 対なし）。
         /// スキンド変換が確定させた値。ウェイトからの推定に使ってはならない。
         /// </summary>
@@ -138,6 +150,13 @@ namespace Poly_Ling.Data
         {
             get => MeshObject?.IsMirrorBranchRoot ?? false;
             set { if (MeshObject != null) MeshObject.IsMirrorBranchRoot = value; }
+        }
+
+        /// <summary>ミラー分岐のミラー側も同じ向きに動かすか（MeshObject に委譲）</summary>
+        public bool MirrorBranchSameSense
+        {
+            get => MeshObject?.MirrorBranchSameSense ?? false;
+            set { if (MeshObject != null) MeshObject.MirrorBranchSameSense = value; }
         }
 
         public bool IgnorePoseInArmature

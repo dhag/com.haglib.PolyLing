@@ -318,6 +318,8 @@ namespace Poly_Ling.MeshListV2
                 _billboardToggle?.SetEnabled(false);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(false);
                 _mirrorBranchRootToggle?.SetEnabled(false);
+                _mirrorBranchSameSenseToggle?.SetValueWithoutNotify(false);
+                _mirrorBranchSameSenseToggle?.SetEnabled(false);
                 SetMirrorMode(0, false);
                 _detailFoldout?.SetEnabled(false);
                 return;
@@ -338,6 +340,8 @@ namespace Poly_Ling.MeshListV2
                 _billboardToggle?.SetEnabled(true);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(s.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetEnabled(true);
+                _mirrorBranchSameSenseToggle?.SetValueWithoutNotify(s.MirrorBranchSameSense);
+                _mirrorBranchSameSenseToggle?.SetEnabled(s.IsMirrorBranchRoot);
                 // ミラー側と PMX 由来のミラーは変更させない
                 SetMirrorMode(s.MirrorType, !IsMirrorLocked(_selectedAdapters[0]));
             }
@@ -360,6 +364,9 @@ namespace Poly_Ling.MeshListV2
                 bool mbAllSame = _selectedAdapters.All(a => a.MeshView.IsMirrorBranchRoot == _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(mbAllSame && _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetEnabled(true);
+                bool ssAllSame = _selectedAdapters.All(a => a.MeshView.MirrorBranchSameSense == _selectedAdapters[0].MeshView.MirrorBranchSameSense);
+                _mirrorBranchSameSenseToggle?.SetValueWithoutNotify(ssAllSame && _selectedAdapters[0].MeshView.MirrorBranchSameSense);
+                _mirrorBranchSameSenseToggle?.SetEnabled(_selectedAdapters.Any(a => a.MeshView.IsMirrorBranchRoot));
                 bool mtAllSame = _selectedAdapters.All(a => a.MirrorType == _selectedAdapters[0].MirrorType);
                 bool anyEditable = _selectedAdapters.Any(a => !IsMirrorLocked(a));
                 SetMirrorMode(_selectedAdapters[0].MirrorType, anyEditable, mixed: !mtAllSame);

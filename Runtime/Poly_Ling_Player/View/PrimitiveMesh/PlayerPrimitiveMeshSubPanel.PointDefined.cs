@@ -97,9 +97,9 @@ namespace Poly_Ling.Player
 
             // ── モード ──
             var modeRow = PdRow();
-            _pdModeBtns[0] = PdButton(modeRow, T("PointDefinedModeLine"),     () => SetPointDefinedMode(PointPrimitiveMode.Line));
-            _pdModeBtns[1] = PdButton(modeRow, T("PointDefinedModeTriangle"), () => SetPointDefinedMode(PointPrimitiveMode.Triangle));
-            _pdModeBtns[2] = PdButton(modeRow, T("PointDefinedModeQuad"),     () => SetPointDefinedMode(PointPrimitiveMode.Quad));
+            _pdModeBtns[0] = PdButton(modeRow, "PointDefinedModeLine",     T("PointDefinedModeLine"),     () => SetPointDefinedMode(PointPrimitiveMode.Line));
+            _pdModeBtns[1] = PdButton(modeRow, "PointDefinedModeTriangle", T("PointDefinedModeTriangle"), () => SetPointDefinedMode(PointPrimitiveMode.Triangle));
+            _pdModeBtns[2] = PdButton(modeRow, "PointDefinedModeQuad",     T("PointDefinedModeQuad"),     () => SetPointDefinedMode(PointPrimitiveMode.Quad));
             c.Add(modeRow);
 
             // ── 点 ──
@@ -117,7 +117,7 @@ namespace Poly_Ling.Player
             };
             snap.style.marginBottom = 2;
             snap.RegisterValueChangedCallback(e => SetPointDefinedSnapUnselected?.Invoke(e.newValue));
-            c.Add(snap);
+            c.Add(RowTarget.Add("PointDefinedSnapUnselected", snap, T("PointDefinedSnapUnselected").Text));
 
             // ボーン位置・描画オブジェクト原点（頂点に当たらなかったときだけ）
             var snapBones = new Toggle(T("PointDefinedSnapBones"))
@@ -126,7 +126,7 @@ namespace Poly_Ling.Player
             };
             snapBones.style.marginBottom = 2;
             snapBones.RegisterValueChangedCallback(e => SetPointDefinedSnapBones?.Invoke(e.newValue));
-            c.Add(snapBones);
+            c.Add(RowTarget.Add("PointDefinedSnapBones", snapBones, T("PointDefinedSnapBones").Text));
 
             var snapOrigins = new Toggle(T("PointDefinedSnapOrigins"))
             {
@@ -134,7 +134,7 @@ namespace Poly_Ling.Player
             };
             snapOrigins.style.marginBottom = 2;
             snapOrigins.RegisterValueChangedCallback(e => SetPointDefinedSnapOrigins?.Invoke(e.newValue));
-            c.Add(snapOrigins);
+            c.Add(RowTarget.Add("PointDefinedSnapOrigins", snapOrigins, T("PointDefinedSnapOrigins").Text));
 
             // ── 図形ごとの諸元 ──
             for (int i = 0; i < _pdApexBtns.Length; i++) _pdApexBtns[i] = null;
@@ -161,7 +161,7 @@ namespace Poly_Ling.Player
                     for (int i = 0; i < 3; i++)
                     {
                         int idx = i;
-                        _pdApexBtns[i] = PdButton(apexRow, $"P{i}", () => SetPointDefinedApex(idx));
+                        _pdApexBtns[i] = PdButton(apexRow, $"PointDefinedApex{i}", $"P{i}", () => SetPointDefinedApex(idx));
                     }
                     c.Add(apexRow);
 
@@ -214,14 +214,15 @@ namespace Poly_Ling.Player
             return row;
         }
 
-        private static Button PdButton(VisualElement parent, string text, Action onClick)
+        /// <summary>モード・頂点のボタン。UI 自動操作へ id で登録する。</summary>
+        private Button PdButton(VisualElement parent, string id, string text, Action onClick)
         {
             var b = new Button(onClick) { text = text };
             b.style.flexGrow    = 1;
             b.style.height      = 22;
             b.style.fontSize    = 10;
             b.style.marginRight = 2;
-            parent.Add(b);
+            parent.Add(RowTarget.Add(id, b, text + " を選ぶ", UiSafety.SafeWrite));
             return b;
         }
 

@@ -67,7 +67,7 @@ namespace Poly_Ling.Player
                     // 置換（Replace）は現在モデルを読み込んだモデルで置き換える。モデルが無ければ新規と同じ。
                     if (mode == PMXImportMode.Replace && target != null)
                     {
-                        string err = ReplaceCurrentModelWithImported(model, filePath);
+                        string err = ReplaceCurrentModelWithImported(model, filePath, "PMX");
                         if (err != null) { _status = $"PMX読込失敗: {err}"; return; }
                         ApplyImportPostOptions(post);
                         return;
@@ -80,38 +80,35 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 現在のモデルを、読み込んだモデルで置き換えてカレントにする（PMX の置換）。
+        /// 現在のモデルを、読み込んだモデルで置き換えてカレントにする（PMX / MQO の置換）。
         /// 手順は外部から届いたモデルでの置き換え（ExecuteReplaceModelBundle）と同じ。
-        /// 置き換え前と後を ModelDTO（.mfproj と同じ全データ）で控えて Undo に積む（ModelReplaceRecord）。
+        /// 置き換え前と後の実体を Undo に積む（ModelReplaceRecord。外した実体は Clear しない）。
         /// </summary>
+        /// <param name="kind">状態表示とログの名前（PMX / MQO）。</param>
         /// <returns>失敗理由。成功時は null。</returns>
-        private string ReplaceCurrentModelWithImported(ModelContext model, string filePath)
+        private string ReplaceCurrentModelWithImported(ModelContext model, string filePath, string kind)
         {
             var project = ActiveProject;
             if (project == null) return "プロジェクトがありません";
             int index = project.CurrentModelIndex;
             if (index < 0 || index >= project.ModelCount) return "現在のモデルがありません";
 
-            // 外す前に控える。RemoveModelAt は外したモデルを Clear(true) する。
-            var oldDto = Poly_Ling.Serialization.ModelBundle.BuildDto(project.Models[index]);
-            if (oldDto == null) return $"モデル {index} を控えられません";
-            var newDto = Poly_Ling.Serialization.ModelBundle.BuildDto(model);
-            if (newDto == null) return "読み込んだモデルを控えられません";
-
-            project.RemoveModelAt(index);
-            project.InsertModel(index, model);
+            // 外した実体は Clear せず、Undo の記録が持つ（ModelReplaceRecord）。
+            var oldModel = project.ReplaceModelAt(index, model);
             project.SelectModel(index);
 
             RefreshAfterModelPlaced(project, model, () =>
             {
                 if (_editOps?.UndoController == null) return;
                 _editOps.UndoController.SetProjectContext(project);
-                _editOps.UndoController.RecordModelReplace(index, oldDto, newDto);
+                _editOps.UndoController.RecordModelReplace(index, oldModel, model);
             });
             AdoptCoordinateConvention();
 
-            _status = $"PMX置換読込: {System.IO.Path.GetFileName(filePath)}（モデル {index} を置き換え）";
-            UnityEngine.Debug.Log("[ImportPmx] " + _status);
+            _status = $"{kind}置換読込: {System.IO.Path.GetFileName(filePath)}（モデル {index} を置き換え）";
+            // ログの見出しは既存の [ImportPmx] / [ImportMqo] に合わせる。
+            string tag = kind.Length > 1 ? kind.Substring(0, 1) + kind.Substring(1).ToLowerInvariant() : kind;
+            UnityEngine.Debug.Log($"[Import{tag}] " + _status);
             return null;
         }
 
@@ -123,13 +120,6 @@ namespace Poly_Ling.Player
             if (esBlock != null) { _status = esBlock; return; }
 
             var mode = settings?.ImportMode ?? MQOImportMode.NewModel;
-            if (mode == MQOImportMode.Replace)
-            {
-                // 置換は未対応（PolyLing_残件.md）。黙って新規読込にしない。
-                _status = "MQO読込: 置換（Replace）は未対応です";
-                UnityEngine.Debug.LogWarning("[ImportMqo] " + _status);
-                return;
-            }
 
             var cmd = new ImportMqoCommand(
                 filePath, settings,
@@ -141,6 +131,14 @@ namespace Poly_Ling.Player
                     {
                         var renames = AppendImportedModel(target, model, filePath, "MQO", null);
                         ApplyImportPostOptions(post, renames);
+                        return;
+                    }
+                    // 置換（Replace）は現在モデルを読み込んだモデルで置き換える。モデルが無ければ新規と同じ。
+                    if (mode == MQOImportMode.Replace && target != null)
+                    {
+                        string err = ReplaceCurrentModelWithImported(model, filePath, "MQO");
+                        if (err != null) { _status = $"MQO読込失敗: {err}"; return; }
+                        ApplyImportPostOptions(post);
                         return;
                     }
 
@@ -886,9 +884,9 @@ namespace Poly_Ling.Player
         /// パネル経路は戻り値を捨てる。コマンド経路（ExecuteExportObjFile）は
         /// これをそのまま Fail() へ載せるため、状態表示だけでは足りない。
         /// </summary>
-        private string OnExportObj(string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
+        private string OnExportObj(int modelIndex, string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -915,9 +913,9 @@ namespace Poly_Ling.Player
         /// STL 書き出し。失敗理由を返す（成功時は null）。
         /// パネル経路は戻り値を捨て、コマンド経路（ExecuteExportStlFile）は Fail() へ載せる。
         /// </summary>
-        private string OnExportStl(string outputPath, Poly_Ling.STL.StlExportSettings settings)
+        private string OnExportStl(int modelIndex, string outputPath, Poly_Ling.STL.StlExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -942,9 +940,9 @@ namespace Poly_Ling.Player
         /// <summary>
         /// VRM 1.0 書き出し。失敗理由を返す（成功時は null）。警告は表示のみ。
         /// </summary>
-        private string OnExportVrm(string outputPath, Poly_Ling.Vrm.Vrm10ExportSettings settings)
+        private string OnExportVrm(int modelIndex, string outputPath, Poly_Ling.Vrm.Vrm10ExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -973,9 +971,9 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>glTF（.glb / .gltf）書き出し。失敗理由を返す（成功時は null）。</summary>
-        private string OnExportGltf(string outputPath, Poly_Ling.Gltf.GltfExportSettings settings)
+        private string OnExportGltf(int modelIndex, string outputPath, Poly_Ling.Gltf.GltfExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -1001,9 +999,9 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>FBX 書き出し。失敗理由を返す（成功時は null）。</summary>
-        private string OnExportFbx(string outputPath, Poly_Ling.Fbx.FbxExportSettings settings)
+        private string OnExportFbx(int modelIndex, string outputPath, Poly_Ling.Fbx.FbxExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -1024,9 +1022,9 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>PMX 書き出し。失敗理由を返す（成功時は null）。</summary>
-        private string OnExportPmx(string outputPath, PMXExportSettings settings)
+        private string OnExportPmx(int modelIndex, string outputPath, PMXExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -1048,9 +1046,9 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>MQO 書き出し。失敗理由を返す（成功時は null）。</summary>
-        private string OnExportMqo(string outputPath, MQOExportSettings settings)
+        private string OnExportMqo(int modelIndex, string outputPath, MQOExportSettings settings)
         {
-            var model = ActiveProject?.CurrentModel;
+            var model = ActiveProject?.GetModel(modelIndex);
             if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
@@ -1372,9 +1370,8 @@ namespace Poly_Ling.Player
             {
                 if (entry.MeshContext == null) continue;
                 string name = entry.MeshContext.Name ?? "";
-                entry.MeshContext.ParentModelContext = model;
                 if (existingNames.TryGetValue(name, out int existIdx))
-                { model.MeshContextList[existIdx] = entry.MeshContext; replaced++; }
+                { model.SetMeshContextAt(existIdx, entry.MeshContext); replaced++; }
                 else
                 { model.Add(entry.MeshContext); added++; }
             }

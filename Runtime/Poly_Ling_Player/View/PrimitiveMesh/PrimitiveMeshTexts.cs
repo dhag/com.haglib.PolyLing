@@ -312,6 +312,7 @@ namespace Poly_Ling.Player
 
             // ── Revolution ──────────────────────────────────────────────
             ["RadialSegments"]   = new() { ["en"] = "Radial Segments", ["ja"] = "周方向分割数",     ["hi"] = "まわりのぶんかつすう" },
+            ["CornerSplitAngle"] = new() { ["en"] = "Corner Split",    ["ja"] = "角の分割角",       ["hi"] = "かどのわりかく" },
             ["CloseTop"]         = new() { ["en"] = "Close Top",       ["ja"] = "上部を閉じる",     ["hi"] = "うえをとじる" },
             ["CloseBottom"]      = new() { ["en"] = "Close Bottom",    ["ja"] = "下部を閉じる",     ["hi"] = "したをとじる" },
             ["CloseLoop"]        = new() { ["en"] = "Close Loop",      ["ja"] = "ループを閉じる",   ["hi"] = "わっかをとじる" },

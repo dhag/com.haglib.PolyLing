@@ -176,6 +176,7 @@ namespace Poly_Ling.View
         public bool ExcludeFromExport => _ctx.ExcludeFromExport;
         public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
         public bool IsMirrorBranchRoot => _ctx.IsMirrorBranchRoot;
+        public bool MirrorBranchSameSense => _ctx.MirrorBranchSameSense;
         public bool PreserveNormals => _ctx.PreserveNormals;
         public Poly_Ling.Data.BillboardMode Billboard => _ctx.Billboard;
 
@@ -673,6 +674,43 @@ namespace Poly_Ling.View
                     stepLines.Add($"  {i + 1}. {st.Action} → {outText}  (パラメータ {st.Args.Count} 件)");
                 }
 
+                // 項目ごとの引数と、書けるか（setObjectGroupStepArgs と同じ判定）。
+                var stepViews = new List<ObjectGroupStepView>();
+                var graph = Poly_Ling.Ops.ModifierEvaluator.GetGraph(model);
+                for (int i = 0; i < g.StepCount; i++)
+                {
+                    var st = g.GetStep(i);
+                    var sv = new ObjectGroupStepView { Action = st?.Action ?? "", IsExecutable = st != null && st.IsExecutable };
+                    if (st != null)
+                    {
+                        var stType = Poly_Ling.Data.PanelCommandFactory.ResolveType(st.Action);
+
+                        // 逆方向（段 6）。未確定かは評価器の控えで見る。
+                        var inv = Poly_Ling.Ops.ModifierInverse.Of(stType);
+                        if (inv != null)
+                        {
+                            sv.InverseMethod = inv.Method;
+                            sv.InverseKeeps  = inv.Keeps;
+                            sv.InverseLoses  = inv.Loses;
+                            foreach (var ge in graph)
+                                if (ReferenceEquals(ge.Step, st))
+                                { sv.OutputEditPending = Poly_Ling.Ops.ModifierEvaluator.IsOutputEditPending(model, ge); break; }
+                        }
+                        var sorted = st.SortedArgs();
+                        sv.Keys     = new string[sorted.Count];
+                        sv.Values   = new string[sorted.Count];
+                        sv.Writable = new bool[sorted.Count];
+                        for (int k = 0; k < sorted.Count; k++)
+                        {
+                            sv.Keys[k]     = sorted[k].Key;
+                            sv.Values[k]   = sorted[k].Value ?? "";
+                            sv.Writable[k] = sv.IsExecutable
+                                && Poly_Ling.Ops.ObjectGroupOps.ArgWriteBlockReason(stType, sorted[k].Key) == null;
+                        }
+                    }
+                    stepViews.Add(sv);
+                }
+
                 list.Add(new ObjectGroupView
                 {
                     Name          = g.Name,
@@ -686,6 +724,7 @@ namespace Poly_Ling.View
                         + string.Join("\n", stepLines) + "\n"
                         + $"入力: {(srcNames.Count > 0 ? string.Join(", ", srcNames) : "なし")}\n"
                         + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}",
+                    Steps         = stepViews.ToArray(),
                 });
             }
             return list;

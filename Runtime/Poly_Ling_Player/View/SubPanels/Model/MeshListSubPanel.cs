@@ -183,6 +183,8 @@ namespace Poly_Ling.MeshListV2
         private Toggle _billboardToggle;
         [UiControl("detail.mirrorBranchRoot", Description = "ミラー分岐ルートにする")]
         private Toggle _mirrorBranchRootToggle;
+        [UiControl("detail.mirrorBranchSameSense", Description = "ミラー分岐のミラー側も同じ向きに回す")]
+        private Toggle _mirrorBranchSameSenseToggle;
         // ミラーモード（なし/分離/結合）。⇆ ボタンは有無だけを切り替えるので、
         // 結合(2) の指定はここで行う。
         [UiControl("detail.mirrorMode", Description = "ミラーモード（なし / 分離 / 結合）")]

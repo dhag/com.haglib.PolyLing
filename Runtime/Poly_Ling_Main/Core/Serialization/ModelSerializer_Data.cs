@@ -430,6 +430,7 @@ namespace Poly_Ling.Serialization
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
             meshDTO.ignorePoseInArmature = meshContext.IgnorePoseInArmature;
             meshDTO.isMirrorBranchRoot   = meshContext.IsMirrorBranchRoot;
+            meshDTO.mirrorBranchSameSense = meshContext.MirrorBranchSameSense;
             meshDTO.preserveNormals      = meshContext.PreserveNormals;
         }
 
@@ -461,6 +462,7 @@ namespace Poly_Ling.Serialization
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
             meshContext.IgnorePoseInArmature = meshDTO.ignorePoseInArmature;
             meshContext.IsMirrorBranchRoot   = meshDTO.isMirrorBranchRoot;
+            meshContext.MirrorBranchSameSense = meshDTO.mirrorBranchSameSense;
             meshContext.PreserveNormals      = meshDTO.preserveNormals;
         }
 

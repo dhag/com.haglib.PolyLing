@@ -85,11 +85,9 @@ namespace Poly_Ling.Player
             var mvs      = GetObjectMoveSettings?.Invoke();
             bool poseMode = mvs != null && mvs.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
 
-            SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices)
-            {
-                Mode       = mvs?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
-                OriginOnly = IsOriginOnlyActive(),
-            });
+            SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices,
+                mvs?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                IsOriginOnlyActive()));
 
             bool isRotation =
                 field == SetBoneTransformValueCommand.Field.RotationX ||

@@ -110,7 +110,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // MirrorPair情報をReal側entryに設定 + MirrorSide同梱
             EnrichEntriesWithMirrorPeers(meshEntries, model);
 
-            // IK: 集約 Links → per-bone を同期してから書き出す（規約4：CSV/JSON 対称）
+            // IK: 集約 Links → per-bone を同期してから書き出す（規約4：CSV / JSON / バイナリ対称）
             IKChainResolver.SyncPerBoneFromLinks(model);
 
             // Humanoid: 集中 Dict → per-bone を同期（humanBodyBone を bone.csv へ）
@@ -194,7 +194,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             else
                 DeleteIfExists(modelFolderPath, "workplane.csv");
 
-            // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）の行（MeshDTO.workAxis）に載る。
+            // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）のメッシュ CSV の workAxis 行に載る
+            // （CsvMeshSerializer.WriteMeshHeader。.mfproj では MeshDTO.workAxis）。
             // モデル単位のファイル（旧 workaxis.csv）は書かず、読みもしない。
 
             // tposebackup.csv（「ファイルがある ⇔ TPoseBackup がある」。中身が空でも見出しだけ書く。
@@ -204,7 +205,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             else
                 DeleteIfExists(modelFolderPath, "tposebackup.csv");
 
-            // springbonegroups.csv（SpringBone コライダーグループ名。規約4: CSV/JSON 対称）
+            // springbonegroups.csv（SpringBone コライダーグループ名。規約4: CSV / JSON / バイナリ対称）
             if (model.SpringBoneColliderGroupNames != null && model.SpringBoneColliderGroupNames.Count > 0)
                 WriteSpringBoneGroupsCsv(modelFolderPath, model);
             else

@@ -65,7 +65,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>
-    [PLCommand(Category = "rig.skeleton.pose", Effects = PLCommandEffect.Skeleton, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.Targets, Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。単独では Undo を記録しない。戻せるようにするには beginBoneTransformSliderDrag と endBoneTransformSliderDrag で挟む（記録は end が行う）。")]
+    [PLCommand(Category = "rig.skeleton.pose", Effects = PLCommandEffect.Skeleton, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.Targets, Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。単独では Undo を記録しない。戻せるようにするには beginBoneTransformSliderDrag と endBoneTransformSliderDrag で挟む（記録は end が行う）。begin なしで呼ぶと通常モード（BoneTransform を直接書く。ポーズ層・原点だけ移動・スキン固定は使わない）で動く。")]
     public class SetBoneTransformValueCommand : PanelCommand
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
@@ -155,7 +155,7 @@ namespace Poly_Ling.Data
         /// <summary>ボーン編集の確定モード（A/B）。パネルが送信時に刻む。</summary>
         [PLParam(TextKey = "BoneMoveMode",
                  Description = "ボーン編集の確定モード。既定は BoneOnlyRebind")]
-        public BoneMoveMode Mode { get; set; } = BoneMoveMode.BoneOnlyRebind;
+        public BoneMoveMode Mode { get; }
         /// <summary>
         /// 「原点だけ移動」中か。true のとき、対象 MeshFilter の見た目を固定したまま
         /// 原点(BoneTransform)だけを動かすよう受信側が自頂点を再ローカル化する。
@@ -163,9 +163,20 @@ namespace Poly_Ling.Data
         /// </summary>
         [PLParam(TextKey = "BoneOriginOnly",
                  Description = "見た目を固定したまま原点だけを動かす。既定は false")]
-        public bool OriginOnly { get; set; } = false;
-        public BeginBoneTransformSliderDragCommand(int modelIndex, int[] masterIndices)
-            : base(modelIndex) { MasterIndices = masterIndices; }
+        public bool OriginOnly { get; }
+
+        // Mode・OriginOnly はコンストラクタ引数で受ける。コマンド生成（PanelCommandFactory）は
+        // コンストラクタ引数しか見ないため、後付けのプロパティだと MCP から渡せなかった
+        // （残件解決計画 段 5、2026-10-28）。
+        public BeginBoneTransformSliderDragCommand(
+            int modelIndex, int[] masterIndices,
+            BoneMoveMode mode = BoneMoveMode.BoneOnlyRebind, bool originOnly = false)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices;
+            Mode          = mode;
+            OriginOnly    = originOnly;
+        }
     }
 
     /// <summary>BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>

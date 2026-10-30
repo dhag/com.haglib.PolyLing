@@ -1161,8 +1161,10 @@ namespace Poly_Ling.Tools
                 // Undo記録
                 if (ctx.UndoController != null)
                 {
+                    // 書き込み先は編集した ActiveMeshContext（meshObject の持ち主）。
                     ctx.UndoController.RecordAddFaceOperation(
-                        newFace, faceIndex, addedVertices, lineGroupsBefore, lineGroupsAfter);
+                        newFace, faceIndex, addedVertices, lineGroupsBefore, lineGroupsAfter,
+                        ctx.ActiveMeshContext);
                 }
             }
 
