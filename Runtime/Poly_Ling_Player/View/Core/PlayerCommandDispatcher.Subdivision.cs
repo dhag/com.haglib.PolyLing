@@ -4,7 +4,7 @@
 //
 // 【Undo】
 //   作成・作り直し・解除のどれも、オブジェクト一覧のスナップショットと
-//   グループの変更を 1 件にまとめて積む（辺から帯面と同じ形）。
+//   スタックの変更を 1 件にまとめて積む（辺から帯面と同じ形）。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -72,8 +72,8 @@ namespace Poly_Ling.Player
 
             _undoController?.SetModelContext(model);
             var listBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
-            int groupsBefore = model.ObjectGroupCount;
-            var groupChanges = new List<ObjectGroupChangeRecord>();
+            int groupsBefore = model.ModifierStackCount;
+            var groupChanges = new List<ModifierStackChangeRecord>();
 
             int childIndex;
             _undoController?.SuspendRecording();
@@ -85,16 +85,16 @@ namespace Poly_Ling.Player
                     SubdivisionOps.ReplaceContents(child.MeshObject, result);
                     childIndex = model.MeshContextList.IndexOf(child);
 
-                    // 回数が変わったらグループの項目へ書く（つながりの正本はグループ）。
+                    // 回数が変わったらスタックの項目へ書く（つながりの正本はスタック）。
                     var link = SubdivisionSync.FindByChild(model, child);
                     if (link != null && link.Level != level)
                     {
-                        int gi = model.ObjectGroups.IndexOf(link.Group);
+                        int gi = model.ModifierStacks.IndexOf(link.Group);
                         var before = link.Group.Clone();
                         link.Step.SetArg(SubdivisionSync.LevelKey,
                             level.ToString(System.Globalization.CultureInfo.InvariantCulture));
                         if (gi >= 0)
-                            groupChanges.Add(new ObjectGroupChangeRecord
+                            groupChanges.Add(new ModifierStackChangeRecord
                             {
                                 ReplacedIndex = gi, OldGroup = before, NewGroup = link.Group.Clone(),
                             });
@@ -124,9 +124,9 @@ namespace Poly_Ling.Player
 
                     childIndex = model.Add(child);
 
-                    // つながりをグループとして残す。出力先は作った子だけ。
+                    // つながりをモディファイアスタックとして残す。出力先は作った子だけ。
                     var recorded = new SubdivideMeshCommand(c.ModelIndex, c.CageMasterIndex, level, -1);
-                    CaptureObjectGroup(recorded, null, -1, new[] { child.ObjectId });
+                    CaptureModifierStack(recorded, null, -1, new[] { child.ObjectId });
                 }
 
                 // 直後の RebuildAdapter で作り直さないよう、計算結果を控える。
@@ -164,28 +164,28 @@ namespace Poly_Ling.Player
 
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
-            var groupChanges = new List<ObjectGroupChangeRecord>();
+            var groupChanges = new List<ModifierStackChangeRecord>();
 
             _undoController?.SuspendRecording();
             try
             {
-                // つながりの項目を外す。項目が 1 つだけのグループはグループごと外す。
-                int gi = model.ObjectGroups.IndexOf(link.Group);
+                // つながりの項目を外す。項目が 1 つだけのスタックはスタックごと外す。
+                int gi = model.ModifierStacks.IndexOf(link.Group);
                 if (gi >= 0)
                 {
                     if (link.Group.StepCount <= 1)
                     {
-                        groupChanges.Add(new ObjectGroupChangeRecord
+                        groupChanges.Add(new ModifierStackChangeRecord
                         {
                             RemovedGroup = link.Group.Clone(), RemovedIndex = gi,
                         });
-                        model.RemoveObjectGroup(link.Group);
+                        model.RemoveModifierStack(link.Group);
                     }
                     else
                     {
                         var before = link.Group.Clone();
                         link.Group.Steps.Remove(link.Step);
-                        groupChanges.Add(new ObjectGroupChangeRecord
+                        groupChanges.Add(new ModifierStackChangeRecord
                         {
                             ReplacedIndex = gi, OldGroup = before, NewGroup = link.Group.Clone(),
                         });
@@ -210,7 +210,7 @@ namespace Poly_Ling.Player
                 _undoController?.ResumeRecording();
             }
 
-            RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount, groupChanges, "サブディビジョン解除");
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, groupChanges, "サブディビジョン解除");
 
             model.ComputeWorldMatrices();
             model.IsDirty = true;
@@ -223,12 +223,12 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// オブジェクト一覧のスナップショットと、グループの追加・差し替え・削除を Undo 1 件として積む。
-        /// グループの記録は「差し替え・削除」→「追加」の順に並べる。
+        /// オブジェクト一覧のスナップショットと、スタックの追加・差し替え・削除を Undo 1 件として積む。
+        /// スタックの記録は「差し替え・削除」→「追加」の順に並べる。
         /// </summary>
         private void RecordSubdivisionUndo(
             ModelContext model, List<MeshContext> listBefore, int groupsBefore,
-            List<ObjectGroupChangeRecord> groupChanges, string description)
+            List<ModifierStackChangeRecord> groupChanges, string description)
         {
             if (_undoController == null || model == null) return;
 
@@ -238,15 +238,15 @@ namespace Poly_Ling.Player
 
             if (groupChanges != null)
                 foreach (var rec in groupChanges)
-                    RecordObjectGroupUndo(rec, description);
+                    RecordModifierStackUndo(rec, description);
 
-            for (int gi = groupsBefore; gi < model.ObjectGroupCount; gi++)
+            for (int gi = groupsBefore; gi < model.ModifierStackCount; gi++)
             {
-                var added = model.ObjectGroups[gi];
+                var added = model.ModifierStacks[gi];
                 if (added == null) continue;
-                RecordObjectGroupUndo(
-                    new ObjectGroupChangeRecord { AddedGroup = added.Clone(), AddedIndex = gi },
-                    $"オブジェクトグループ追加: {added.Name}");
+                RecordModifierStackUndo(
+                    new ModifierStackChangeRecord { AddedGroup = added.Clone(), AddedIndex = gi },
+                    $"モディファイアスタック追加: {added.Name}");
             }
 
             _undoController.MeshListStack.EndGroup();

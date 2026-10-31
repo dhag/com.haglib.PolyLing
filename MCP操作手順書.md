@@ -146,6 +146,61 @@ JSON の配列をそのまま渡すと断られる。
 `generic` の `pl_` 道具は Schema どおり JSON の配列で渡してよい（サーバがカンマ区切りへ直す）。
 対象モデルは `polyling_call` では `model_index`、`pl_` 道具でも `model_index`（既定 0）。
 
+### 1-5. モーションの編集（edit）
+
+モーションの試し再生（ツールの窓口 `motionClip`）に読み込んだクリップの編集の構造 `edit`（version 5。
+トラック・クリップ・キー・接線・ラップ・バンドル・レイヤー）を、コマンドとパネルの数値欄で変える。
+形式は `PolyLing_外部連携の契約.md` §5、計画と規則は `PolyLing_モーション編集構造計画.md`。
+
+**読み込みと保存**
+
+- Play の直後は「no project」で `polyling_call` が通らない。先に `createEmptyModel`（`modelName` 任意）を呼ぶ
+- 読込は `invokeToolAction`（`toolId` `motionClip`、`action` `load`、`argKeys` `"path,sourceKind,time"`、`argValues` の path は**絶対パス**。作業フォルダからの相対は通らない）。
+  例：`argValues` = `"D:/…/PolyLing/SandBox/curve_test/stage4_cmd2.plmotion.json,1,0"`
+- 保存は `saveMotionClipJson`（`filePath`）。作業フォルダの直下には置けないので、`SandBox/…` の下にする
+- `edit` の無いクリップ（version 4 以前など）も編集できる。最初の書き込みで、トラックごとにクリップ 1 本の `edit` が作られる。
+- 派生のトラック（`rotationSource` が `"bakedBones"` のときの muscles・body、そうでないときの bakedBones）は `edit` に入らず、書き込みはエラーになる。
+  照会の `trackDerived` と `uncoveredFlat` で分かる
+
+**照会（4 本。どれもクリップを変えない）**
+
+| コマンド | 返すもの |
+|---|---|
+| `queryMotionEditTracks` | トラック（id・role・target・ラップ・派生か）とクリップ（id・開始・長さ・ループ・重み・所属バンドル・キーの数） |
+| `queryMotionEditKeys` | クリップ 1 本（`clipId`、`channel` 省略で全チャンネル）のキーの値・`t0`・評価に使う秒・接線 |
+| `queryMotionEditBundles` | バンドルの中身・親子・レイヤーの設定、重ねる順、実効の重みとミュート |
+| `sampleMotionEdit` | トラック（`trackIds` 省略で全部）をフレーム `frames`（小数可）で評価した値。Motion Studio の `Track.sample` と同じ |
+
+結果は並行配列（個数の列＋連結した値の列）。null は文字列なら空、数なら 0 と有無の列（`keyHasT0`、接線は `tanFlags` のビット）。
+
+**書き込み（22 本。名前の頭はどれも `motionEdit`）**
+
+| 対象 | コマンド |
+|---|---|
+| トラック | `AddTrack`・`RemoveTrack`・`SetWrap` |
+| クリップ | `AddClip`・`RemoveClip`・`SetClip`（開始・長さ・ループ・重み） |
+| キー | `CaptureKey`（全チャンネルにキーを打つ。Studio の「キー追加」）・`SetChannelKey`・`RemoveChannelKey`（1 チャンネルだけ）・`SetKeyValue`・`RemoveKey`・`MoveKey` |
+| 接線 | `SetTangentMode`・`SetTangentSlope`・`SetWeightedMode`・`SetTangentWeight` |
+| バンドル | `MakeBundle`・`Ungroup`・`CloneBundle`・`DeleteBundle` |
+| レイヤー | `SetLayer`（有無・方式・重み・ミュート・ソロ）・`SwapLayer`（重ねる順） |
+
+- 作る 4 本（`AddTrack`・`AddClip`・`MakeBundle`・`CloneBundle`）は `createdId` を返す。id は `edit` の今の最大値＋1 で振るので、最大の id のものを除いた直後は同じ id が出る。**作る・除くの後は照会し直す**
+- `time` を省く（-1）と、直前に当てた時刻のフレームを当て直す
+- 失敗すると `Fail` で理由を返し、クリップは変わらない。窓口の口（`editAddClip` など）を `invokeToolAction` で直に呼んだときは成功のまま返るので、`queryToolState`（`toolId` `motionClip`）の `error` を読む
+- 取り消しは `performUndo`・`performRedo`。コマンド 1 回が 1 件
+- 1 回の応答で並べた `polyling_call` は順に実行される
+
+**パネルの編集の節**
+
+- 「モーションの試し再生」パネルの折り畳み「編集（数値）」。`uiShowPanel`（`panelId` `motionClipTest`）で開き、`uiDescribe` で部品を読む
+- UI 自動操作の ID は `motionClipTest.edit.*`（例 `edit.track`・`edit.clip.weight`・`edit.key.setChannel`・`edit.layer.mode`）。選ぶ欄は id（キーはフレームの数）でも選べる
+- 欄とボタンは上の書き込みのコマンドを送る。取り消し・失敗の扱いもコマンドと同じ（失敗の理由は節の状態の欄に出る）
+
+**大きな結果を会話に通さない**
+
+全フレームの `sampleMotionEdit` のような大きな結果は、Editor の 8770（Duplex のパケット。`PolyLing_外部連携の契約.md` §2・§3.1）を Python から呼んでファイルに書くと、会話に載せずに比べられる。
+例：`SandBox/curve_test/s6/pl_call.py`（呼ぶコマンドの並びを JSON ファイルで渡す）。
+
 ---
 
 ## 2. 守る手順

@@ -68,11 +68,11 @@ namespace Poly_Ling.Player
             _project = project;
         }
 
-        /// <summary>オブジェクトグループの一覧（プロジェクトが無ければ空）。</summary>
-        public IReadOnlyList<ObjectGroupView> ObjectGroups
+        /// <summary>モディファイアスタックの一覧（プロジェクトが無ければ空）。</summary>
+        public IReadOnlyList<ModifierStackView> ModifierStacks
             => _project != null
-                ? Poly_Ling.View.LiveProjectView.BuildObjectGroupViews(_project, _model)
-                : Array.Empty<ObjectGroupView>();
+                ? Poly_Ling.View.LiveProjectView.BuildModifierStackViews(_project, _model)
+                : Array.Empty<ModifierStackView>();
 
         public int MaterialCount        => _model.MaterialCount;
         public int CurrentMaterialIndex => _model.CurrentMaterialIndex;

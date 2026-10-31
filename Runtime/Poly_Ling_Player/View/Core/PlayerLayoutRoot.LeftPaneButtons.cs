@@ -15,11 +15,16 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>左ペイン：PMX 読み込み（読み込みパネルを PMX モードで開く）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PmxLoadBtn         { get; private set; }
         /// <summary>左ペイン：MQO 読み込み（読み込みパネルを MQO モードで開く）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MqoLoadBtn         { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]   // リモート接続。ファイルや編集内容を壊さない
         public Button        ConnectBtn         { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]   // リモート切断。ファイルや編集内容を壊さない
         public Button        DisconnectBtn      { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]   // クライアント側の表示を受信内容で置き換えるだけ
         public Button        FetchBtn           { get; private set; }
         public VisualElement RemoteSection      { get; private set; }
         public Foldout       RemoteFoldout      { get; private set; }
@@ -32,247 +37,397 @@ namespace Poly_Ling.Player
         public Toggle AutoRecalcNormalsToggle { get; private set; }
 
         /// <summary>左ペイン：法線の手動再計算ボタン。対象は選択メッシュ。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button RecalcNormalsBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（新しい基本）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LivePrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LiveAdvancedPrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（機構部品A）。同じ LivePrimitiveSection を開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LiveMechanismPrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（機構部品B）。同じ LivePrimitiveSection を開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LiveMechanismBPrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（揺れものボーン）。同じ LivePrimitiveSection を開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LiveSpringBonePrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolVertexMoveBtn  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolObjectMoveBtn  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolPivotOffsetBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolSculptBtn      { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolAdvancedSelBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolSkinWeightPaintBtn { get; private set; }
 
         /// <summary>左ペイン：スキンウェイト数値設定ボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SkinWeightNumericBtn { get; private set; }
 
         /// <summary>左ペイン：スキンW範囲塗りボタン（円筒・球の範囲で親・自ボーンを配分）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SkinWeightVolumeBtn { get; private set; }
         /// <summary>左ペイン「スキンW自動（ボーンヒート）」。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SkinWeightAutoHeatBtn { get; private set; }
 
         /// <summary>左ペイン：一時選択サブツール呼び出しボタン (デバッグ用。ショートカット R / G と同処理)。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SubToolBoxSelectBtn   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SubToolLassoSelectBtn { get; private set; }
+        [UiControl(Safety = UiSafety.Destructive)]   // 選択した要素を削除する（ExecuteDeleteSelection）
         public Button SubToolDeleteBtn      { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ToolDeleteFaceBtn     { get; private set; }
 
         /// <summary>左ペイン：MeshFilter→Skinnedボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button MeshFilterToSkinnedBtn { get; private set; }
 
         /// <summary>描画オブジェクト単位の種別変換（MeshFilter 系 ⇔ SkinnedMesh 系）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button SkinKindBtn { get; private set; }
 
         /// <summary>左ペイン：下絵ボタン（その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button UnderlayBtn { get; private set; }
 
         /// <summary>左ペイン：作業フォルダ設定ボタン（その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button WorkFolderBtn { get; private set; }
 
         /// <summary>左ペイン：Python アドオンの設定・一覧パネルを開くボタン（Python アドオン）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]   // Python アドオンのパネルを開くだけ（起動・実行はパネルの中のボタン）
         public Button PyAddonBtn { get; private set; }
 
         /// <summary>左ペイン：アドオンごとのボタンの入れ物（中身は PlayerPyAddonQuickButtons が作る）。</summary>
         public VisualElement PyAddonQuickBox { get; private set; }
 
         /// <summary>左ペイン：軸/グリッドボタン（その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button GridAxisBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button LightBtn { get; private set; }
 
         /// <summary>左ペイン：カメラ調整ボタン（その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button CameraBtn { get; private set; }
 
         /// <summary>左ペイン：キャプチャボタン（その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button CaptureBtn { get; private set; }
 
         /// <summary>左ペイン：リファレンスに基づく対称化（臨時、その他）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ReferenceSymmetryBtn { get; private set; }
 
         /// <summary>左ペイン：ブレンドボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button BlendBtn { get; private set; }
 
         /// <summary>シュリンカー(頂点)ボタン</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ShrinkBtn { get; private set; }
 
         /// <summary>シュリンカー(面)ボタン</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ShrinkFaceBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ThinPlateMorphBtn { get; private set; }
 
         /// <summary>左ペイン：モデルブレンドボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ModelBlendBtn { get; private set; }
 
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button BoneEditorBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button UVEditorBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button UVUnwrapBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        UVZBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        UVEditSpaceBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PartsSelectionSetBtn  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MeshSelectionSetBtn   { get; private set; }
-        public Button        ObjectGroupBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
+        public Button        ModifierStackBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalExcludeSetBtn   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalEditBtn         { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalTransplantBtn   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        FaceHideBtn           { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        DuplicateSelectionBtn { get; private set; }
+        /// <summary>選択部分のコピー（Ctrl+C）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
+        public Button        CopySelectionBtn      { get; private set; }
+        /// <summary>選択部分のカット（Ctrl+X）。</summary>
+        [UiControl(Safety = UiSafety.Destructive)]   // 選択した要素を切り取る（ExecuteCutSelection）
+        public Button        CutSelectionBtn       { get; private set; }
+        /// <summary>クリップボードの貼り付け。貼り付け先は PasteDestinationDropdown。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
+        public Button        PasteSelectionBtn     { get; private set; }
+        /// <summary>貼り付け先（0 = 編集対象へ / 1 = 新規オブジェクト）。キーでの貼り付けはこの値を見ない。</summary>
+        public DropdownField PasteDestinationDropdown { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        TriangleRelocateBtn   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        EdgeTriangleBtn       { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MergeMeshesBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        BooleanBtn            { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MorphBtn              { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MorphCreateBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        TPoseBtn              { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        HumanoidMappingBtn    { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MirrorBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        QuadDecimatorBtn       { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        AlignVerticesBtn           { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PlanarizeAlongBonesBtn     { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SmoothEdgesBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PipeAlignBtn               { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SurfaceSnapBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PlaceObjectReshapeBtn      { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MergeVerticesBtn           { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SplitVerticesBtn           { get; private set; }
         /// <summary>左ペイン「頂点の分離」（選択面を切り離す・選択辺で切り開く）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        DetachVerticesBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VertexHoleBtn              { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VertexDissolveBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        HoleRingCountBtn           { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        EdgeBridgeBtn              { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        BillboardProfileBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        Tri4To1Btn                 { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        FaceMergeBtn               { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        Quad4To1Btn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VertexIdBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VertexTransferBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PartsIdBtn                 { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        AddFaceBtn                 { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        FlipFaceBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        RotateBtn                  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        WorkAxisBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        DeformBtn                  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        LatticeBtn                 { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        ScaleBtn                   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        EdgeBevelBtn               { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        EdgeExtrudeBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        FaceExtrudeBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        EdgeTopologyBtn            { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        KnifeBtn                   { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        BridgeBtn                  { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SolidifyBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        LineExtrudeBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SubdivisionBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MediaPipeBtn           { get; private set; }
         /// <summary>メディアパイプ（姿勢・指）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MediaPipeFingerBtn     { get; private set; }
         /// <summary>メディアパイプ（姿勢・ボディ）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MediaPipeBodyBtn       { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VMDTestBtn             { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VmdToVrmaBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MotionClipTestBtn        { get; private set; }
 
         /// <summary>左ペイン：コマンド定義の検査ボタン（システムデバッグ）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        CommandSchemaBtn        { get; private set; }
 
         /// <summary>
         /// 左ペイン：MCP用サンドボックスを開くボタン。
         /// 3D連携の図形生成（LivePrimitiveSection）を「サンドボックス」カテゴリで開く。
         /// </summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        McpSandboxBtn           { get; private set; }
 
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        OriginTestBtn            { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SpringBoneTestBtn        { get; private set; }
 
         /// <summary>左ペイン：揺れもの編集ボタン（ボーン・モーフ）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SpringBoneBtn            { get; private set; }
 
         /// <summary>左ペイン：当たり判定の作成と編集ボタン（ボーン・モーフ）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SpringBoneColliderBtn     { get; private set; }
 
         /// <summary>左ペイン：マッスル可動域の編集ボタン（ボーン・モーフ）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        HumanLimitBtn             { get; private set; }
 
         /// <summary>左ペイン：VRM 出力設定ボタン（ファイル）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VrmSettingsBtn            { get; private set; }
 
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        RobotBuildTestBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        FrillSkirtTestBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SpringSkinScenarioBtn     { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SpringSkinPipeScenarioBtn     { get; private set; }
 
         /// <summary>シナリオを選んで先頭から流す。指示・確認の項目と失敗で止まる。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        ScenarioBtn               { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PipeHairTestBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        BarnacleTestBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        RevolutionTestBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        Profile2DTestBtn         { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PmxToMqoTestBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MqoToPmxTestBtn          { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SkinTestBtn              { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        RemoteServerBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        LogBtn                 { get; private set; }
 
         /// <summary>左ペイン：PMXフルエクスポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button FullExportPmxBtn { get; private set; }
 
         /// <summary>左ペイン：MQOフルエクスポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button FullExportMqoBtn { get; private set; }
 
         /// <summary>左ペイン：VRM 1.0 フルエクスポートボタン。
         /// 実装は PolyLing.Vrm10 アセンブリ側にあり、VRM パッケージが無い環境では
         /// パネルが「利用できません」を表示する（規約は IVrm10Exporter.cs を正典とする）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button FullExportVrmBtn { get; private set; }
 
         /// <summary>左ペイン：プロジェクト保存 / 読込ボタン（それぞれ別セクションを開く）。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ProjectSaveBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ProjectLoadBtn { get; private set; }
 
         /// <summary>左ペイン：OBJ 読み込み / 保存ボタン（プロジェクトの各ボタンの横）。
         /// インポータ / エクスポータのセクションを OBJ モードで開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ObjLoadBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button ObjSaveBtn { get; private set; }
 
         /// <summary>左ペイン：VRM 読み込みボタン。インポータのセクションを VRM モードで開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button VrmLoadBtn { get; private set; }
 
         /// <summary>左ペイン：STL 読み込み / 保存ボタン。
         /// インポータ / エクスポータのセクションを STL モードで開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button StlLoadBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button StlSaveBtn { get; private set; }
 
         /// <summary>左ペイン：glTF（.glb / .gltf）読み込み / 保存ボタン。
         /// インポータ / エクスポータのセクションを glTF モードで開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button GltfLoadBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button GltfSaveBtn { get; private set; }
 
         /// <summary>左ペイン：FBX 読み込み / 保存ボタン。
         /// インポータ / エクスポータのセクションを FBX モードで開く。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button FbxLoadBtn { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button FbxSaveBtn { get; private set; }
 
         /// <summary>左ペイン：PMX部分インポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button PartialImportPmxBtn { get; private set; }
 
         /// <summary>左ペイン：MQO部分インポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button PartialImportMqoBtn { get; private set; }
 
         /// <summary>左ペイン：PMX部分エクスポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button PartialExportPmxBtn { get; private set; }
 
         /// <summary>左ペイン：MQO部分エクスポートボタン。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button PartialExportMqoBtn { get; private set; }
 
         // ================================================================
@@ -482,11 +637,11 @@ namespace Poly_Ling.Player
             MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
             rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelect.Add(rowSelSet);
 
-            // オブジェクトグループ（帯・断面・パラメータと出力先のまとまり）。
+            // モディファイアスタック（帯・断面・パラメータと出力先のまとまり）。
             // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
-            ObjectGroupBtn = MakeBtn("オブジェクトグループ"); ObjectGroupBtn.style.flexGrow = 1;
+            ModifierStackBtn = MakeBtn("モディファイアスタック"); ModifierStackBtn.style.flexGrow = 1;
             var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
-            rowObjGroup.Add(ObjectGroupBtn); foSelect.Add(rowObjGroup);
+            rowObjGroup.Add(ModifierStackBtn); foSelect.Add(rowObjGroup);
 
             // ── 移動/回転/拡大縮小 ─────────────────────────────────────
             var foTransform = MakeFoldout("移動/回転/拡大縮小", "Transform");
@@ -607,6 +762,20 @@ namespace Poly_Ling.Player
             // 選択している頂点・辺・線分・面だけを別オブジェクトへ複製する。
             DuplicateSelectionBtn = MakeBtn("選択を複製"); DuplicateSelectionBtn.style.flexGrow = 1;
             rowFaceHide.Add(FaceHideBtn); rowFaceHide.Add(DuplicateSelectionBtn); foTopology.Add(rowFaceHide);
+
+            // 選択部分のコピー・カット・貼り付け。貼り付け先はドロップダウンで選ぶ
+            // （キーでは Ctrl+V = 編集対象へ、Ctrl+Shift+V = 新規オブジェクト）。
+            var rowClipboard = new VisualElement(); rowClipboard.style.flexDirection = FlexDirection.Row; rowClipboard.style.marginBottom = 2;
+            CopySelectionBtn  = MakeBtn("コピー ^C");   CopySelectionBtn.style.flexGrow  = 1; CopySelectionBtn.style.marginRight = 2;
+            CutSelectionBtn   = MakeBtn("カット ^X");   CutSelectionBtn.style.flexGrow   = 1; CutSelectionBtn.style.marginRight  = 2;
+            PasteSelectionBtn = MakeBtn("貼り付け ^V"); PasteSelectionBtn.style.flexGrow = 1;
+            rowClipboard.Add(CopySelectionBtn); rowClipboard.Add(CutSelectionBtn); rowClipboard.Add(PasteSelectionBtn);
+            foTopology.Add(rowClipboard);
+
+            PasteDestinationDropdown = new DropdownField("貼り付け先",
+                new System.Collections.Generic.List<string> { "編集対象へ", "新規オブジェクト" }, 0);
+            PasteDestinationDropdown.style.marginBottom = 2;
+            foTopology.Add(PasteDestinationDropdown);
 
             // ── 法線 ───────────────────────────────────────────────────
             // 法線に関する操作と設定をここへ集める。自動計算トグルと手動再計算は

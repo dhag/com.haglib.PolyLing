@@ -6,11 +6,11 @@
 //   シナリオは ScenarioLibrary が持ち、プロジェクトにもモデルにも属さない。
 //   ディスパッチャはプロジェクトの null 門より前で捌く
 //   （PlayerCommandDispatcher.Scenario.cs）。何も読み込んでいない状態でも使える。
-//   例外は saveScenarioFromGroup だけで、これは現在のモデルの
-//   ObjectGroup を読むため、受け口の中でモデルの有無を見る。
+//   例外は saveScenarioFromModifierStack だけで、これは現在のモデルの
+//   ModifierStack を読むため、受け口の中でモデルの有無を見る。
 //
 // 【シナリオは実体に縛らない】
-//   ObjectGroup の項目は MeshRefIds / OutputObjectIds で実在の
+//   ModifierStack の項目は MeshRefIds / OutputObjectIds で実在の
 //   描画オブジェクトを指せるが、シナリオに焼き付けると、そのモデルを
 //   閉じた時点で死んだ ObjectId が残る。シナリオを作るときは必ず落とす。
 //
@@ -315,16 +315,16 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>現在のモデルのオブジェクトグループをシナリオとして登録する。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "現在のモデルのオブジェクトグループをシナリオとして登録する。描画オブジェクトへの参照（ObjectId）と出力先は落とし、つながりは書き換えて残す：同じグループの前の項目の出力を指す参照は @<項目 ID>.masterIndices、グループの外を指す参照はシナリオの引数 <項目 ID>_<キー>（既定値は今の索引）にする。内と外が混じる参照・出力が複数の項目を指す参照は断る。")]
+    /// <summary>現在のモデルのモディファイアスタックをシナリオとして登録する。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "現在のモデルのモディファイアスタックをシナリオとして登録する。描画オブジェクトへの参照（ObjectId）と出力先は落とし、つながりは書き換えて残す：同じスタックの前の項目の出力を指す参照は @<項目 ID>.masterIndices、スタックの外を指す参照はシナリオの引数 <項目 ID>_<キー>（既定値は今の索引）にする。内と外が混じる参照・出力が複数の項目を指す参照は断る。")]
     [PLResult("name",  PLResultKind.Text,    Description = "作ったシナリオの名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "項目の数")]
-    [PLResult("params", PLResultKind.Integer, Description = "グループの外を指す参照から作ったシナリオの引数の数")]
+    [PLResult("params", PLResultKind.Integer, Description = "スタックの外を指す参照から作ったシナリオの引数の数")]
     [PLResult("count", PLResultKind.Integer, Description = "登録後のシナリオの数")]
-    public sealed class SaveScenarioFromGroupCommand : PanelCommand
+    public sealed class SaveScenarioFromModifierStackCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "元にするオブジェクトグループの名前", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "元にするモディファイアスタックの名前", Required = true)]
+        public string StackName { get; }
 
         [PLParam(Description = "シナリオの名前。既にあるときは overwrite を立てること", Required = true)]
         public string ScenarioName { get; }
@@ -335,11 +335,11 @@ namespace Poly_Ling.Data
         [PLParam(Description = "同じ名前のシナリオがあるとき差し替える")]
         public bool Overwrite { get; }
 
-        public SaveScenarioFromGroupCommand(
-            int modelIndex, string groupName, string scenarioName, string goal = "", bool overwrite = false)
+        public SaveScenarioFromModifierStackCommand(
+            int modelIndex, string stackName, string scenarioName, string goal = "", bool overwrite = false)
             : base(modelIndex)
         {
-            GroupName    = groupName ?? "";
+            StackName    = stackName ?? "";
             ScenarioName = scenarioName ?? "";
             Goal         = goal ?? "";
             Overwrite    = overwrite;
@@ -404,7 +404,7 @@ namespace Poly_Ling.Data
         public string Name { get; }
 
         [PLParam(Description = "項目の種別。Command 以外は実行しない項目")]
-        public ObjectGroupStepKind Kind { get; }
+        public ModifierStackStepKind Kind { get; }
 
         [PLParam(Description = "項目のコマンド名。Kind が Command のときだけ要る")]
         public string Action { get; }
@@ -438,7 +438,7 @@ namespace Poly_Ling.Data
 
         public AddScenarioItemCommand(
             int modelIndex, string name,
-            ObjectGroupStepKind kind = ObjectGroupStepKind.Command,
+            ModifierStackStepKind kind = ModifierStackStepKind.Command,
             string action = "", string purpose = "",
             string[] argKeys = null, string[] argValues = null,
             string refName = "",
@@ -518,7 +518,7 @@ namespace Poly_Ling.Data
         public string ScenarioItemId { get; }
 
         [PLParam(Description = "項目の種別。Command 以外は実行しない項目")]
-        public ObjectGroupStepKind Kind { get; }
+        public ModifierStackStepKind Kind { get; }
 
         [PLParam(Description = "項目のコマンド名。Kind が Command のときだけ要る")]
         public string Action { get; }
@@ -543,7 +543,7 @@ namespace Poly_Ling.Data
 
         public SetScenarioItemCommand(
             int modelIndex, string name, string scenarioItemId,
-            ObjectGroupStepKind kind = ObjectGroupStepKind.Command,
+            ModifierStackStepKind kind = ModifierStackStepKind.Command,
             string action = "", string purpose = "",
             string[] argKeys = null, string[] argValues = null,
             string refName = "",
@@ -1164,5 +1164,20 @@ namespace Poly_Ling.Data
         public bool Reset { get; }
 
         public QueryExecutionLogCommand(int modelIndex, bool reset = false) : base(modelIndex) { Reset = reset; }
+    }
+
+    // ================================================================
+    // 時間の計測（診断スイッチ PLDiag.Timing。モディファイア高速化計画 段 15）
+    // ================================================================
+
+    /// <summary>時間の計測（診断スイッチ PLDiag.Timing）を入れる・切る。</summary>
+    [PLCommand(Category = "verify", Writes = PLWriteScope.None, NoUi = true, Description = "時間の計測（診断スイッチ PLDiag.Timing）を入れる・切る。既定は切で、起動をまたいで覚えない。入れている間、モディファイアの作り直しの区間・描画準備（PresentAll）の中・パネルへの通知・コマンドの外枠・照合の取り分けを集計し、queryModifierGraph の lastPass に「区間:」「内訳（合計）」「区間の累計」「描画層の累計」として出す。ログパネルの「時間の計測 (Timing)」と同じスイッチ。")]
+    [PLResult("enabled", PLResultKind.Flag, Description = "入っているか")]
+    public sealed class SetDiagnosticTimingCommand : PanelCommand
+    {
+        [PLParam(Description = "true で入れる、false で切る", Required = true)]
+        public bool Enabled { get; }
+
+        public SetDiagnosticTimingCommand(int modelIndex, bool enabled) : base(modelIndex) { Enabled = enabled; }
     }
 }

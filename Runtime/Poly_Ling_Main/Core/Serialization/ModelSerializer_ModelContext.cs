@@ -124,10 +124,10 @@ namespace Poly_Ling.Serialization
             SaveMeshSelectionSetsToDTO(model, modelDTO);
 
             // ================================================================
-            // ObjectGroups
+            // ModifierStacks
             // ================================================================
 
-            SaveObjectGroupsToDTO(model, modelDTO);
+            SaveModifierStacksToDTO(model, modelDTO);
 
             // ================================================================
             // DataStore
@@ -306,10 +306,10 @@ namespace Poly_Ling.Serialization
             LoadMeshSelectionSetsFromDTO(modelDTO, model);
 
             // ================================================================
-            // ObjectGroups復元
+            // ModifierStacks復元
             // ================================================================
 
-            LoadObjectGroupsFromDTO(modelDTO, model);
+            LoadModifierStacksFromDTO(modelDTO, model);
 
             // ================================================================
             // DataStore復元

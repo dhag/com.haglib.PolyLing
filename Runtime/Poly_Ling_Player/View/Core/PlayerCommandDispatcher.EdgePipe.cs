@@ -4,19 +4,19 @@
 //
 // 【手順】
 //   1. 辺の辞書を決める（辞書名が空なら選択辺を新しい辞書へ保存）
-//   2. EdgeRibbonFaceCommand（開始タグ付き・辞書名・新規オブジェクト・グループとして残す）
+//   2. EdgeRibbonFaceCommand（開始タグ付き・辞書名・新規オブジェクト・モディファイアスタックとして残す）
 //   3. 帯を梯子として自動検索（BeltAcquire / AutoLadder）
-//   4. CreatePipeCommand（梯子の取り込み元＝帯・AutoLadder・グループとして残す）
-//   5. 2 と 4 のグループを MergeObjectGroupCommand で 1 つにまとめる
+//   4. CreatePipeCommand（梯子の取り込み元＝帯・AutoLadder・モディファイアスタックとして残す）
+//   5. 2 と 4 のスタックを MergeModifierStackCommand で 1 つにまとめる
 //   6. 帯を隠す（SetBatchVisibilityCommand）
 //
-// 【グループに残るのは 2 と 4 の単体コマンド】
-//   このコマンド自体はグループに残さない。作り直しでは帯を書き戻してから
+// 【スタックに残るのは 2 と 4 の単体コマンド】
+//   このコマンド自体はスタックに残さない。作り直しでは帯を書き戻してから
 //   RefreshBelts が帯から梯子を取り直すので、元の辺を動かせばパイプが追随する。
 //
 // 【Undo はまとめて 1 件】
 //   内側の記録は止め、終わってから MeshList のスナップショットと
-//   グループの追加を 1 つの操作として積む（RebuildObjectGroupCommand と同じ形）。
+//   スタックの追加を 1 つの操作として積む（RebuildModifierStackCommand と同じ形）。
 //   辞書の追加もスナップショットに含まれる（MeshContextCloneOps が StateSnapshot で辞書を写す）。
 
 using System;
@@ -70,7 +70,7 @@ namespace Poly_Ling.Player
 
                     _undoController?.SetModelContext(model);
                     var epListBefore  = MeshFilterToSkinnedRecord.CaptureList(model);
-                    int epGroupsBefore = model.ObjectGroupCount;
+                    int epGroupsBefore = model.ModifierStackCount;
 
                     string epFail;
                     string epGroupName = null;
@@ -146,9 +146,9 @@ namespace Poly_Ling.Player
             ribbonPl.WorldPosition  = Vector3.zero;
             ribbonPl.PlaceRotation  = Vector3.zero;
             ribbonPl.PlaceScale     = Vector3.one;
-            ribbonPl.KeepAsGroup    = true;
+            ribbonPl.KeepAsModifierStack    = true;
 
-            int groupsBeforeRibbon = model.ObjectGroupCount;
+            int groupsBeforeRibbon = model.ModifierStackCount;
 
             var ribbonResult = Dispatch(new EdgeRibbonFaceCommand(
                 c.ModelIndex, c.MasterIndices, c.WidthWorld, ribbonPl, c.ObjectIds,
@@ -162,7 +162,7 @@ namespace Poly_Ling.Player
             if (ribbonCtx?.MeshObject == null) return "作った帯面の描画オブジェクトを引けません";
 
             var ribbonGroup = FindGroupWithOutput(model, groupsBeforeRibbon, ribbonCtx.ObjectId);
-            if (ribbonGroup == null) return "帯面のオブジェクトグループが作られていません";
+            if (ribbonGroup == null) return "帯面のモディファイアスタックが作られていません";
 
             // ── 3. 帯を梯子として取り込む ──
             var acquired = BeltAcquire.Acquire(ribbonCtx, BeltAcquireMethod.AutoLadder, false, "");
@@ -180,12 +180,12 @@ namespace Poly_Ling.Player
             pipePl.WorldPosition = Vector3.zero;
             pipePl.PlaceRotation = Vector3.zero;
             pipePl.PlaceScale    = Vector3.one;
-            pipePl.KeepAsGroup   = true;
+            pipePl.KeepAsModifierStack   = true;
 
             var pipeParams = c.Params;
             pipeParams.Pivot = Vector3.zero;
 
-            int groupsBeforePipe = model.ObjectGroupCount;
+            int groupsBeforePipe = model.ModifierStackCount;
 
             var pipeResult = Dispatch(new CreatePipeCommand(
                 c.ModelIndex, pipeParams, c.Profile, c.ProfileClosed,
@@ -199,15 +199,15 @@ namespace Poly_Ling.Player
             pipeIndex = (pipeResult?.MasterIndices != null && pipeResult.MasterIndices.Length > 0)
                 ? pipeResult.MasterIndices[0] : -1;
 
-            if (model.ObjectGroupCount <= groupsBeforePipe)
-                return "パイプのオブジェクトグループが作られていません";
-            var pipeGroup = model.ObjectGroups[model.ObjectGroupCount - 1];
+            if (model.ModifierStackCount <= groupsBeforePipe)
+                return "パイプのモディファイアスタックが作られていません";
+            var pipeGroup = model.ModifierStacks[model.ModifierStackCount - 1];
 
-            // ── 5. 1 つのグループにまとめる ──
-            var mergeResult = Dispatch(new MergeObjectGroupCommand(
+            // ── 5. 1 つのスタックにまとめる ──
+            var mergeResult = Dispatch(new MergeModifierStackCommand(
                 c.ModelIndex, ribbonGroup.Name, pipeGroup.Name));
             if (mergeResult != null && !mergeResult.Success)
-                return $"グループをまとめられませんでした: {mergeResult.Reason}";
+                return $"スタックをまとめられませんでした: {mergeResult.Reason}";
             groupName = ribbonGroup.Name;
 
             // ── 6. 帯を隠す ──
@@ -223,8 +223,8 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 記録を止めて行った辺の操作（辞書の追加・帯・パイプ・グループ）を Undo 1 件として積む。
-        /// MeshList のスナップショット（辞書を含む）と、groupsBefore 以降に足されたグループの追加を
+        /// 記録を止めて行った辺の操作（辞書の追加・帯・パイプ・スタック）を Undo 1 件として積む。
+        /// MeshList のスナップショット（辞書を含む）と、groupsBefore 以降に足されたスタックの追加を
         /// 1 つの操作にまとめる。
         /// </summary>
         private void RecordEdgeOperationUndo(
@@ -236,30 +236,30 @@ namespace Poly_Ling.Player
 
             RecordMeshListSnapshot(listBefore, model, description);
 
-            for (int gi = groupsBefore; gi < model.ObjectGroupCount; gi++)
+            for (int gi = groupsBefore; gi < model.ModifierStackCount; gi++)
             {
-                var added = model.ObjectGroups[gi];
+                var added = model.ModifierStacks[gi];
                 if (added == null) continue;
-                RecordObjectGroupUndo(
-                    new ObjectGroupChangeRecord
+                RecordModifierStackUndo(
+                    new ModifierStackChangeRecord
                     {
                         AddedGroup = added.Clone(),
                         AddedIndex = gi,
                     },
-                    $"オブジェクトグループ追加: {added.Name}");
+                    $"モディファイアスタック追加: {added.Name}");
             }
 
             _undoController.MeshListStack.EndGroup();
         }
 
-        /// <summary>fromIndex 以降に足されたグループのうち、objectId を出力に持つもの。</summary>
-        private static Poly_Ling.Data.ObjectGroup FindGroupWithOutput(
+        /// <summary>fromIndex 以降に足されたスタックのうち、objectId を出力に持つもの。</summary>
+        private static Poly_Ling.Data.ModifierStack FindGroupWithOutput(
             ModelContext model, int fromIndex, ulong objectId)
         {
-            if (model?.ObjectGroups == null || objectId == 0UL) return null;
-            for (int i = Mathf.Max(0, fromIndex); i < model.ObjectGroups.Count; i++)
+            if (model?.ModifierStacks == null || objectId == 0UL) return null;
+            for (int i = Mathf.Max(0, fromIndex); i < model.ModifierStacks.Count; i++)
             {
-                var g = model.ObjectGroups[i];
+                var g = model.ModifierStacks[i];
                 if (g != null && g.ContainsOutput(objectId)) return g;
             }
             return null;

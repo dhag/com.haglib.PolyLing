@@ -192,12 +192,12 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                case QueryObjectGroupStepArgsCommand c:
+                case QueryModifierStackStepArgsCommand c:
                 {
                     var qaModel = project.GetModel(c.ModelIndex);
                     if (qaModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
 
-                    string qaData = BuildObjectGroupStepArgsData(project, qaModel, c, out string qaErr);
+                    string qaData = BuildModifierStackStepArgsData(project, qaModel, c, out string qaErr);
                     if (qaData == null) { Fail(qaErr); return true; }
                     ReportData(qaData);
                     return true;
@@ -260,12 +260,12 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                case QueryObjectGroupsCommand c:
+                case QueryModifierStacksCommand c:
                 {
                     var qgModel = project.GetModel(c.ModelIndex);
                     if (qgModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
 
-                    ReportData(BuildObjectGroupsData(project, qgModel, c));
+                    ReportData(BuildModifierStacksData(project, qgModel, c));
                     return true;
                 }
 

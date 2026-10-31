@@ -17,7 +17,7 @@
 // 【パイプ化】
 //   オンのときは CreateEdgePipeCommand を送る。断面・パイプの諸元・梯子の向き・
 //   スプラインは「パイプ」図形で設定したもの（_pipeP / _pipeEdit / _pipeOrient / _pipeSpline）を使う。
-//   帯とパイプは 1 つのオブジェクトグループになり、帯は隠れる。
+//   帯とパイプは 1 つのモディファイアスタックになり、帯は隠れる。
 //
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 

@@ -1,20 +1,20 @@
-// ObjectGroupCsv.cs
-// オブジェクトグループの CSV 本文（objectgroups.csv / シナリオの置き場のファイル）を組み立て・読み取る。
+// ModifierStackCsv.cs
+// モディファイアスタックの CSV 本文（modifierstacks.csv / シナリオの置き場のファイル）を組み立て・読み取る。
 // Runtime/Poly_Ling_Main/Core/Serialization/ に配置
 //
 // 【なぜ 1 か所にまとめるか】
 //   同じ形のファイルを 2 か所が読み書きする。
-//     モデルに属するグループ … CsvModelSerializer（モデルフォルダの objectgroups.csv）
-//     シナリオのグループ         … ScenarioLibrary（persistentDataPath の scenarios フォルダ。1 シナリオ 1 ファイル）
+//     モデルに属するスタック … CsvModelSerializer（モデルフォルダの modifierstacks.csv）
+//     シナリオのスタック         … ScenarioLibrary（persistentDataPath の scenarios フォルダ。1 シナリオ 1 ファイル）
 //   それぞれに構文解析を置くと、列を 1 つ足すたびに 2 か所を直すことになり、
 //   必ず片方が取り残される。本文の組み立てと読み取りはここだけに置き、
 //   ファイルの入出力は呼ぶ側が持つ。
 //
 // 【行の形】
-//   g  … グループ 1 件の頭
+//   g  … スタック 1 件の頭
 //        g,name,action0,output0,stash,autoUpdate,sourceDigest,goal
 //        action0 と output0 は項目 0 の要約で、version 1.0 の読み手が
-//        ここだけを見て 1 項目のグループとして読めるようにしてある。
+//        ここだけを見て 1 項目のスタックとして読めるようにしてある。
 //   gd … 作成日時（gd,ISO 8601）。g 行の直後に 1 行
 //   gp … 前提条件 1 件
 //   gc … 成功条件 1 件
@@ -31,24 +31,24 @@
 //   項目 0 を作って読む。
 //
 // 【版】
-//   1.0 … g / a / r のみ。1 グループ 1 コマンド。
+//   1.0 … g / a / r のみ。1 スタック 1 コマンド。
 //   1.1 … s / o を追加。項目列。
 //   1.2 … g に goal、s に scenarioItemId / kind / purpose、gp / gc / gt / gv を追加。
 //   1.3 … s に refName / expansionPolicy を追加（Kind = ScenarioRef 用）。
 //   1.4 … s に usageScene を追加（項目が属する利用シーンの名前）。
 //   1.5 … s に profileDim を追加（Args のプロファイルの点の成分数。今は 3）。
 //         この列が無い項目（1.4 以前）は 2 成分として読み、読み終えたところで
-//         ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
+//         ModifierStackOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
 //   1.6 … ga 行を追加（シナリオの引数）。行の無い 1.5 以前は引数なしとして読む。
 //   1.7 … gr 行を追加（シナリオの出力）。行の無い 1.6 以前は出力なしとして読む。
-//   1.8 … gd 行を追加（グループの作成日時。規約4：.mfproj の objectGroups[].createdAt・
+//   1.8 … gd 行を追加（スタックの作成日時。規約4：.mfproj の modifierStacks[].createdAt・
 //         バイナリ PLRM v12 と揃える）。行の無い 1.7 以前は読込時刻のまま。
 //   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 / 1.4 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
 // 【並びを固定する】
 //   Dictionary の列挙順は保証されない。書く前にキー順へ並べ替える
-//   （ObjectGroupStep.SortedArgs / SortedMeshRefIds）。並べ替えないと
+//   （ModifierStackStep.SortedArgs / SortedMeshRefIds）。並べ替えないと
 //   中身が同じでも保存のたびに差分が出る。
 //
 // 【参照は ObjectId のまま】
@@ -63,8 +63,8 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.Serialization
 {
-    /// <summary>オブジェクトグループの CSV 本文を組み立て・読み取る。</summary>
-    public static class ObjectGroupCsv
+    /// <summary>モディファイアスタックの CSV 本文を組み立て・読み取る。</summary>
+    public static class ModifierStackCsv
     {
         /// <summary>書き出す版。</summary>
         public const string Version = "1.8";
@@ -73,9 +73,9 @@ namespace Poly_Ling.Serialization
         // 書き
         // ================================================================
 
-        /// <summary>グループ列を CSV 本文にする。</summary>
+        /// <summary>スタック列を CSV 本文にする。</summary>
         /// <param name="header">先頭の # 行に入れる名前。</param>
-        public static string Build(IEnumerable<ObjectGroup> groups, string header = "PolyLing_ObjectGroups")
+        public static string Build(IEnumerable<ModifierStack> groups, string header = "PolyLing_ModifierStacks")
         {
             var sb = new StringBuilder();
             sb.AppendLine($"#{header},version,{Version}");
@@ -87,7 +87,7 @@ namespace Poly_Ling.Serialization
                 if (g == null) continue;
 
                 // g 行の action と出力先は項目 0 の要約。
-                // ObjectGroup.Action / OutputObjectId は Step0 を通るが、
+                // ModifierStack.Action / OutputObjectId は Step0 を通るが、
                 // あの getter は項目が無いときに空の項目を作る。書き出しで対象を
                 // 書き換えてしまうので、ここでは項目の有無を自分で見る。
                 var first = (g.Steps != null && g.Steps.Count > 0) ? g.Steps[0] : null;
@@ -165,33 +165,33 @@ namespace Poly_Ling.Serialization
         // 読み
         // ================================================================
 
-        /// <summary>CSV の行列からグループ列を読む。壊れた行は捨てて次へ進む。</summary>
-        public static List<ObjectGroup> Parse(IEnumerable<string> lines)
+        /// <summary>CSV の行列からスタック列を読む。壊れた行は捨てて次へ進む。</summary>
+        public static List<ModifierStack> Parse(IEnumerable<string> lines)
         {
-            var result = new List<ObjectGroup>();
+            var result = new List<ModifierStack>();
             if (lines == null) return result;
 
-            ObjectGroup     cur     = null;
-            ObjectGroupStep curStep = null;
+            ModifierStack     cur     = null;
+            ModifierStackStep curStep = null;
 
             // s 行が無いファイル（version 1.0）のために、g 行の値を控えておく。
             string legacyAction = "";
             ulong  legacyOutput = 0UL;
 
             // s 行が無いまま o / a / r が来たら、g 行の控えから項目 0 を作る。
-            ObjectGroupStep EnsureStep()
+            ModifierStackStep EnsureStep()
             {
                 if (curStep != null) return curStep;
                 if (cur == null) return null;
 
                 // s 行が無いのは version 1.0 のファイルなので、プロファイルは 2 成分。
-                curStep = new ObjectGroupStep { Action = legacyAction, ProfileDim = 2 };
+                curStep = new ModifierStackStep { Action = legacyAction, ProfileDim = 2 };
                 if (legacyOutput != 0UL) curStep.OutputObjectIds.Add(legacyOutput);
                 cur.Steps.Add(curStep);
                 return curStep;
             }
 
-            // 項目が 1 つも書かれていないグループ。
+            // 項目が 1 つも書かれていないスタック。
             //
             // version 1.0 の形（g 行に action と出力先を持ち、s 行が無い）だけを
             // 1 項目として起こす。項目 0 個のシナリオ（createScenario で作ったもの）を
@@ -203,8 +203,8 @@ namespace Poly_Ling.Serialization
                     && (!string.IsNullOrEmpty(legacyAction) || legacyOutput != 0UL))
                     EnsureStep();
                 cur.EnsureScenarioItemIds();
-                Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(cur);
-                Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(cur);
+                Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyProfileArgs(cur);
+                Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyBlendRefs(cur);
             }
 
             foreach (var line in lines)
@@ -225,7 +225,7 @@ namespace Poly_Ling.Serialization
                         legacyAction = cols.Length > 2 ? Unesc(cols[2]) : "";
                         legacyOutput = PULong(cols, 3);
 
-                        cur = new ObjectGroup(Unesc(cols[1]))
+                        cur = new ModifierStack(Unesc(cols[1]))
                         {
                             StashObjectId = PULong(cols, 4),
                             AutoUpdate    = PInt(cols, 5) != 0,
@@ -261,7 +261,7 @@ namespace Poly_Ling.Serialization
 
                     case "gv":
                         if (cur == null) break;
-                        cur.Provenance = new ObjectGroupProvenance
+                        cur.Provenance = new ModifierStackProvenance
                         {
                             ParentName    = cols.Length > 1 ? Unesc(cols[1]) : "",
                             ChangeSummary = cols.Length > 2 ? Unesc(cols[2]) : "",
@@ -292,7 +292,7 @@ namespace Poly_Ling.Serialization
                     case "s":
                         // 先頭が g でないファイルは壊れている。捨てて次へ。
                         if (cur == null) break;
-                        curStep = new ObjectGroupStep
+                        curStep = new ModifierStackStep
                         {
                             Action          = cols.Length > 1 ? Unesc(cols[1]) : "",
                             ScenarioItemId       = cols.Length > 2 ? Unesc(cols[2]) : "",
@@ -411,13 +411,13 @@ namespace Poly_Ling.Serialization
         /// 項目の種別を読む。名前でも数字でも受ける。読めなければ実行する項目とみなす
         /// （version 1.1 以前にはこの列が無く、全部が実行する項目だった）。
         /// </summary>
-        private static ObjectGroupStepKind ParseKind(string[] cols, int index)
+        private static ModifierStackStepKind ParseKind(string[] cols, int index)
         {
-            if (cols == null || index < 0 || index >= cols.Length) return ObjectGroupStepKind.Command;
+            if (cols == null || index < 0 || index >= cols.Length) return ModifierStackStepKind.Command;
             string s = Unesc(cols[index]);
-            if (string.IsNullOrEmpty(s)) return ObjectGroupStepKind.Command;
-            return Enum.TryParse(s, ignoreCase: true, out ObjectGroupStepKind k)
-                ? k : ObjectGroupStepKind.Command;
+            if (string.IsNullOrEmpty(s)) return ModifierStackStepKind.Command;
+            return Enum.TryParse(s, ignoreCase: true, out ModifierStackStepKind k)
+                ? k : ModifierStackStepKind.Command;
         }
 
         /// <summary>

@@ -109,6 +109,16 @@ namespace Poly_Ling.Player
             _shortcutController.Register(ShortcutMap.CmdPanelMeshList,
                 ShowMeshListPanel);
 
+            // 選択部分のコピー・カット・貼り付け・その場で複製（Blender の操作に合わせる）。
+            // 左ペインのボタンと同じ処理。貼り付け先はキーで決まり、左ペインのドロップダウンは見ない。
+            _shortcutController.Register(ShortcutMap.CmdCopy,  ExecuteCopySelection);
+            _shortcutController.Register(ShortcutMap.CmdCut,   ExecuteCutSelection);
+            _shortcutController.Register(ShortcutMap.CmdPaste,
+                () => ExecutePasteSelection(Poly_Ling.Ops.SelectionPasteDestination.ActiveObject));
+            _shortcutController.Register(ShortcutMap.CmdPasteNewObject,
+                () => ExecutePasteSelection(Poly_Ling.Ops.SelectionPasteDestination.NewObject));
+            _shortcutController.Register(ShortcutMap.CmdDuplicate, ExecuteDuplicateInPlace);
+
             // 図形生成 (2キー連続 P→形状)。サブメニューを開くだけ (生成はしない)。
             _shortcutController.Register(ShortcutMap.CmdShapeCube,
                 () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Cube));

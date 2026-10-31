@@ -156,7 +156,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUndo                = () => { if (_editOps == null) return false; CancelPreviewsBeforeUndo(); return _editOps.PerformUndo(); };
             _commandDispatcher.OnRedo                = () => { if (_editOps == null) return false; CancelPreviewsBeforeUndo(); return _editOps.PerformRedo(); };
 
-            // 頂点ドラッグを離したら、オブジェクトグループの要評価の項目を流す（作り直し整備計画 段 4）。
+            // 頂点ドラッグを離したら、モディファイアスタックの要評価の項目を流す（作り直し整備計画 段 4）。
             if (_viewportManager != null)
                 _viewportManager.OnVerticesDragEnded = _commandDispatcher.EvaluateModifiersAfterDrag;
         }
@@ -347,6 +347,7 @@ namespace Poly_Ling.Player
             GeneratedImageMaterial imageMaterial = null)
         {
             createdMasterIndex = -1;
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("生成");   // 計測（段 10）。書き戻しの実行の始めからここまで
 
             PrepareHandlersForGeneratedMesh();
 
@@ -401,7 +402,7 @@ namespace Poly_Ling.Player
         /// 【なぜコマンド経路にも要るか】
         ///   引き継ぎは取り込み元のメッシュを位置で突き合わせて行う（BeltWeightBinder）。
         ///   解決口を渡さないと引き当てるものが無く、生成物はウェイトを 1 つも持たない。
-        ///   オブジェクトグループの作り直しもこの経路を通るので、渡さないと
+        ///   モディファイアスタックの作り直しもこの経路を通るので、渡さないと
         ///   作り直すたびに引き継ぎが消え、スキンド化が書いた値ごと上書きされる。
         /// </summary>
         private MeshObject ResolveBeltSourceForCommand(int masterIndex)

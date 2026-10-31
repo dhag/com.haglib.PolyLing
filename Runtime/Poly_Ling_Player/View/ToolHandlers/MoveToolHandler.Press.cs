@@ -718,8 +718,12 @@ namespace Poly_Ling.Player
                       || _state == MoveState.CenterDragging;
             if (moved)
             {
-                CommitDragMove();
-                OnExitTransformDragging?.Invoke();
+                // 送ったコマンド（ApplyNumericMove）がドラッグ状態を抜けるので、もう一度は抜けない
+                // （DragEnd の描き直しが二重に走っていた。モディファイア高速化計画 段 9）。
+                // 送らなかったとき・コマンドが拒否されてドラッグ状態が残ったときは抜ける。
+                bool sent = CommitDragMove();
+                if (!sent || IsTransformDragging == null || IsTransformDragging())
+                    OnExitTransformDragging?.Invoke();
             }
 
             // ツール流用フック: ツール固有ドラッグの終了 (Bevel 確定、Extrude 確定等)

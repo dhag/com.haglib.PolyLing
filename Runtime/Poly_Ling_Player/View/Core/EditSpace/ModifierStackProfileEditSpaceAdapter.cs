@@ -1,12 +1,12 @@
-// GroupProfileEditSpaceAdapter.cs
-// 作業空間の断面系アダプタ（オブジェクトグループの項目の断面）。
+// ModifierStackProfileEditSpaceAdapter.cs
+// 作業空間の断面系アダプタ（モディファイアスタックの項目の断面）。
 // Runtime/Poly_Ling_Player/View/Core/EditSpace/ に配置
 //
 // 【何をするか】（PolyLing_作り直し整備計画.md 段 6「断面の線分 → 断面」）
-//   元データはグループの項目が控えた断面（点列を持っている項目の引数）。
+//   元データはスタックの項目が控えた断面（点列を持っている項目の引数）。
 //   代理は開くときに断面から作った線分オブジェクト（断面 → 線分 ＝ 正方向）。
 //   反映 ＝ 逆方向：代理の線分から断面を読み（取り込みと同じ規則 ProfileAcquire）、
-//          項目の引数へ書いて作り直し、下流を流す（setObjectGroupStepArgs と同じ処理。Undo 1 回）。
+//          項目の引数へ書いて作り直し、下流を流す（setModifierStackStepArgs と同じ処理。Undo 1 回）。
 //   取消し ＝ 項目の断面から線分を作り直して代理を置き換える。
 //   閉じると代理を消す。
 //
@@ -27,7 +27,7 @@ using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
-    public sealed class GroupProfileEditSpaceAdapter : IEditSpaceAdapter
+    public sealed class ModifierStackProfileEditSpaceAdapter : IEditSpaceAdapter
     {
         public string GroupName { get; }
         public int    StepIndex { get; }
@@ -37,7 +37,7 @@ namespace Poly_Ling.Player
         private readonly Func<PanelCommand, string> _send;
         private readonly int _modelIndex;
 
-        public GroupProfileEditSpaceAdapter(
+        public ModifierStackProfileEditSpaceAdapter(
             Func<ProjectContext> getProject, Func<PanelCommand, string> send, int modelIndex,
             string groupName, int stepIndex, ProfileEditKind kind)
         {
@@ -79,12 +79,12 @@ namespace Poly_Ling.Player
         {
             prof = null;
             var model = project?.GetModel(modelIndex);
-            var g = model?.FindObjectGroupByName(groupName);
-            if (g == null) return $"グループが見つかりません: {groupName}";
+            var g = model?.FindModifierStackByName(groupName);
+            if (g == null) return $"スタックが見つかりません: {groupName}";
             var step = g.GetStep(stepIndex);
             if (step == null) return $"項目 {stepIndex} がありません";
 
-            var cmd = ObjectGroupOps.BuildCommand(project, modelIndex, g, stepIndex, out string err);
+            var cmd = ModifierStackOps.BuildCommand(project, modelIndex, g, stepIndex, out string err);
             if (cmd == null) return err ?? "項目のコマンドを組めません";
             var t = cmd.GetType();
 
@@ -230,17 +230,17 @@ namespace Poly_Ling.Player
                     foreach (var q in lp.Points) { flat.Add(q.x); flat.Add(q.y); flat.Add(q.z); }
                 }
                 if (starts.Count == 0) return "3 点以上のループがありません";
-                keys.Add(read.Key); vals.Add(ObjectGroupOps.JoinFloats(flat));
-                if (!string.IsNullOrEmpty(read.LoopStartsKey)) { keys.Add(read.LoopStartsKey); vals.Add(ObjectGroupOps.JoinInts(starts)); }
-                if (!string.IsNullOrEmpty(read.LoopIsHoleKey)) { keys.Add(read.LoopIsHoleKey); vals.Add(ObjectGroupOps.JoinBools(holes)); }
+                keys.Add(read.Key); vals.Add(ModifierStackOps.JoinFloats(flat));
+                if (!string.IsNullOrEmpty(read.LoopStartsKey)) { keys.Add(read.LoopStartsKey); vals.Add(ModifierStackOps.JoinInts(starts)); }
+                if (!string.IsNullOrEmpty(read.LoopIsHoleKey)) { keys.Add(read.LoopIsHoleKey); vals.Add(ModifierStackOps.JoinBools(holes)); }
             }
             else
             {
                 if (read.Points.Count < 2) return "断面の点が 2 つ未満です";
-                keys.Add(read.Key); vals.Add(ObjectGroupOps.JoinVector3(read.Points));
+                keys.Add(read.Key); vals.Add(ModifierStackOps.JoinVector3(read.Points));
             }
 
-            return _send?.Invoke(new SetObjectGroupStepArgsCommand(
+            return _send?.Invoke(new SetModifierStackStepArgsCommand(
                 _modelIndex, GroupName, StepIndex, keys.ToArray(), vals.ToArray(), allowProfileKeys: true))
                 ?? null;
         }

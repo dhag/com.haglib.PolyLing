@@ -512,25 +512,29 @@ namespace Poly_Ling.Player
         ///   SendCommand が未結線なら、プレビューを消して終わりでは移動が失われる。
         ///   その場合は従来どおり EndMove で確定させる。
         /// </summary>
-        private void CommitDragMove()
+        /// <returns>
+        /// コマンドを送ったら true。送ったコマンド（ApplyNumericMove）がドラッグ状態を抜けるので、
+        /// 呼び出し側はもう一度抜けない（DragEnd の描き直しが二重に走っていた。モディファイア高速化計画 段 9）。
+        /// </returns>
+        private bool CommitDragMove()
         {
             Vector3 total = _dragWorldTotal;
 
-            if (SendCommand == null) { EndMove(); return; }
+            if (SendCommand == null) { EndMove(); return false; }
 
             if (total == Vector3.zero)
             {
                 // 実質動いていない。プレビューを戻して Undo も積まない。
                 SetTotalDeltaAll(Vector3.zero);
                 _meshTransforms.Clear();
-                return;
+                return false;
             }
 
             var model = _project?.CurrentModel;
-            if (model == null) { EndMove(); return; }
+            if (model == null) { EndMove(); return false; }
 
             var targets = new List<int>(_meshTransforms.Keys);
-            if (targets.Count == 0) { EndMove(); return; }
+            if (targets.Count == 0) { EndMove(); return false; }
 
             // プレビューを開始位置へ戻す。
             SetTotalDeltaAll(Vector3.zero);
@@ -546,6 +550,7 @@ namespace Poly_Ling.Player
                 magnetRadius:       MagnetRadius,
                 magnetFalloff:      MagnetFalloff,
                 magnetDistanceMode: MagnetDistanceMode));
+            return true;
         }
 
         private void EndMove()

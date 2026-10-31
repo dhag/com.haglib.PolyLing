@@ -26,6 +26,45 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.Core
 {
+    /// <summary>
+    /// 描画まわりの区間の累計（計測用。モディファイア高速化計画 段 13）。
+    /// Render・Main 層から書き、Player 層（PlayerViewportManager.ViewTimingText）が読んで空にする。
+    /// </summary>
+    public static class RenderTiming
+    {
+        private static readonly System.Collections.Generic.List<string> _order = new System.Collections.Generic.List<string>();
+        private static readonly System.Collections.Generic.Dictionary<string, long> _sum = new System.Collections.Generic.Dictionary<string, long>();
+
+        /// <summary>start（Stopwatch.GetTimestamp の値）からここまでを label の累計へ足し、今の時刻を返す。</summary>
+        public static long Add(string label, long start)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (!Enabled) return now;   // 診断スイッチが切なら集計しない（段 15）
+            if (_sum.TryGetValue(label, out long cur)) _sum[label] = cur + (now - start);
+            else { _sum[label] = now - start; _order.Add(label); }
+            return now;
+        }
+
+        public static long Now() => System.Diagnostics.Stopwatch.GetTimestamp();
+
+        /// <summary>集計するか（診断スイッチ PLDiag.Timing。段 15）。</summary>
+        public static bool Enabled => Poly_Ling.Diagnostics.PLDiag.Timing;
+
+        public static void Reset() { _sum.Clear(); _order.Clear(); }
+
+        /// <summary>「名前 ms / …」。</summary>
+        public static string Text()
+        {
+            var parts = new System.Collections.Generic.List<string>(_order.Count);
+            foreach (var label in _order)
+            {
+                double ms = _sum[label] * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                parts.Add(label + " " + ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            return string.Join(" / ", parts);
+        }
+    }
+
     public partial class UnifiedBufferManager
     {
         /// <summary>
@@ -41,9 +80,13 @@ namespace Poly_Ling.Core
         {
             if (!_isInitialized || _modelContext == null) return;
 
+            long t = RenderTiming.Now();   // 計測（段 13）
             UpdateVertexVisibilityFlags();
+            t = RenderTiming.Add("可視:頂点", t);
             UpdateLineVisibilityFlags();
+            t = RenderTiming.Add("可視:線分", t);
             UpdateFaceVisibilityFlags();
+            RenderTiming.Add("可視:面", t);
         }
 
         // ================================================================

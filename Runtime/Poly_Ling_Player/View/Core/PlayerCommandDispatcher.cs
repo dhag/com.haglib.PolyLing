@@ -13,7 +13,7 @@
 //     EditTools.cs                選択・移動・位相編集・ツール確定・ギズモ・デフォーマ・作業軸
 //     BoneMorphUv.cs              BonePose・モーフ・BoneTransform・UV・マテリアル
 //     Blend.cs                    モデル／メッシュブレンド
-//     ObjectGroup.cs              オブジェクトグループ
+//     ModifierStack.cs              モディファイアスタック
 //     DeformSkin.cs               特殊な変形・スキン関連
 //     MirrorHumanoidVrm.cs        Quad減面・ミラー・Humanoid・VRM 設定・Avatar リターゲット
 //     SpringBone.cs               揺れもの（VRM SpringBone）
@@ -822,8 +822,8 @@ namespace Poly_Ling.Player
                     }
                 }
 
-                // オブジェクトグループの出力は書けない（PolyLing_作り直し整備計画.md 2.5・段 2）。
-                // 作り直しの書き戻し（RunObjectGroupStep）の中では判定しない。
+                // モディファイアスタックの出力は書けない（PolyLing_作り直し整備計画.md 2.5・段 2）。
+                // 作り直しの書き戻し（RunModifierStackStep）の中では判定しない。
                 if (authProject != null && _modifierWriteBackDepth == 0)
                 {
                     // 作業空間の反映・取消し・閉じるは、選択ではなく作業空間が書く先で判定する（段 8）。
@@ -874,6 +874,10 @@ namespace Poly_Ling.Player
             var saved = _pendingResult;
             _pendingResult = null;
 
+            // 区間の累計（計測。モディファイア高速化計画 段 13）は一番外側の始めで空にする。
+            if (_dispatchDepth == 0) PlayerViewportManager.ResetViewTiming();
+            long tc = System.Diagnostics.Stopwatch.GetTimestamp();
+
             // 一番外側の呼び出しだけが、実行前の構造署名と構造通知の回数を控える。
             bool outermost = _dispatchDepth == 0 && _structureNotifyCount != null;
             if (outermost)
@@ -889,8 +893,10 @@ namespace Poly_Ling.Player
             if (topLevel)
             {
                 _dispatchNotRecorded = false;
+                BeginCommandTiming();   // ドラッグを離したときのパスへコマンドの時間を足さない（段 7・段 8）
                 // 版と差分のために、実行前の安定 ID を控える（PlayerCommandDispatcher.Revision.cs）。
                 _dispatchEntryObjectIds = CaptureObjectIds();
+                tc = PlayerViewportManager.AddViewTiming("C:実行前の控え", tc);
             }
 
             // 実行記録（ExecutionLog.cs。既定は切）。切なら判定 1 回だけ。
@@ -899,28 +905,44 @@ namespace Poly_Ling.Player
             int  runLogStart   = (logThis && cmd is ContinueScenarioCommand && _scenarioRun != null)
                                ? _scenarioRun.LogLines.Count : 0;
 
+            // 描画準備を後へ回す区間（モディファイア高速化計画 段 9）。一番外側の書き込みのあるコマンドだけ。
+            // シナリオを流すコマンドは除く（項目の間で画面座標を読む項目があるため、項目ごとに描画準備する）。
+            bool deferPresent = topLevel && _viewportManager != null
+                && Poly_Ling.Remote.RemoteOwnership.WriteScopeOf(cmd) != PLWriteScope.None
+                && !(cmd is RunScenarioCommand) && !(cmd is ContinueScenarioCommand);
+            if (deferPresent) _viewportManager.BeginDeferPresent();
+
             _dispatchDepth++;
 
             CommandResult result;
             try
             {
+                if (topLevel) tc = System.Diagnostics.Stopwatch.GetTimestamp();
                 DispatchCore(cmd);
+                if (topLevel) PlayerViewportManager.AddViewTiming("C:コマンド本体", tc);
                 result = _pendingResult ?? CommandResult.Ok();
 
-                // オブジェクトグループの要評価の項目を依存の順に流す（作り直し整備計画 段 4）。
+                // モディファイアスタックの要評価の項目を依存の順に流す（作り直し整備計画 段 4）。
                 // 深さ 1 のうちに流すので、書き戻しの Dispatch は入れ子になり、記録・版の対象にならない。
                 // Undo・Redo の復元経路にはきっかけ 2 か所を通らないものがあるので、署名を取り直してから流す。
                 if (topLevel && ShouldEvaluateModifiersAfter(cmd))
                     RunModifierEvaluation(PanelCommandFactory.ActionOf(cmd.GetType()),
-                        recheckInputs: cmd is PerformUndoCommand || cmd is PerformRedoCommand);
+                        recheckInputs: cmd is PerformUndoCommand || cmd is PerformRedoCommand,
+                        displayAtCommandEnd: true);
 
                 // 書き込みのあるコマンドの終わりに、GPU の位置を CPU に合わせる（作り直し整備計画 段 B）。
                 // コマンドの間は GPU ＝ CPU を保つ。書き手ごとに同期を呼ぶ約束はやめた。
                 if (topLevel && Poly_Ling.Remote.RemoteOwnership.WriteScopeOf(cmd) != PLWriteScope.None)
                 {
-                    _viewportManager?.SettleWorldPositions(_getProject());
+                    long tSettle = System.Diagnostics.Stopwatch.GetTimestamp();
+                    int  rbSettle = ModifierEvaluator.RefreshCount;
+                    _viewportManager?.SettleWorldPositions(_getProject(), present: !deferPresent);
+                    FinishCommandSettle(MsSince(tSettle), ModifierEvaluator.RefreshCount - rbSettle);
+                    long tk = System.Diagnostics.Stopwatch.GetTimestamp();
                     CheckObjectIdsAfter(cmd);
+                    PlayerViewportManager.AddViewTiming("C:ObjectId の点検", tk);
                 }
+                else if (topLevel) _passOfThisCommand = null;
             }
             finally
             {
@@ -928,8 +950,17 @@ namespace Poly_Ling.Player
                 _dispatchDepth--;
                 if (outermost)
                 {
+                    long tr = System.Diagnostics.Stopwatch.GetTimestamp();
                     ResolvePartsSetsIfTopologyChanged();
+                    tr = PlayerViewportManager.AddViewTiming("C:パーツ辞書の引き直し", tr);
                     NotifyStructureIfMissed();
+                    PlayerViewportManager.AddViewTiming("C:構造通知の確かめ", tr);
+                }
+                if (deferPresent)
+                {
+                    // 後へ回した描画準備をここで 1 回だけ行う（段 9）。時間はコマンド全体の行に入れる。
+                    _viewportManager.EndDeferPresent(_getProject());
+                    AppendCommandTotalTiming();
                 }
             }
 
@@ -1299,7 +1330,7 @@ namespace Poly_Ling.Player
             if (DispatchUiAutomation(cmd)) { MarkNotRecorded(); return; }
 
             // シナリオもモデルとプロジェクトを見ない。同じ理由でここで捌く。
-            // 例外は saveScenarioFromGroup で、受け口の中で現在のモデルを見る。
+            // 例外は saveScenarioFromModifierStack で、受け口の中で現在のモデルを見る。
             // 記録の対象外（シナリオを記録すると、記録の開始・停止まで項目に入る）。
             if (DispatchScenario(cmd)) { MarkNotRecorded(); return; }
 
@@ -1356,7 +1387,7 @@ namespace Poly_Ling.Player
             if (DispatchMeshAttributes(cmd, project, model))    return;
             if (DispatchBoneMorphUv(cmd, project, model))       return;
             if (DispatchBlend(cmd, project, model))             return;
-            if (DispatchObjectGroup(cmd, project, model))       return;
+            if (DispatchModifierStack(cmd, project, model))       return;
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchSubdivision(cmd, project, model))       return;
@@ -1375,6 +1406,7 @@ namespace Poly_Ling.Player
             if (DispatchSelectionSets(cmd, project, model))     return;
             if (DispatchNormalEdit(cmd, project, model))        return;
             if (DispatchMeshSelectionSets(cmd, project, model)) return;
+            if (DispatchClipboard(cmd, project, model))         return;
 
             // ── その他（モーフ変換・プレビュー等）は Player では未実装
             Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");

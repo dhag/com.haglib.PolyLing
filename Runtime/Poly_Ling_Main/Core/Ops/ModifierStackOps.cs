@@ -1,25 +1,25 @@
-// ObjectGroupOps.cs
-// ObjectGroup の記録・判定・再構築。
+// ModifierStackOps.cs
+// ModifierStack の記録・判定・再構築。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【役割】
-//   Capture     … 実行した生成コマンドと出来た出力先から、グループを 1 件作る
-//   CaptureStep … 同じものを項目 1 つとして作る（グループへは足さない）
-//   AppendStep  … 既にあるグループの末尾へ項目を足す
+//   Capture     … 実行した生成コマンドと出来た出力先から、スタックを 1 件作る
+//   CaptureStep … 同じものを項目 1 つとして作る（スタックへは足さない）
+//   AppendStep  … 既にあるスタックの末尾へ項目を足す
 //   IsStale     … ソースが前回ビルド時から変わったか
-//   BuildCommand… グループの項目から今のモデルに合った生成コマンドを組み直す
-//   PurgeMissing… 参照先が消えたグループを片づける（明示操作からのみ呼ぶ）
+//   BuildCommand… スタックの項目から今のモデルに合った生成コマンドを組み直す
+//   PurgeMissing… 参照先が消えたスタックを片づける（明示操作からのみ呼ぶ）
 //
 // 【項目単位で働く】
 //   索引の引き直し・取り込みの掛け直しはコマンド 1 つぶんの仕事なので、
-//   中身は項目を受け取る形にしてある。グループを受け取る旧来の口は
+//   中身は項目を受け取る形にしてある。スタックを受け取る旧来の口は
 //   項目 0 を見る包みで、呼び出し側はそのままでよい。
 //
 // 【索引を保存しない】
 //   Args に入る「索引で描画オブジェクトを指す値」は保存した時点で古くなる。
 //   どのキーがそれに当たるかは PLParam(IsMeshRef) が持ち、
 //   PanelCommandFactory.MeshRefKeys が読む。コマンド種別ごとの手書き表は無い。
-//   グループは索引の代わりに ObjectId を控え、組み直すときに引き直す。
+//   スタックは索引の代わりに ObjectId を控え、組み直すときに引き直す。
 //
 // 【ObjectId は別モデルも引ける】
 //   ObjectIdAllocator はプロセス内で単調増加するので、ID は
@@ -43,8 +43,8 @@ using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Ops
 {
-    /// <summary>ObjectGroup の記録・判定・再構築。</summary>
-    public static class ObjectGroupOps
+    /// <summary>ModifierStack の記録・判定・再構築。</summary>
+    public static class ModifierStackOps
     {
         /// <summary>
         /// 直前の BuildCommand で梯子をどう扱ったかの説明。
@@ -101,16 +101,16 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 実行した生成コマンドからグループを作る。
+        /// 実行した生成コマンドからスタックを作る。
         ///
         /// Args は PanelCommandFactory.ToArgs で取る（新しい直列化機構は作らない）。
         /// IsMeshRef が付いたキーは、そのときの索引を ObjectId へ置き換えて控える。
         /// 引けなかった索引は 0（＝参照なし）で埋める。
         ///
-        /// outputObjectId が 0 のときは「出力先未確定」のグループになる。
+        /// outputObjectId が 0 のときは「出力先未確定」のスタックになる。
         /// 呼び出し側が出力先を作った直後に SetOutput で埋めること。
         /// </summary>
-        public static ObjectGroup Capture(
+        public static ModifierStack Capture(
             ProjectContext project, int modelIndex, PanelCommand cmd,
             ulong outputObjectId, string name)
             => Capture(
@@ -119,11 +119,11 @@ namespace Poly_Ling.Ops
                 name);
 
         /// <summary>
-        /// 実行した生成コマンドから、出力先が複数のグループを作る。
+        /// 実行した生成コマンドから、出力先が複数のスタックを作る。
         /// 1 回の実行で何本もできるもの（はしごから作る鎖など）はこちらを使う。
-        /// outputObjectIds が空・null のときは「出力先未確定」のグループになる。
+        /// outputObjectIds が空・null のときは「出力先未確定」のスタックになる。
         /// </summary>
-        public static ObjectGroup Capture(
+        public static ModifierStack Capture(
             ProjectContext project, int modelIndex, PanelCommand cmd,
             IReadOnlyList<ulong> outputObjectIds, string name)
         {
@@ -132,7 +132,7 @@ namespace Poly_Ling.Ops
             var step = CaptureStep(project, modelIndex, cmd, outputObjectIds);
             if (step == null) return null;
 
-            var g = new ObjectGroup(name ?? "");
+            var g = new ModifierStack(name ?? "");
             g.Steps.Clear();
             g.AddStep(step);
 
@@ -141,7 +141,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 実行した生成コマンドから項目を 1 つ作る。グループへは足さない。
+        /// 実行した生成コマンドから項目を 1 つ作る。スタックへは足さない。
         ///
         /// Args は PanelCommandFactory.ToArgs で取る（新しい直列化機構は作らない）。
         /// IsMeshRef が付いたキーは、そのときの索引を ObjectId へ置き換えて控える。
@@ -149,7 +149,7 @@ namespace Poly_Ling.Ops
         ///
         /// outputObjectIds は 0 を除いて控える。空でもよい（出力先未確定）。
         /// </summary>
-        public static ObjectGroupStep CaptureStep(
+        public static ModifierStackStep CaptureStep(
             ProjectContext project, int modelIndex, PanelCommand cmd,
             IReadOnlyList<ulong> outputObjectIds)
         {
@@ -157,7 +157,7 @@ namespace Poly_Ling.Ops
 
             Type t = cmd.GetType();
 
-            var step = new ObjectGroupStep
+            var step = new ModifierStackStep
             {
                 Action = PanelCommandFactory.ActionOf(t),
                 Args   = PanelCommandFactory.ToArgs(cmd),
@@ -202,11 +202,11 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 実行した生成コマンドを、既にあるグループの末尾へ項目として足す。
+        /// 実行した生成コマンドを、既にあるスタックの末尾へ項目として足す。
         /// ダイジェストは足したあとに取り直す（ソースの集合が変わりうるため）。
         /// </summary>
-        public static ObjectGroupStep AppendStep(
-            ProjectContext project, int modelIndex, ObjectGroup group,
+        public static ModifierStackStep AppendStep(
+            ProjectContext project, int modelIndex, ModifierStack group,
             PanelCommand cmd, IReadOnlyList<ulong> outputObjectIds)
         {
             if (group == null || cmd == null) return null;
@@ -220,7 +220,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>項目 0 の出力先を差し替える。ダイジェストは触らない。</summary>
-        public static void SetOutput(ObjectGroup group, ulong outputObjectId)
+        public static void SetOutput(ModifierStack group, ulong outputObjectId)
         {
             if (group == null) return;
             group.OutputObjectId = outputObjectId;
@@ -231,7 +231,7 @@ namespace Poly_Ling.Ops
         /// 0 は控えない（＝出力先なし）。
         /// </summary>
         public static void SetOutputs(
-            ObjectGroup group, int stepIndex, IReadOnlyList<ulong> outputObjectIds)
+            ModifierStack group, int stepIndex, IReadOnlyList<ulong> outputObjectIds)
         {
             var step = group?.GetStep(stepIndex);
             if (step == null) return;
@@ -251,11 +251,11 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// ソースが前回ビルド時から変わったか。
-        /// ダイジェストが空のグループ（古い保存データ）は変わっていない扱いにする。
+        /// ダイジェストが空のスタック（古い保存データ）は変わっていない扱いにする。
         ///
         /// 【毎フレーム呼ばないこと】ソースの全頂点を走査する。
         /// </summary>
-        public static bool IsStale(ProjectContext project, ObjectGroup group)
+        public static bool IsStale(ProjectContext project, ModifierStack group)
         {
             if (group == null) return false;
             if (string.IsNullOrEmpty(group.SourceDigest)) return false;
@@ -270,7 +270,7 @@ namespace Poly_Ling.Ops
         /// 浮動小数の下位ビットが揺れて「変わった」と判定されうる。
         /// 頂点ID も混ぜるので、位置が同じまま頂点が入れ替わった場合も検出できる。
         /// </summary>
-        public static string ComputeSourceDigest(ProjectContext project, ObjectGroup group)
+        public static string ComputeSourceDigest(ProjectContext project, ModifierStack group)
         {
             if (group == null) return "";
 
@@ -323,11 +323,11 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// グループから今のモデルに合った生成コマンドを組み直す。
+        /// スタックから今のモデルに合った生成コマンドを組み直す。
         /// 作れないときは null を返し、error に理由を入れる。
         ///
         /// やること
-        ///   1. Args を複製する（グループが持つ値は書き換えない）
+        ///   1. Args を複製する（スタックが持つ値は書き換えない）
         ///   2. IsMeshRef のキーを ObjectId から今の索引へ引き直す
         ///   3. 記録した取り込み方をソースへ掛け直し、梯子とプロファイルを差し替える
         ///   4. PanelCommandFactory.Create に渡す
@@ -337,51 +337,60 @@ namespace Poly_Ling.Ops
         /// 入っている。先に引き直しておかないと別のオブジェクトから取り込む。
         /// </summary>
         public static PanelCommand BuildCommand(
-            ProjectContext project, int modelIndex, ObjectGroup group, out string error)
+            ProjectContext project, int modelIndex, ModifierStack group, out string error)
             => BuildCommand(project, modelIndex, group, 0, out error);
 
         /// <summary>
-        /// グループの stepIndex 番目の項目から生成コマンドを組み直す。
+        /// スタックの stepIndex 番目の項目から生成コマンドを組み直す。
         /// やることは 1 項目版の BuildCommand と同じ。
         /// </summary>
         public static PanelCommand BuildCommand(
-            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            ProjectContext project, int modelIndex, ModifierStack group, int stepIndex,
             out string error)
         {
             error = null;
 
-            if (group == null)          { error = "グループがありません"; return null; }
-            if (!group.IsValid)         { error = "グループに生成コマンドが記録されていません"; return null; }
+            if (group == null)          { error = "スタックがありません"; return null; }
+            if (!group.IsValid)         { error = "スタックに生成コマンドが記録されていません"; return null; }
 
             var step = group.GetStep(stepIndex);
             if (step == null) { error = $"項目 {stepIndex} がありません"; return null; }
 
             // 実行しない項目（説明・指示・確認）はコマンドにならない。
-            // 飛ばすかどうかは呼ぶ側が決める（RunObjectGroupStep は飛ばす）。
+            // 飛ばすかどうかは呼ぶ側が決める（RunModifierStackStep は飛ばす）。
             if (!step.IsExecutable)
             { error = $"項目 {stepIndex} は {step.Kind} で、実行する項目ではありません"; return null; }
 
             Type t = PanelCommandFactory.ResolveType(step.Action);
             if (t == null) { error = $"未対応の action: {step.Action}"; return null; }
 
+            long tp = ModifierStepProfiler.Now();   // 計測（モディファイア高速化計画 段 13）
             var args = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var kv in step.Args) args[kv.Key] = kv.Value;
 
-            ClearKeepAsGroup(args);
+            ClearKeepAsModifierStack(args);
 
             if (!RewriteMeshRefs(project, modelIndex, t, step, args, out error)) return null;
+            ModifierStepProfiler.Add("組み直し:複製・参照", tp);
 
-            RefreshInputs(project, modelIndex, t, args, out string beltMessage, out string profileMessage);
+            tp = ModifierStepProfiler.Now();
+            string beltMessage = RefreshBelts(project, modelIndex, t, args);
+            ModifierStepProfiler.Add("組み直し:梯子（取り直しと書き込み）", tp);
+            tp = ModifierStepProfiler.Now();
+            string profileMessage = RefreshProfile(project, modelIndex, t, args);
+            ModifierStepProfiler.Add("組み直し:プロファイル", tp);
             LastBeltMessage    = beltMessage;
             LastProfileMessage = profileMessage;
 
+            tp = ModifierStepProfiler.Now();
             var cmd = PanelCommandFactory.Create(step.Action, modelIndex, args, out error);
+            ModifierStepProfiler.Add("組み直し:コマンド生成", tp);
             return cmd;
         }
 
         /// <summary>
         /// 梯子・断面を持つコマンドの引数で、記録した取り込み方を取り込み元へ掛け直し、点列を差し替える。
-        /// グループの作り直し（BuildCommand）とシナリオの項目（PlayerCommandDispatcher.TryExecuteRunStep）が
+        /// スタックの作り直し（BuildCommand）とシナリオの項目（PlayerCommandDispatcher.TryExecuteRunStep）が
         /// 同じ読み方をするための口（作り直し整備計画 段 11）。取り込み元の索引は今の索引にしてから渡すこと。
         /// 取り込み方が Baked のもの・取り込み元が -1 のものは何もしない（控えた点列のまま）。
         /// </summary>
@@ -397,35 +406,35 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
-        // グループ → シナリオ（PolyLing_作り直し整備計画.md 段 11）
+        // スタック → シナリオ（PolyLing_作り直し整備計画.md 段 11）
         // ================================================================
 
         /// <summary>
-        /// グループの項目を、モデルに縛られないシナリオの項目へ写す。
+        /// スタックの項目を、モデルに縛られないシナリオの項目へ写す。
         ///
         /// 【つながりの書き換え】MeshRef のキーごとに
-        ///   ・同じグループの前の項目の出力（1 個）を指す → @&lt;その項目 ID&gt;.masterIndices
-        ///   ・グループの外を指す → シナリオの引数 &lt;項目 ID&gt;_&lt;キー&gt;（既定値は今の索引）を ${名前} で参照
+        ///   ・同じスタックの前の項目の出力（1 個）を指す → @&lt;その項目 ID&gt;.masterIndices
+        ///   ・スタックの外を指す → シナリオの引数 &lt;項目 ID&gt;_&lt;キー&gt;（既定値は今の索引）を ${名前} で参照
         ///   ・0（参照なし）だけ → 今の値（-1）のまま
         ///   内と外が混じる、出力が複数の項目を指す、モデル索引付きの参照が内を指す、のどれかは断る。
         /// MeshRefIds・OutputObjectIds は空にする（シナリオは実体に縛らない）。
         /// </summary>
-        /// <param name="modelIndex">グループが属するモデルの索引（外の参照の既定値を引く）。</param>
+        /// <param name="modelIndex">スタックが属するモデルの索引（外の参照の既定値を引く）。</param>
         public static bool BuildScenarioSteps(
-            ProjectContext project, int modelIndex, ObjectGroup group,
-            out List<ObjectGroupStep> steps, out List<ScenarioParam> parameters, out string error)
+            ProjectContext project, int modelIndex, ModifierStack group,
+            out List<ModifierStackStep> steps, out List<ScenarioParam> parameters, out string error)
         {
-            steps      = new List<ObjectGroupStep>();
+            steps      = new List<ModifierStackStep>();
             parameters = new List<ScenarioParam>();
             error      = null;
-            if (group == null) { error = "グループがありません"; return false; }
+            if (group == null) { error = "スタックがありません"; return false; }
 
-            // まとめたグループ（mergeObjectGroup は項目を Clone で写す）では項目 ID が重なりうる。
+            // まとめたスタック（mergeModifierStack は項目を Clone で写す）では項目 ID が重なりうる。
             var work = group.Clone();
             work.EnsureScenarioItemIds();
 
             // 出力の ObjectId → それを作った項目（前の項目だけを内として扱う）
-            var producer = new Dictionary<ulong, ObjectGroupStep>();
+            var producer = new Dictionary<ulong, ModifierStackStep>();
             var usedNames = new HashSet<string>(StringComparer.Ordinal);
 
             for (int s = 0; s < work.StepCount; s++)
@@ -454,7 +463,7 @@ namespace Poly_Ling.Ops
                         if (ids.Count == 0) continue;
 
                         int nonZero = 0, inner = 0;
-                        ObjectGroupStep from = null;
+                        ModifierStackStep from = null;
                         bool sameProducer = true;
                         foreach (ulong id in ids)
                         {
@@ -485,7 +494,7 @@ namespace Poly_Ling.Ops
                         }
 
                         if (inner > 0)
-                        { error = $"項目 {src.ScenarioItemId} の {mr.Key}: グループの内と外の参照が混じっているので書き換えられません"; return false; }
+                        { error = $"項目 {src.ScenarioItemId} の {mr.Key}: スタックの内と外の参照が混じっているので書き換えられません"; return false; }
 
                         if (!AddScenarioParam(src, mr.Key, resolved, project, ids, usedNames, parameters, dst, out error)) return false;
                         if (mr.HasModelKey && resolved.ContainsKey(mr.ModelKey)
@@ -503,8 +512,8 @@ namespace Poly_Ling.Ops
 
         /// <summary>外を指す参照 1 キーをシナリオの引数にし、項目の値を ${名前} にする。</summary>
         private static bool AddScenarioParam(
-            ObjectGroupStep src, string key, Dictionary<string, string> resolved, ProjectContext project,
-            List<ulong> ids, HashSet<string> usedNames, List<ScenarioParam> parameters, ObjectGroupStep dst,
+            ModifierStackStep src, string key, Dictionary<string, string> resolved, ProjectContext project,
+            List<ulong> ids, HashSet<string> usedNames, List<ScenarioParam> parameters, ModifierStackStep dst,
             out string error)
         {
             error = null;
@@ -528,7 +537,7 @@ namespace Poly_Ling.Ops
                 Name        = name,
                 Default     = resolved.TryGetValue(key, out string v) ? v ?? "" : "",
                 Description = $"項目 {src.ScenarioItemId}（{src.Action}）の {key}"
-                            + (what.Length > 0 ? $"。元のグループでは {what}" : "")
+                            + (what.Length > 0 ? $"。元のスタックでは {what}" : "")
                             + "（索引）",
             });
             dst.SetArg(key, ScenarioParam.MakeRef(name));
@@ -544,7 +553,7 @@ namespace Poly_Ling.Ops
         ///
         /// 書けないもの
         ///   ・入力と出力先（IsMeshRef のキーと、その相棒のモデル索引）
-        ///   ・作り直しのたびに上書きされるもの（RebuildRole の切り替えキー、keepAsGroup）
+        ///   ・作り直しのたびに上書きされるもの（RebuildRole の切り替えキー、keepAsModifierStack）
         ///   ・入力の中身と取り方（梯子の点列・先端、プロファイル、取り込み方）
         /// 入力の差し替えは段 3 の範囲外なので、ここで止める。
         /// </summary>
@@ -576,8 +585,8 @@ namespace Poly_Ling.Ops
 
             int dot = key.LastIndexOf('.');
             string leaf = dot >= 0 ? key.Substring(dot + 1) : key;
-            if (string.Equals(leaf, "keepAsGroup", StringComparison.Ordinal))
-                return "グループとして残すかは作り直しが決めるので書けません";
+            if (string.Equals(leaf, "keepAsModifierStack", StringComparison.Ordinal))
+                return "モディファイアスタックとして残すかは作り直しが決めるので書けません";
 
             if (!allowProfile)
             foreach (var pk in PanelCommandFactory.ProfileKeys(t))
@@ -619,7 +628,7 @@ namespace Poly_Ling.Ops
         /// 項目が受け付ける引数のキー。組み直したコマンドの ToArgs のキーと、今の Args のキーを合わせたもの。
         /// 組み直せないとき（入力が引けない等）は今の Args のキーだけになる。
         /// </summary>
-        public static HashSet<string> StepArgKeys(ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex)
+        public static HashSet<string> StepArgKeys(ProjectContext project, int modelIndex, ModifierStack group, int stepIndex)
         {
             var keys = new HashSet<string>(StringComparer.Ordinal);
             var step = group?.GetStep(stepIndex);
@@ -634,20 +643,20 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 項目の引数へ書く前の検査。書いた結果がコマンドの型で読み直せる（Create が通る）ことまで確かめる。
-        /// グループには何も書かない（写しで試す）。通らなければ false と理由。
+        /// スタックには何も書かない（写しで試す）。通らなければ false と理由。
         /// </summary>
         public static bool TryValidateStepArgs(
-            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            ProjectContext project, int modelIndex, ModifierStack group, int stepIndex,
             IReadOnlyList<string> keys, IReadOnlyList<string> values, out string error)
             => TryValidateStepArgs(project, modelIndex, group, stepIndex, keys, values, false, out error);
 
         /// <summary>allowProfile は ArgWriteBlockReason と同じ（断面の作業空間の反映だけが true）。</summary>
         public static bool TryValidateStepArgs(
-            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            ProjectContext project, int modelIndex, ModifierStack group, int stepIndex,
             IReadOnlyList<string> keys, IReadOnlyList<string> values, bool allowProfile, out string error)
         {
             error = null;
-            if (group == null) { error = "グループがありません"; return false; }
+            if (group == null) { error = "スタックがありません"; return false; }
 
             var step = group.GetStep(stepIndex);
             if (step == null) { error = $"項目 {stepIndex} がありません（項目数 {group.StepCount}）"; return false; }
@@ -683,18 +692,18 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 「グループとして残す」を必ず false にする。
+        /// 「モディファイアスタックとして残す」を必ず false にする。
         ///
-        /// この印は「作るときにグループを控えるか」という操作の意図で、
+        /// この印は「作るときにスタックを控えるか」という操作の意図で、
         /// 生成そのもののパラメータではない。控えたまま作り直すと、
-        /// 作り直しのたびに同じ内容のグループがもう 1 件増える。
+        /// 作り直しのたびに同じ内容のスタックがもう 1 件増える。
         ///
-        /// キーはコマンドによって "keepAsGroup"（ブレンド）と
-        /// "placement.keepAsGroup"（図形生成）になる。最後のドット区切りで判定する。
+        /// キーはコマンドによって "keepAsModifierStack"（ブレンド）と
+        /// "placement.keepAsModifierStack"（図形生成）になる。最後のドット区切りで判定する。
         /// </summary>
-        private static void ClearKeepAsGroup(Dictionary<string, string> args)
+        private static void ClearKeepAsModifierStack(Dictionary<string, string> args)
         {
-            const string Leaf = "keepAsGroup";
+            const string Leaf = "keepAsModifierStack";
 
             var hits = new List<string>();
             foreach (var kv in args)
@@ -716,7 +725,7 @@ namespace Poly_Ling.Ops
         /// 出来上がり、ブレンドなら別のオブジェクトを宛先にしてしまう。
         /// </summary>
         private static bool RewriteMeshRefs(
-            ProjectContext project, int modelIndex, Type t, ObjectGroupStep step,
+            ProjectContext project, int modelIndex, Type t, ModifierStackStep step,
             Dictionary<string, string> args, out string error)
         {
             error = null;
@@ -819,11 +828,15 @@ namespace Poly_Ling.Ops
                                            "true", StringComparison.OrdinalIgnoreCase);
             string setName = args.TryGetValue(kSet, out var sn) ? sn : "";
 
+            long tp = ModifierStepProfiler.Now();   // 計測（段 13）
             var acquired = BeltAcquire.Acquire(source, method, cross, setName);
+            ModifierStepProfiler.Add("組み直し:梯子の取り直し", tp);
             if (!acquired.Ok)
                 return $"取り直せないので控えた点列を使う（{acquired.Message}）";
 
+            tp = ModifierStepProfiler.Now();
             WriteBeltArgs(t, args, acquired.Belts.ToArray());
+            ModifierStepProfiler.Add("組み直し:点列の書き込み", tp);
 
             return $"梯子を {acquired.Belts.Count} 本取り直した（{method} / "
                  + $"上下展開={(cross ? "する" : "しない")} / {acquired.Message}）";
@@ -961,24 +974,24 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 参照先が 1 つも引けなくなったグループを取り除く。
+        /// 参照先が 1 つも引けなくなったスタックを取り除く。
         ///
         /// 【RemoveAt から呼ばないこと】
         ///   描画オブジェクトの削除に巻き込んでここで消すと、その削除は
-        ///   ObjectGroup の Undo レコードに載らないため Undo で戻せない。
+        ///   ModifierStack の Undo レコードに載らないため Undo で戻せない。
         ///   参照切れは ModelInvariantChecker が報告し、片づけは
         ///   パネルからの明示操作かプロジェクト読み込み直後に行う。
         /// </summary>
         /// <returns>取り除いた件数</returns>
         public static int PurgeMissing(ProjectContext project, ModelContext model)
         {
-            if (model?.ObjectGroups == null) return 0;
+            if (model?.ModifierStacks == null) return 0;
 
             int removed = 0;
-            for (int i = model.ObjectGroups.Count - 1; i >= 0; i--)
+            for (int i = model.ModifierStacks.Count - 1; i >= 0; i--)
             {
-                var g = model.ObjectGroups[i];
-                if (g == null) { model.ObjectGroups.RemoveAt(i); removed++; continue; }
+                var g = model.ModifierStacks[i];
+                if (g == null) { model.ModifierStacks.RemoveAt(i); removed++; continue; }
 
                 bool outputAlive = false;
                 foreach (ulong id in g.OutputObjectIds)
@@ -992,7 +1005,7 @@ namespace Poly_Ling.Ops
 
                 if (!outputAlive && !stashAlive && !anySourceAlive)
                 {
-                    model.ObjectGroups.RemoveAt(i);
+                    model.ModifierStacks.RemoveAt(i);
                     removed++;
                 }
             }
@@ -1081,11 +1094,11 @@ namespace Poly_Ling.Ops
         /// LegacyXYPairs の印が付いたキーの値は「実数の平坦な列を 2 個ずつ」で書かれている。
         /// これを z=0 を足して 3 個ずつに書き直す。Vector3[] も float[]（ループの平坦な点列）も
         /// 同じ変換で済む。直したら ProfileDim を今の値にする。
-        /// 読み込み直後に 1 回だけ呼ぶ（ObjectGroupCsv / ObjectGroupDTO）。
+        /// 読み込み直後に 1 回だけ呼ぶ（ModifierStackCsv / ModifierStackDTO）。
         /// </summary>
-        public static void UpgradeLegacyProfileArgs(ObjectGroupStep step)
+        public static void UpgradeLegacyProfileArgs(ModifierStackStep step)
         {
-            if (step == null || step.ProfileDim >= ObjectGroupStep.CurrentProfileDim) return;
+            if (step == null || step.ProfileDim >= ModifierStackStep.CurrentProfileDim) return;
 
             Type t = string.IsNullOrEmpty(step.Action) ? null : PanelCommandFactory.ResolveType(step.Action);
             if (t != null && step.Args != null)
@@ -1102,11 +1115,11 @@ namespace Poly_Ling.Ops
                     step.Args[key] = JoinFloats(xyz);
                 }
             }
-            step.ProfileDim = ObjectGroupStep.CurrentProfileDim;
+            step.ProfileDim = ModifierStackStep.CurrentProfileDim;
         }
 
-        /// <summary>グループの全項目へ UpgradeLegacyProfileArgs を掛ける。</summary>
-        public static void UpgradeLegacyProfileArgs(ObjectGroup group)
+        /// <summary>スタックの全項目へ UpgradeLegacyProfileArgs を掛ける。</summary>
+        public static void UpgradeLegacyProfileArgs(ModifierStack group)
         {
             if (group?.Steps == null) return;
             foreach (var st in group.Steps) UpgradeLegacyProfileArgs(st);
@@ -1128,7 +1141,7 @@ namespace Poly_Ling.Ops
         /// 対象は action が applyBlend で、基準のキーが無く、出力と宛先が 1 個ずつの項目だけ。
         /// シナリオの項目（参照と出力を持たない）は何もしない。読み込み直後に 1 回だけ呼ぶ。
         /// </summary>
-        public static void UpgradeLegacyBlendRefs(ObjectGroupStep step)
+        public static void UpgradeLegacyBlendRefs(ModifierStackStep step)
         {
             if (step == null || string.IsNullOrEmpty(step.Action)) return;
             Type t = PanelCommandFactory.ResolveType(step.Action);
@@ -1161,8 +1174,8 @@ namespace Poly_Ling.Ops
             step.OutputObjectIds.Add(outId);
         }
 
-        /// <summary>グループの全項目へ UpgradeLegacyBlendRefs を掛ける。</summary>
-        public static void UpgradeLegacyBlendRefs(ObjectGroup group)
+        /// <summary>スタックの全項目へ UpgradeLegacyBlendRefs を掛ける。</summary>
+        public static void UpgradeLegacyBlendRefs(ModifierStack group)
         {
             if (group?.Steps == null) return;
             foreach (var st in group.Steps) UpgradeLegacyBlendRefs(st);

@@ -89,20 +89,23 @@ namespace Poly_Ling.PrimitiveMesh
         {
             if (cmd == null) return null;
 
-            var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
+            // 計測（モディファイア高速化計画 段 11）。評価の作り直しの中だけ数える。
+            // 以前は一時計測の Debug.Log を毎回出していた。
+            long tGen = ModifierStepProfiler.Now();
             MeshObject mo = cmd is CreateSurfacePasteCommand spc
                 ? SurfacePasteOps.Build(resolveSurfacePaste?.Invoke(spc.SourceIndex, spc.ReferenceIndex), spc.Params)
                 : Generate(cmd, resolvePlaceSources, resolveBeltSource);
             if (mo == null) return null;
-            long __tGen = __sw.ElapsedMilliseconds; // TEMP-TIMING
-            int __v0 = mo.VertexCount; // TEMP-TIMING
+            ModifierStepProfiler.Add("図形の生成", tGen);
 
+            long tMerge = ModifierStepProfiler.Now();
             if (!forPreview && cmd.Placement.MergeDuplicateVertices && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, MergeEpsilon);
-            long __tMerge = __sw.ElapsedMilliseconds - __tGen; // TEMP-TIMING
+            ModifierStepProfiler.Add("重複頂点の結合", tMerge);
 
+            long tParts = ModifierStepProfiler.Now();
             AssignPartsIds(mo, cmd.ShapeName);
-            UnityEngine.Debug.Log($"[PL/Timing] Build {cmd.ShapeName} preview={forPreview} generate={__tGen}ms merge={__tMerge}ms parts={__sw.ElapsedMilliseconds - __tGen - __tMerge}ms v={__v0}->{mo.VertexCount}"); // TEMP-TIMING
+            ModifierStepProfiler.Add("部品番号", tParts);
 
             // はしごのウェイトを引き継いだときは、種別を確定させる。
             // 塗られた頂点だけがボーンの欄を引くので、無 → 有の遷移点で呼ぶ。
@@ -463,10 +466,16 @@ namespace Poly_Ling.PrimitiveMesh
             // 梯子1本＝パーツ1つ。全ベルトで同じカウンタを共有し、0 から連番にする。
             var partsIds = new PartsIdCounter();
 
+            long tSrc = ModifierStepProfiler.Now();   // 計測（段 11）
             var beltSource = ResolveBeltSource(c, c.Params.InheritBeltWeights, resolveBeltSource);
+            ModifierStepProfiler.Add("パイプ:取り込み元の解決", tSrc);
 
+            long tPre = ModifierStepProfiler.Now();
             foreach (var b in EachPreprocessedBelt(c, beltSource))
             {
+                ModifierStepProfiler.Add("パイプ:梯子の前処理", tPre);
+
+                long tGen = ModifierStepProfiler.Now();
                 var part = PipeMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     profile, c.ProfileClosed, c.Params.CapEnds,
@@ -474,14 +483,22 @@ namespace Poly_Ling.PrimitiveMesh
                     c.Params.MeshName, partsIds,
                     b.LeftWeights, b.RightWeights,
                     PipeGenOptions.FromParams(c.Params));
+                ModifierStepProfiler.Add("パイプ:PipeMeshGenerator", tGen);
 
+                long tSol = ModifierStepProfiler.Now();
                 part = BeltShapeOps.ApplySolidify(part,
                     c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,
                     c.Params.EdgeSizeFront, c.Params.EdgeSizeBack, c.Params.EdgeInward,
                     c.Params.MeshName);
+                ModifierStepProfiler.Add("パイプ:厚み付け", tSol);
 
+                long tApp = ModifierStepProfiler.Now();
                 MeshObjectAppendOps.Append(mo, part);
+                ModifierStepProfiler.Add("パイプ:連結", tApp);
+
+                tPre = ModifierStepProfiler.Now();
             }
+            ModifierStepProfiler.Add("パイプ:梯子の前処理", tPre);
 
             if (c.Params.FlipFaces) PrimitiveMeshPostProcess.FlipFaces(mo);
             PrimitiveMeshPostProcess.ApplyPivotOffset(mo, c.Params.Pivot);

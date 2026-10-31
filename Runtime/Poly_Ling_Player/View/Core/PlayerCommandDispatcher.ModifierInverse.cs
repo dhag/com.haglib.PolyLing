@@ -13,9 +13,9 @@
 //        パイプの梯子化・帯・貼り付け … 入力の頂点（生成の控えの Source の枠。段 14）
 //   4. 照会は、確定と同じ手順（入力・引数を書いて BuildCommand で組み直し、書き戻しと同じ見本の口で作る）で
 //      試しに作った出力と E のずれを返す。書いた入力・引数はその場で戻す（TrialRebuild。段 G）
-//   5. 確定は、記録を止めて入力を書き、その項目を作り直す（RunObjectGroupStep）。
+//   5. 確定は、記録を止めて入力を書き、その項目を作り直す（RunModifierStackStep）。
 //      下流はコマンドの終わりに依存の順で流れる（段 4）。Undo は一覧のスナップショットと
-//      グループの差し替えを 1 件（段 3 と同じ形）
+//      スタックの差し替えを 1 件（段 3 と同じ形）
 //
 // 【上流へ連ねる】（段 14）
 //   3 で書く入力が別の項目の出力なら、その出力に書く値を入れた複製を「その項目の出力の編集」とみなして、
@@ -51,8 +51,8 @@ namespace Poly_Ling.Player
         private sealed class InversePlan
         {
             public string Error;
-            public ObjectGroup Group;
-            public ObjectGroupStep Step;
+            public ModifierStack Group;
+            public ModifierStackStep Step;
             public int StepIndex;
             public Type CmdType;
             public ModifierInverse.Info Info;
@@ -91,15 +91,15 @@ namespace Poly_Ling.Player
         /// <summary>名前で引いた項目の逆方向を、上流へ連ねて組む。</summary>
         private InversePlan BuildInversePlan(ProjectContext project, ModelContext model, string groupName, int stepIndex)
         {
-            var g = model?.FindObjectGroupByName(groupName);
+            var g = model?.FindModifierStackByName(groupName);
             if (model != null && g == null)
-                return new InversePlan { StepIndex = stepIndex, Error = $"グループが見つかりません: {groupName}" };
+                return new InversePlan { StepIndex = stepIndex, Error = $"スタックが見つかりません: {groupName}" };
 
             var p = BuildInversePlanCore(project, model, g, stepIndex, null);
             if (p.Error != null) return p;
 
             var chain = new List<InversePlan>();
-            var visited = new HashSet<ObjectGroupStep>();
+            var visited = new HashSet<ModifierStackStep>();
             string err = ResolveInverseChain(project, model, p, visited, chain, 0);
             if (err != null) { p.Error = err; return p; }
             p.Chain = chain;
@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private string ResolveInverseChain(
             ProjectContext project, ModelContext model, InversePlan p,
-            HashSet<ObjectGroupStep> visited, List<InversePlan> chain, int depth)
+            HashSet<ModifierStackStep> visited, List<InversePlan> chain, int depth)
         {
             if (depth > InverseChainMaxDepth) return "上流の逆方向を辿る段が多すぎます";
             if (!visited.Add(p.Step)) return $"項目 {p.Label} へ 2 つの経路から書き直すことになるので断ります";
@@ -152,7 +152,7 @@ namespace Poly_Ling.Player
         /// （下流の逆方向から渡された上流の出力。段 14）。null なら今の出力。
         /// </summary>
         private InversePlan BuildInversePlanCore(
-            ProjectContext project, ModelContext model, ObjectGroup group, int stepIndex, MeshObject edited)
+            ProjectContext project, ModelContext model, ModifierStack group, int stepIndex, MeshObject edited)
         {
             var p = new InversePlan { StepIndex = stepIndex, Group = group };
             InversePlan Err(string why) { p.Error = why; return p; }
@@ -161,7 +161,7 @@ namespace Poly_Ling.Player
             if (!ReferenceEquals(project.CurrentModel, model)) return Err("逆方向は今のモデルでだけ扱えます");
             int modelIndex = project.CurrentModelIndex;
 
-            if (p.Group == null) return Err("グループがありません");
+            if (p.Group == null) return Err("スタックがありません");
             p.Step = p.Group.GetStep(stepIndex);
             if (p.Step == null) return Err($"項目 {stepIndex} がありません（項目数 {p.Group.StepCount}）");
             if (!p.Step.IsExecutable) return Err($"項目 {stepIndex} は実行する項目ではありません");
@@ -172,7 +172,7 @@ namespace Poly_Ling.Player
 
             if (p.Step.OutputObjectIds == null || p.Step.OutputObjectIds.Count != 1)
                 return Err("出力が 1 つの項目だけ逆方向を扱えます");
-            p.Output = ObjectGroupOps.Resolve(project, p.Step.OutputObjectIds[0]);
+            p.Output = ModifierStackOps.Resolve(project, p.Step.OutputObjectIds[0]);
             if (p.Output?.MeshObject == null || model.IndexOf(p.Output) < 0)
                 return Err("出力の描画オブジェクトが見つかりません");
             p.Edited = edited ?? p.Output.MeshObject;
@@ -182,7 +182,7 @@ namespace Poly_Ling.Player
             foreach (var e in ModifierEvaluator.GetGraph(model))
                 if (ReferenceEquals(e.Step, p.Step)) { p.Pending = ModifierEvaluator.IsOutputEditPending(model, e); break; }
 
-            var rebuilt = ObjectGroupOps.BuildCommand(project, modelIndex, p.Group, stepIndex, out string rbErr);
+            var rebuilt = ModifierStackOps.BuildCommand(project, modelIndex, p.Group, stepIndex, out string rbErr);
             if (rebuilt == null) return Err(rbErr ?? "作り直すコマンドを組めませんでした");
 
             if (!ComputeStepSpace(model, p.Step, p.Output, true, out var spaceWb, out string spaceErr))
@@ -230,7 +230,7 @@ namespace Poly_Ling.Player
                     else
                     {
                         var na = new Dictionary<string, string>(p.Step.Args, StringComparer.Ordinal);
-                        ObjectGroupOps.WriteBeltArgs(p.CmdType, na, br.Belts);
+                        ModifierStackOps.WriteBeltArgs(p.CmdType, na, br.Belts);
                         p.NewArgs = na;
                         p.Writes = $"項目の梯子の点列（段 {br.MovedRungs} 個・先端 {apex} 個。書き直さない段 {br.UntouchedRungs} 個）";
                     }
@@ -268,7 +268,7 @@ namespace Poly_Ling.Player
                         p.Writes = src + "、" + rotText;
                     else
                     {
-                        if (beltMoved) ObjectGroupOps.WriteBeltArgs(p.CmdType, na, br.Belts);
+                        if (beltMoved) ModifierStackOps.WriteBeltArgs(p.CmdType, na, br.Belts);
                         p.Writes = (beltMoved ? $"項目の梯子の点列（段 {br.MovedRungs} 個）、" : "") + rotText;
                     }
                     p.NewArgs = na;
@@ -375,7 +375,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 試算（段 G）：確定（ExecuteModifierOutputEdit）と同じく、入力の頂点と項目の引数を書いてから
-        /// 項目を組み直し（ObjectGroupOps.BuildCommand。梯子は記録した取り込み方で取り直す）、
+        /// 項目を組み直し（ModifierStackOps.BuildCommand。梯子は記録した取り込み方で取り直す）、
         /// 書き戻しと同じ見本の口で出力の形を作って、編集後の出力とのずれを測る。書いたものは必ず戻す。
         /// 上流の項目の出力へ書く分（ResolveInverseChain で上流へ渡す前の VertexWrites）もここでは書くので、
         /// 上流の出力を「渡す編集後の形」にした、その段だけのずれになる。
@@ -408,7 +408,7 @@ namespace Poly_Ling.Player
                     foreach (var kv in p.NewArgs) p.Step.Args[kv.Key] = kv.Value;
                 }
 
-                var cmd = ObjectGroupOps.BuildCommand(project, modelIndex, p.Group, p.StepIndex, out string rbErr);
+                var cmd = ModifierStackOps.BuildCommand(project, modelIndex, p.Group, p.StepIndex, out string rbErr);
                 if (cmd == null) { p.TrialError = rbErr ?? "作り直すコマンドを組めませんでした"; return; }
 
                 using (ModifierFrameTrace.Begin(new ModifierFrameTrace()))
@@ -597,15 +597,15 @@ namespace Poly_Ling.Player
 
         private string BuildModifierInverseData(ProjectContext project, ModelContext model, QueryModifierInverseCommand c)
         {
-            var g = model?.FindObjectGroupByName(c.GroupName);
+            var g = model?.FindModifierStackByName(c.StackName);
             var step = g?.GetStep(c.StepIndex);
             var info = ModifierInverse.Of(PanelCommandFactory.ResolveType(step?.Action));
 
-            var p = BuildInversePlan(project, model, c.GroupName, c.StepIndex);
+            var p = BuildInversePlan(project, model, c.StackName, c.StepIndex);
 
             var lines = new List<string>();
             if (p.Chain != null) foreach (var q in p.Chain) lines.Add(ChainLine(q));
-            else lines.Add($"{c.GroupName}#{c.StepIndex} {step?.Action ?? ""}（{info?.Method ?? ""}）／確定できない: {p.Error ?? ""}");
+            else lines.Add($"{c.StackName}#{c.StepIndex} {step?.Action ?? ""}（{info?.Method ?? ""}）／確定できない: {p.Error ?? ""}");
 
             return CommandDataJson.New()
                 .Text("action",       step?.Action ?? "")
@@ -650,8 +650,8 @@ namespace Poly_Ling.Player
             }
             else
             {
-                root = new InversePlan { StepIndex = stepIndex, Group = model?.FindObjectGroupByName(groupName) };
-                if (root.Group == null) return $"グループが見つかりません: {groupName}";
+                root = new InversePlan { StepIndex = stepIndex, Group = model?.FindModifierStackByName(groupName) };
+                if (root.Group == null) return $"スタックが見つかりません: {groupName}";
                 root.Step = root.Group.GetStep(stepIndex);
                 if (root.Step == null) return $"項目 {stepIndex} がありません";
                 if (ModifierInverse.Of(PanelCommandFactory.ResolveType(root.Step.Action)) == null)
@@ -659,13 +659,13 @@ namespace Poly_Ling.Player
                 chain = new List<InversePlan> { root };
             }
 
-            // 引数を書き換えるグループの控え（グループごとに 1 つ）。
-            var oldGroups = new Dictionary<ObjectGroup, (int index, ObjectGroup old)>();
+            // 引数を書き換えるスタックの控え（スタックごとに 1 つ）。
+            var oldGroups = new Dictionary<ModifierStack, (int index, ModifierStack old)>();
             var oldArgs = new List<Dictionary<string, string>>();
             foreach (var q in chain)
             {
                 if (!oldGroups.ContainsKey(q.Group))
-                    oldGroups[q.Group] = (model.ObjectGroups.IndexOf(q.Group), q.Group.Clone());
+                    oldGroups[q.Group] = (model.ModifierStacks.IndexOf(q.Group), q.Group.Clone());
                 oldArgs.Add(new Dictionary<string, string>(q.Step.Args, StringComparer.Ordinal));
             }
 
@@ -706,7 +706,7 @@ namespace Poly_Ling.Player
                 // 上流から順に作り直す。各項目の控えを取り直してから次へ進む（下流は作り直した上流を読む）。
                 foreach (var q in chain)
                 {
-                    if (!RunObjectGroupStep(project, model, project.CurrentModelIndex, false, q.Group, q.StepIndex, out string err))
+                    if (!RunModifierStackStep(project, model, project.CurrentModelIndex, false, q.Group, q.StepIndex, out string err))
                     { fail = $"{q.Label}: " + (err ?? "作り直しに失敗しました"); break; }
                     ModifierEvaluator.MarkRebuilt(model, q.Step);
                 }
@@ -727,25 +727,25 @@ namespace Poly_Ling.Player
                     foreach (var kv in oldArgs[i]) chain[i].Step.Args[kv.Key] = kv.Value;
                 }
                 // 出力は作り直しの途中で書き換わっている場合があるので、一覧ごと戻す。
-                RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount, null,
+                RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, null,
                     $"{verb}（失敗）: {root.Group.Name} 項目 {stepIndex}");
                 FinishGroupEdit(project, model);
                 return $"作り直しに失敗したので入力を戻しました: {fail}";
             }
 
             // 書き直した入力と作り直した出力を控え、下流へ伝える（下流はこのコマンドの終わりに流れる）。
-            var groupChanges = new List<ObjectGroupChangeRecord>();
+            var groupChanges = new List<ModifierStackChangeRecord>();
             foreach (var kv in oldGroups)
             {
                 var g = kv.Key;
-                g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+                g.SourceDigest = ModifierStackOps.ComputeSourceDigest(project, g);
                 bool argsChanged = false;
                 foreach (var q in chain) if (ReferenceEquals(q.Group, g) && q.NewArgs != null) argsChanged = true;
                 if (argsChanged && kv.Value.index >= 0)
-                    groupChanges.Add(new ObjectGroupChangeRecord
+                    groupChanges.Add(new ModifierStackChangeRecord
                         { ReplacedIndex = kv.Value.index, OldGroup = kv.Value.old, NewGroup = g.Clone() });
             }
-            RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount,
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount,
                 groupChanges.Count > 0 ? groupChanges : null,
                 $"{verb}: {root.Group.Name} 項目 {stepIndex}" + (chain.Count > 1 ? $"（上流 {chain.Count - 1} 段を含む）" : ""));
 
@@ -756,7 +756,7 @@ namespace Poly_Ling.Player
             float actualMax = 0f, actualMean = 0f;
             if (commit && editedBefore != null && root.Step.OutputObjectIds?.Count == 1)
             {
-                var outNow = ObjectGroupOps.Resolve(project, root.Step.OutputObjectIds[0]);
+                var outNow = ModifierStackOps.Resolve(project, root.Step.OutputObjectIds[0]);
                 if (outNow?.MeshObject != null)
                     hasActual = ModifierInverse.Deviation(outNow.MeshObject, editedBefore, out actualMax, out actualMean);
             }

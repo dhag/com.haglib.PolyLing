@@ -299,8 +299,8 @@ namespace Poly_Ling.Motion
         private static bool HasInWeight(MotionTangentDTO k)
             => k != null && (Is(k.weightedMode, WeightIn) || Is(k.weightedMode, WeightBoth));
 
-        // キー i の出側の傾き。
-        private static float ResolveOut(int n, float[] t, float[] v, MotionTangentDTO[] tan, int i)
+        /// <summary>キー i の出側の傾き（値/秒）。t・v・tan はキーの時刻順。接線の編集（Free にするときの今の傾き）も使う。</summary>
+        public static float ResolveOut(int n, float[] t, float[] v, MotionTangentDTO[] tan, int i)
         {
             var k = tan[i];
             if (k == null || Is(k.rightTangentMode, ModeLinear))
@@ -309,8 +309,8 @@ namespace Poly_Ling.Motion
             return Smooth(n, t, v, i, clamped: !Is(k.rightTangentMode, ModeAuto));
         }
 
-        // キー i の入側の傾き。
-        private static float ResolveIn(int n, float[] t, float[] v, MotionTangentDTO[] tan, int i)
+        /// <summary>キー i の入側の傾き（値/秒）。t・v・tan はキーの時刻順。</summary>
+        public static float ResolveIn(int n, float[] t, float[] v, MotionTangentDTO[] tan, int i)
         {
             var k = tan[i];
             if (k == null || Is(k.leftTangentMode, ModeLinear))

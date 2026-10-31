@@ -1,5 +1,5 @@
-// ObjectGroupDTO.cs
-// オブジェクトグループのシリアライズ用データ構造。
+// ModifierStackDTO.cs
+// モディファイアスタックのシリアライズ用データ構造。
 // Runtime/Poly_Ling_Main/Core/Serialization/ に配置
 //
 // 【形は MorphExpressionDTO に合わせる】
@@ -8,26 +8,26 @@
 //
 // 【並びを固定する】
 //   Dictionary の列挙順は保証されないので、書き出す前にキー順へ並べ替える
-//   （ObjectGroupStep.SortedArgs / SortedMeshRefIds）。並べ替えないと、
+//   （ModifierStackStep.SortedArgs / SortedMeshRefIds）。並べ替えないと、
 //   中身が同じでも保存のたびにファイルの差分が出る。
 //
 // 【ObjectId は文字列で持つ】
 //   ulong は JsonUtility が扱えない。10 進の文字列にして往復させる。
 //
 // 【古い形との往復】
-//   項目が導入される前は、グループが action / args / meshRefs /
+//   項目が導入される前は、スタックが action / args / meshRefs /
 //   outputObjectId を 1 組だけ持っていた。読みでは steps が空のときに
 //   その 4 つを項目 0 として読む。書きでは steps を必ず書き、
-//   項目が 1 つのときだけ古い 4 つも埋める（1 項目のグループは
+//   項目が 1 つのときだけ古い 4 つも埋める（1 項目のスタックは
 //   古い読み手でもそのまま開ける）。2 項目以上は古い読み手では開けない。
 //
 // 【後から足した欄】
 //   scenarioItemId / kind / purpose / refName / expansionPolicy（項目）と
 //   goal / preconditions / successCriteria /
-//   tags / prov* / scenarioParams（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
+//   tags / prov* / scenarioParams（スタック）は、いずれも既定が空か 0。JsonUtility は無い欄を
 //   既定のまま残すので、これらを持たない保存データもそのまま読める。
 //   ScenarioItemId だけは空のままにできない（項目を ID で指すため）ので、
-//   読みの最後に ObjectGroup.EnsureScenarioItemIds が振る。
+//   読みの最後に ModifierStack.EnsureScenarioItemIds が振る。
 
 using System;
 using System.Collections.Generic;
@@ -38,7 +38,7 @@ namespace Poly_Ling.Serialization
 {
     /// <summary>キーと値の対（Args 用）。</summary>
     [Serializable]
-    public class ObjectGroupArgDTO
+    public class ModifierStackArgDTO
     {
         public string key = "";
         public string value = "";
@@ -46,7 +46,7 @@ namespace Poly_Ling.Serialization
 
     /// <summary>キーと ObjectId 列の対（MeshRefIds 用）。</summary>
     [Serializable]
-    public class ObjectGroupMeshRefDTO
+    public class ModifierStackMeshRefDTO
     {
         public string key = "";
 
@@ -74,14 +74,14 @@ namespace Poly_Ling.Serialization
 
     /// <summary>項目 1 つぶん（生成コマンド 1 つ）。</summary>
     [Serializable]
-    public class ObjectGroupStepDTO
+    public class ModifierStackStepDTO
     {
         public string action = "";
 
-        /// <summary>項目を指す名前。グループ内で一意。空の古いデータは読みで振る。</summary>
+        /// <summary>項目を指す名前。スタック内で一意。空の古いデータは読みで振る。</summary>
         public string scenarioItemId = "";
 
-        /// <summary>項目の種別（ObjectGroupStepKind の数値）。0 = 実行する項目。</summary>
+        /// <summary>項目の種別（ModifierStackStepKind の数値）。0 = 実行する項目。</summary>
         public int kind = 0;
 
         /// <summary>この項目が要る理由。</summary>
@@ -97,23 +97,23 @@ namespace Poly_Ling.Serialization
         public string usageScene = "";
 
         /// <summary>
-        /// args の中のプロファイルの点の成分数（ObjectGroupStep.ProfileDim）。
+        /// args の中のプロファイルの点の成分数（ModifierStackStep.ProfileDim）。
         /// 古いデータには無く 0 として読まれる。0 は 2 成分（x,y）として扱い、
-        /// ToStep で ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
+        /// ToStep で ModifierStackOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
         /// </summary>
         public int profileDim = 0;
 
-        public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
-        public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
+        public List<ModifierStackArgDTO>     args     = new List<ModifierStackArgDTO>();
+        public List<ModifierStackMeshRefDTO> meshRefs = new List<ModifierStackMeshRefDTO>();
 
         /// <summary>出力先の ObjectId（10 進文字列）。空 = 出力先なし。</summary>
         public List<string> outputObjectIds = new List<string>();
 
-        public static ObjectGroupStepDTO FromStep(ObjectGroupStep s)
+        public static ModifierStackStepDTO FromStep(ModifierStackStep s)
         {
             if (s == null) return null;
 
-            var dto = new ObjectGroupStepDTO
+            var dto = new ModifierStackStepDTO
             {
                 action          = s.Action ?? "",
                 scenarioItemId       = s.ScenarioItemId ?? "",
@@ -126,11 +126,11 @@ namespace Poly_Ling.Serialization
             };
 
             foreach (var kv in s.SortedArgs())
-                dto.args.Add(new ObjectGroupArgDTO { key = kv.Key, value = kv.Value ?? "" });
+                dto.args.Add(new ModifierStackArgDTO { key = kv.Key, value = kv.Value ?? "" });
 
             foreach (var kv in s.SortedMeshRefIds())
             {
-                var e = new ObjectGroupMeshRefDTO { key = kv.Key };
+                var e = new ModifierStackMeshRefDTO { key = kv.Key };
                 if (kv.Value != null)
                     foreach (ulong id in kv.Value)
                         e.objectIds.Add(id.ToString(CultureInfo.InvariantCulture));
@@ -145,22 +145,22 @@ namespace Poly_Ling.Serialization
             return dto;
         }
 
-        public ObjectGroupStep ToStep()
+        public ModifierStackStep ToStep()
         {
-            var s = new ObjectGroupStep
+            var s = new ModifierStackStep
             {
                 Action    = action ?? "",
                 ScenarioItemId = scenarioItemId ?? "",
-                Kind      = System.Enum.IsDefined(typeof(ObjectGroupStepKind), kind)
-                            ? (ObjectGroupStepKind)kind
-                            : ObjectGroupStepKind.Command,
+                Kind      = System.Enum.IsDefined(typeof(ModifierStackStepKind), kind)
+                            ? (ModifierStackStepKind)kind
+                            : ModifierStackStepKind.Command,
                 Purpose   = purpose ?? "",
                 RefName   = refName ?? "",
                 ExpansionPolicy = System.Enum.IsDefined(typeof(ScenarioExpansionPolicy), expansionPolicy)
                             ? (ScenarioExpansionPolicy)expansionPolicy
                             : ScenarioExpansionPolicy.Reference,
                 UsageScene = usageScene ?? "",
-                ProfileDim = profileDim >= ObjectGroupStep.CurrentProfileDim ? profileDim : 2,
+                ProfileDim = profileDim >= ModifierStackStep.CurrentProfileDim ? profileDim : 2,
             };
 
             if (args != null)
@@ -174,7 +174,7 @@ namespace Poly_Ling.Serialization
                     if (r == null || string.IsNullOrEmpty(r.key)) continue;
                     var ids = new List<ulong>();
                     if (r.objectIds != null)
-                        foreach (var t in r.objectIds) ids.Add(ObjectGroupDTO.ParseId(t));
+                        foreach (var t in r.objectIds) ids.Add(ModifierStackDTO.ParseId(t));
                     s.SetMeshRefIds(r.key, ids);
                 }
             }
@@ -183,38 +183,38 @@ namespace Poly_Ling.Serialization
             {
                 foreach (var t in outputObjectIds)
                 {
-                    ulong id = ObjectGroupDTO.ParseId(t);
+                    ulong id = ModifierStackDTO.ParseId(t);
                     if (id != 0UL) s.OutputObjectIds.Add(id);
                 }
             }
 
-            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(s);
-            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(s);
+            Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyProfileArgs(s);
+            Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyBlendRefs(s);
             return s;
         }
     }
 
-    /// <summary>オブジェクトグループのシリアライズ用。</summary>
+    /// <summary>モディファイアスタックのシリアライズ用。</summary>
     [Serializable]
-    public class ObjectGroupDTO
+    public class ModifierStackDTO
     {
         public string name = "";
 
         /// <summary>実行するコマンド列。並び順がそのまま実行順。</summary>
-        public List<ObjectGroupStepDTO> steps = new List<ObjectGroupStepDTO>();
+        public List<ModifierStackStepDTO> steps = new List<ModifierStackStepDTO>();
 
         // ── ここから下は古い形（1 項目前提）。読みの互換のために残す。
         //    書きでは、項目が 1 つのときだけ埋める。
 
         public string action = "";
 
-        public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
-        public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
+        public List<ModifierStackArgDTO>     args     = new List<ModifierStackArgDTO>();
+        public List<ModifierStackMeshRefDTO> meshRefs = new List<ModifierStackMeshRefDTO>();
 
         /// <summary>出力先の ObjectId（10 進文字列）。"0" = なし。</summary>
         public string outputObjectId = "0";
 
-        // ── ここから下はグループ単位の値。
+        // ── ここから下はスタック単位の値。
 
         /// <summary>退避の ObjectId（10 進文字列）。"0" = なし。</summary>
         public string stashObjectId = "0";
@@ -239,7 +239,7 @@ namespace Poly_Ling.Serialization
         /// <summary>探すための札。</summary>
         public List<string> tags = new List<string>();
 
-        /// <summary>由来。元にしたグループの名前。</summary>
+        /// <summary>由来。元にしたスタックの名前。</summary>
         public string provParentName = "";
 
         /// <summary>由来。元から何を変えたか。</summary>
@@ -258,11 +258,11 @@ namespace Poly_Ling.Serialization
         // 変換
         // ================================================================
 
-        public static ObjectGroupDTO FromObjectGroup(ObjectGroup g)
+        public static ModifierStackDTO FromModifierStack(ModifierStack g)
         {
             if (g == null) return null;
 
-            var dto = new ObjectGroupDTO
+            var dto = new ModifierStackDTO
             {
                 name          = g.Name ?? "",
                 stashObjectId = g.StashObjectId.ToString(CultureInfo.InvariantCulture),
@@ -307,12 +307,12 @@ namespace Poly_Ling.Serialization
             {
                 foreach (var s in g.Steps)
                 {
-                    var sd = ObjectGroupStepDTO.FromStep(s);
+                    var sd = ModifierStackStepDTO.FromStep(s);
                     if (sd != null) dto.steps.Add(sd);
                 }
             }
 
-            // 1 項目のグループは古い形でも書いておく。
+            // 1 項目のスタックは古い形でも書いておく。
             if (dto.steps.Count == 1)
             {
                 var only = dto.steps[0];
@@ -327,9 +327,9 @@ namespace Poly_Ling.Serialization
             return dto;
         }
 
-        public ObjectGroup ToObjectGroup()
+        public ModifierStack ToModifierStack()
         {
-            var g = new ObjectGroup(name ?? "")
+            var g = new ModifierStack(name ?? "")
             {
                 StashObjectId = ParseId(stashObjectId),
                 SourceDigest  = sourceDigest ?? "",
@@ -341,7 +341,7 @@ namespace Poly_Ling.Serialization
             if (successCriteria != null) g.SuccessCriteria = new List<string>(successCriteria);
             if (tags            != null) g.Tags            = new List<string>(tags);
 
-            g.Provenance = new ObjectGroupProvenance
+            g.Provenance = new ModifierStackProvenance
             {
                 ParentName    = provParentName    ?? "",
                 ChangeSummary = provChangeSummary ?? "",
@@ -392,11 +392,11 @@ namespace Poly_Ling.Serialization
             // steps が無い保存データ（項目導入前）は、古い 4 つを項目 0 として読む。
             if (g.Steps.Count == 0)
             {
-                var legacy = new ObjectGroupStepDTO
+                var legacy = new ModifierStackStepDTO
                 {
                     action   = action ?? "",
-                    args     = args     ?? new List<ObjectGroupArgDTO>(),
-                    meshRefs = meshRefs ?? new List<ObjectGroupMeshRefDTO>(),
+                    args     = args     ?? new List<ModifierStackArgDTO>(),
+                    meshRefs = meshRefs ?? new List<ModifierStackMeshRefDTO>(),
                 };
 
                 ulong outId = ParseId(outputObjectId);

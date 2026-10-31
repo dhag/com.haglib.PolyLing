@@ -30,7 +30,7 @@
 //     ・MeshFilter のうちに塗ると、塗った頂点だけが SkinningMatrix 経路へ移り、
 //       WorldMatrix が単位でなければ飛ぶ。
 //     ・一括スキンド化は全頂点へ {自分のボーン, 1.0} を書くので、先に塗っても消える。
-//   スキンド化のあとに、オブジェクトグループの評価器が依存の順に流し直して塗る
+//   スキンド化のあとに、モディファイアスタックの評価器が依存の順に流し直して塗る
 //   （PlayerCommandDispatcher.ReevaluateAfterSkinning。作り直し整備計画 段 5）。
 //   「自動更新」を立てる段は残しているが、評価器はその値を見ない。
 
@@ -370,7 +370,7 @@ namespace Poly_Ling.Player
             { _captured.Add(condition); return; }
 
             // 自動更新の失敗は警告で出る（RunAutoUpdateGroups）。この印のものだけ拾う。
-            if (type == LogType.Warning && condition != null && condition.Contains("[ObjectGroup]"))
+            if (type == LogType.Warning && condition != null && condition.Contains("[ModifierStack]"))
                 _captured.Add(condition);
         }
 
@@ -399,11 +399,11 @@ namespace Poly_Ling.Player
             stages.Add(("4. 梯子オブジェクトと取り付け先を決める", StageResolveLadder));
             stages.Add(("5. はしごから揺れボーンを作る",           StagePlaceSpringBones));
             stages.Add(("6. ボーンが出来たか検査",                 StageVerifyBones));
-            stages.Add(("7. はしごのグループへ自動更新を立てる",   StageArmLadderGroup));
+            stages.Add(("7. はしごのスタックへ自動更新を立てる",   StageArmLadderGroup));
             stages.Add(("7b. 鎖へ揺れ方を付ける",                  StageApplySpring));
             stages.Add(("8. はしごからパイプを作る",               StageCreatePipe));
             stages.Add(("9. パイプが出来たか検査",                 StageVerifyPipe));
-            stages.Add(("10. パイプのグループへ自動更新を立てる",  StageArmPipeGroup));
+            stages.Add(("10. パイプのスタックへ自動更新を立てる",  StageArmPipeGroup));
             stages.Add(("11. 一括スキンド化",                      StageConvertToSkinned));
             stages.Add(("12. スキンド化の結果を検査",              StageVerifySkinned));
             stages.Add(("13. 自動更新で塗り直されたか検査",        StageVerifyRepaint));
@@ -678,12 +678,12 @@ namespace Poly_Ling.Player
                 chainStride: Mathf.Max(1, _chainStride.value),
                 bundleMode: SpringBoneLadderBundleMode.Thin,
                 chainRootMasterIndices: null,
-                keepAsGroup: true,
+                keepAsModifierStack: true,
                 attachToSourceParent: true));   // 取り付け先は梯子の親。索引を焼かない（シナリオに記録したとき直書きにならない）
 
             return Ok(
                 "PlaceSpringBoneLadderChainsCommand を送った"
-              + "（はしごを自動検索 / 髪系 / ウェイトを塗る=指定あり / グループとして残す）",
+              + "（はしごを自動検索 / 髪系 / ウェイトを塗る=指定あり / モディファイアスタックとして残す）",
                 "図形生成パネル → 揺れもの（はしご）→ 生成",
                 "フリル版との差はここ 2 つ。取り込みが円環の自動検索ではなくはしごの自動検索"
               + "（開始タグ三角形が起点。BeltStackDetector）、並べ方がスカート系ではなく髪系"
@@ -713,8 +713,8 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(_ladderGroup))
             {
                 if (Waited() < StageWaitLimit) return StageResult.Retry;
-                return Ng("はしごのグループが出来ていない", null,
-                    "「グループとして残す」を指定して送っている。作られないなら、"
+                return Ng("はしごのスタックが出来ていない", null,
+                    "「モディファイアスタックとして残す」を指定して送っている。作られないなら、"
                   + "生成そのものが途中で落ちている。");
             }
 
@@ -729,22 +729,22 @@ namespace Poly_Ling.Player
 
             return Ok(
                 $"ボーンが {bones - _boneCountBefore} 本増えた（合計 {bones}）／"
-              + $"グループ「{_ladderGroup}」が出来た／はしごのウェイトは 0 頂点（正しい）",
-                "オブジェクトグループパネルで、出来たグループと出力先を確かめる",
+              + $"スタック「{_ladderGroup}」が出来た／はしごのウェイトは 0 頂点（正しい）",
+                "モディファイアスタックパネルで、出来たスタックと出力先を確かめる",
                 "出力は鎖の根元ボーン。作り直しではこの ObjectId 列が"
               + "ChainRootMasterIndices へ書き戻され、ボーンを作らず位置だけ流し込む経路に入る。");
         }
 
         private StageResult StageArmLadderGroup()
         {
-            SendCommand(new SetObjectGroupAutoUpdateCommand(ModelIndex, _ladderGroup, true));
+            SendCommand(new SetModifierStackAutoUpdateCommand(ModelIndex, _ladderGroup, true));
 
             return Ok(
-                $"グループ「{_ladderGroup}」の自動更新を立てた",
-                "オブジェクトグループパネル → グループを選ぶ → "
+                $"スタック「{_ladderGroup}」の自動更新を立てた",
+                "モディファイアスタックパネル → スタックを選ぶ → "
               + "「ソースが変わったら自動で作り直す（スキンド化のとき）」を入れる",
                 "スキンド化ははしごの頂点をワールドへ焼くのでダイジェストが変わる。"
-              + "自動更新が立っていると、変換の直後にこのグループが流れてウェイトが塗られる。");
+              + "自動更新が立っていると、変換の直後にこのスタックが流れてウェイトが塗られる。");
         }
 
         // ================================================================
@@ -838,7 +838,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;
+            pl.KeepAsModifierStack = true;
 
             SendCommand(new CreatePipeCommand(
                 ModelIndex,
@@ -859,7 +859,7 @@ namespace Poly_Ling.Player
                 $"CreatePipeCommand を送った（梯子={_ladderName.value} / 取り込んだはしご {acquired.Belts.Count} 本 / "
               + $"断面 {_profile.Count} 点（{(_profileClosed.value ? "閉ループ" : "折れ線")}）/ "
               + $"蓋={(_capEnds.value ? "張る" : "張らない")} / 厚み {pp.Thickness:0.###} / "
-              + "はしごのウェイトを引き継ぐ=する / グループとして残す）",
+              + "はしごのウェイトを引き継ぐ=する / モディファイアスタックとして残す）",
                 "図形生成パネル → パイプ → 取り込み元を選び「はしごを自動検索」→ 断面を取り込む "
               + "→ 「はしごのウェイトを引き継ぐ」を入れて生成",
                 "パイプははしご 1 本ごとに作って MeshObjectAppendOps.Append で連結する"
@@ -906,8 +906,8 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(_pipeGroup))
             {
                 if (Waited() < StageWaitLimit) return StageResult.Retry;
-                return Ng("パイプのグループが出来ていない", null,
-                    "「グループとして残す」を指定して送っている。グループが無いと"
+                return Ng("パイプのスタックが出来ていない", null,
+                    "「モディファイアスタックとして残す」を指定して送っている。スタックが無いと"
                   + "スキンド化のあとの塗り直しが流れない。");
             }
 
@@ -915,7 +915,7 @@ namespace Poly_Ling.Player
 
             return Ok(
                 $"「{PipeName}」が出来た（索引 {_pipeIndex} / 頂点 {mo.VertexCount} / 面 {mo.FaceCount}）／"
-              + $"グループ「{_pipeGroup}」が出来た",
+              + $"スタック「{_pipeGroup}」が出来た",
                 null,
                 "パイプは別メッシュなので、はしごへ塗ったウェイトは自動では乗らない。"
               + "生成時に位置で突き合わせて引き継ぐ仕組み（BeltWeightBinder）に乗せてある。");
@@ -923,13 +923,13 @@ namespace Poly_Ling.Player
 
         private StageResult StageArmPipeGroup()
         {
-            SendCommand(new SetObjectGroupAutoUpdateCommand(ModelIndex, _pipeGroup, true));
+            SendCommand(new SetModifierStackAutoUpdateCommand(ModelIndex, _pipeGroup, true));
 
             return Ok(
-                $"グループ「{_pipeGroup}」の自動更新を立てた",
-                "オブジェクトグループパネル → グループを選ぶ → 自動更新を入れる",
-                "スキンド化のあと、はしごのグループが塗ったウェイトを、"
-              + "このグループが作り直しで引き継ぐ。並びは ObjectGroups の順なので、"
+                $"スタック「{_pipeGroup}」の自動更新を立てた",
+                "モディファイアスタックパネル → スタックを選ぶ → 自動更新を入れる",
+                "スキンド化のあと、はしごのスタックが塗ったウェイトを、"
+              + "このスタックが作り直しで引き継ぐ。並びは ModifierStacks の順なので、"
               + "はしご→パイプの順に流れる。");
         }
 
@@ -1043,7 +1043,7 @@ namespace Poly_Ling.Player
                     $"はしごのウェイトが鎖のボーンを指さないまま待ち切った"
                   + $"（鎖のボーン {chainBones.Count} 本 / はしごの頂点 {lm.VertexCount}）"
                   + DumpGroups(),
-                    "オブジェクトグループパネルで、はしごのグループが「要更新」でなくなっているかを見る",
+                    "モディファイアスタックパネルで、はしごのスタックが「要更新」でなくなっているかを見る",
                     "変換直後は全頂点が「自分のメッシュのボーン」1.0。自動更新が流れると"
                   + "鎖のボーンへ塗り替わる。自動更新が立っているか・要更新か・"
                   + "ソースを引けているかを上の並びで見ること。");
@@ -1070,7 +1070,7 @@ namespace Poly_Ling.Player
                     $"パイプの頂点が 1 つも鎖のボーンを指していない"
                   + $"（パイプの頂点 {pipeVerts} / 鎖のボーン {chainBones.Count} / "
                   + $"はしごは {ladderOnChain} 頂点が鎖を指している）" + DumpGroups(),
-                    "オブジェクトグループパネルで、パイプのグループが「要更新」でなくなっているかを見る",
+                    "モディファイアスタックパネルで、パイプのスタックが「要更新」でなくなっているかを見る",
                     "はしご側は塗れているので、鎖もウェイトも出来ている。落ちているのは"
                   + "パイプ側の引き継ぎ。疑う順は 3 つ。"
                   + "(1) 生成時の位置の突き合わせ（BeltWeightBinder）が引けているか。"
@@ -1084,7 +1084,7 @@ namespace Poly_Ling.Player
                 $"はしごの {ladderOnChain} 頂点が鎖のボーンを指している"
               + $"（鎖のボーン {chainBones.Count} 本）／"
               + $"パイプの {pipeOnChain}/{pipeVerts} 頂点が鎖のボーンを指している",
-                "オブジェクトグループパネルで、両方のグループが「要更新」でなくなっているのを確かめる",
+                "モディファイアスタックパネルで、両方のスタックが「要更新」でなくなっているのを確かめる",
                 "間引きなし（段・本とも 1）では、はしごの頂点は 1 ボーン 1.0 のままになる。"
               + "だから『2 本以上のボーンを持つか』では見られない。"
               + "『鎖のボーンを指しているか』で見るのが正しい。"
@@ -1243,12 +1243,12 @@ namespace Poly_Ling.Player
             return n;
         }
 
-        /// <summary>action が一致する最後のグループの名前。無ければ空。</summary>
+        /// <summary>action が一致する最後のスタックの名前。無ければ空。</summary>
         private static string FindGroupByAction(ModelContext model, string action)
         {
-            if (model?.ObjectGroups == null) return "";
+            if (model?.ModifierStacks == null) return "";
             string found = "";
-            foreach (var g in model.ObjectGroups)
+            foreach (var g in model.ModifierStacks)
             {
                 if (g == null) continue;
                 for (int s = 0; s < g.StepCount; s++)
@@ -1258,31 +1258,31 @@ namespace Poly_Ling.Player
             return found;
         }
 
-        /// <summary>オブジェクトグループの実態を並べる。自動更新が流れなかったときの判定材料。</summary>
+        /// <summary>モディファイアスタックの実態を並べる。自動更新が流れなかったときの判定材料。</summary>
         private string DumpGroups()
         {
             var project = GetProject?.Invoke();
             var model   = GetModel?.Invoke();
-            if (model?.ObjectGroups == null) return "／グループ: （無し）";
+            if (model?.ModifierStacks == null) return "／スタック: （無し）";
 
             var sb = new System.Text.StringBuilder();
-            sb.Append($"／グループ {model.ObjectGroups.Count} 件:");
+            sb.Append($"／スタック {model.ModifierStacks.Count} 件:");
 
-            foreach (var g in model.ObjectGroups)
+            foreach (var g in model.ModifierStacks)
             {
                 if (g == null) { sb.Append(" [null]"); continue; }
 
                 int srcAlive = 0;
                 var src = g.SourceObjectIds;
                 foreach (ulong id in src)
-                    if (Poly_Ling.Ops.ObjectGroupOps.Resolve(project, id) != null) srcAlive++;
+                    if (Poly_Ling.Ops.ModifierStackOps.Resolve(project, id) != null) srcAlive++;
 
                 int outAlive = 0;
                 var outs = g.OutputObjectIds;
                 foreach (ulong id in outs)
-                    if (Poly_Ling.Ops.ObjectGroupOps.Resolve(project, id) != null) outAlive++;
+                    if (Poly_Ling.Ops.ModifierStackOps.Resolve(project, id) != null) outAlive++;
 
-                bool stale = Poly_Ling.Ops.ObjectGroupOps.IsStale(project, g);
+                bool stale = Poly_Ling.Ops.ModifierStackOps.IsStale(project, g);
 
                 sb.Append($" [{g.Name} / action={g.Action} / 自動更新={(g.AutoUpdate ? "有" : "無")}"
                         + $" / 要更新={(stale ? "有" : "無")} / ダイジェスト={(string.IsNullOrEmpty(g.SourceDigest) ? "空" : "有")}"

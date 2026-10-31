@@ -1,7 +1,7 @@
 // PlayerBarnacleTestSubPanel.cs
 // 藤壺（オブジェクト配置）自動検証。ボタン 1 回で
 //   球を生成 → 頭頂に開始タグ三角形 → 小さい円錐と土台の円筒を作る
-//   → 梯子を自動検出 → 各 rung へ円錐＋土台を配置（グループとして保持）
+//   → 梯子を自動検出 → 各 rung へ円錐＋土台を配置（モディファイアスタックとして保持）
 //   → 球と円錐を編集 → 要更新の検出 → 作り直す
 // までを流す。共通部は PlayerBeltGroupTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
@@ -24,7 +24,7 @@
 // 【3 つのソースが全部追随する】
 //   CreatePlaceObjectCommand.SourceMasterIndices には IsMeshRef が付いているので、
 //   円錐と土台も ObjectId で控えられる。梯子の取り込み元（球）と合わせて 3 つが
-//   グループの入力になり、どれを直しても「要更新」になる。
+//   スタックの入力になり、どれを直しても「要更新」になる。
 
 using System;
 using System.Collections.Generic;
@@ -84,7 +84,7 @@ namespace Poly_Ling.Player
 
         protected override string NoteText =>
             "球 → 頭頂に開始タグ三角形 → 小さい円錐＋土台の円筒\n"
-          + "→ 梯子を自動検出 → 各 rung へ配置（グループとして保持）\n"
+          + "→ 梯子を自動検出 → 各 rung へ配置（モディファイアスタックとして保持）\n"
           + "→ 球と円錐を編集 → 要更新の検出 → 作り直し、までを通しで流します。";
 
         protected override string SourceObjectName  => BallName;
@@ -135,10 +135,10 @@ namespace Poly_Ling.Player
             stages.Add(("7. 土台の生成完了を待つ",           StageWaitBase));
             stages.Add(("8. 梯子を自動検出して本数を検査",   StageDetectLadders));
             stages.Add(("9. 梯子へ円錐＋土台を配置",         StagePlaceObjects));
-            stages.Add(("10. グループが出来たか検査",        StageVerifyGroup));
+            stages.Add(("10. スタックが出来たか検査",        StageVerifyGroup));
             stages.Add(("11. ソース（球と円錐）を編集",      StageEditSource));
             stages.Add(("12. 要更新になったか検査",          StageVerifyStale));
-            stages.Add(("13. グループを作り直す",            StageRebuild));
+            stages.Add(("13. スタックを作り直す",            StageRebuild));
             stages.Add(("14. 作り直しの結果を検査",          StageVerifyRebuild));
         }
 
@@ -162,7 +162,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode                = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup            = false;
+            pl.KeepAsModifierStack            = false;
             pl.MergeDuplicateVertices = true;   // 極の四角形を三角形へ畳むために要る
 
             SendCommand(new CreateSphereCommand(ModelIndex, prms, pl));
@@ -281,7 +281,7 @@ namespace Poly_Ling.Player
         {
             var pl = PrimitivePlacement.Default;
             pl.AddMode       = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup   = false;
+            pl.KeepAsModifierStack   = false;
             pl.PlaceRotation = new Vector3(90f, 0f, 0f);
             pl.BakeRotation  = true;
             return pl;
@@ -459,7 +459,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;   // ← ここがグループを残す指定
+            pl.KeepAsModifierStack = true;   // ← ここがスタックを残す指定
 
             SendCommand(new CreatePlaceObjectCommand(
                 ModelIndex, pp,
@@ -477,9 +477,9 @@ namespace Poly_Ling.Player
               + $"倍率{pp.Scale:0.###}（{(pp.ScaleMode == PlaceScaleMode.Uniform ? "一定" : "rung 長に比例")}）、"
               + $"rung 間引き {pp.RungStride}、ロール {pp.RollSteps}",
                 "図形生成パネル → 藤壺 → 「はしごを自動検索」で梯子を拾う → 配置元に円錐と土台を"
-              + "チェック → 割り当て方式を「結合」→ 『オブジェクトグループとして残す』をオン → 生成",
-                "配置元は索引で指すが、グループは PLParam(IsMeshRef) を見て ObjectId へ置き換えて控える。"
-              + "だから梯子の元（球）だけでなく、円錐と土台もグループの入力になる。"
+              + "チェック → 割り当て方式を「結合」→ 『モディファイアスタックとして残す』をオン → 生成",
+                "配置元は索引で指すが、スタックは PLParam(IsMeshRef) を見て ObjectId へ置き換えて控える。"
+              + "だから梯子の元（球）だけでなく、円錐と土台もスタックの入力になる。"
               + "どれを直しても『要更新』になり、作り直しで反映される。"
               + "rung 長に比例させると、極に近いほど rung が短いので藤壺も小さくなる。");
         }
@@ -553,7 +553,7 @@ namespace Poly_Ling.Player
               + $"円錐の先端側 {coneMoved} 個を {grow:P0} 伸ばした",
                 "ビューポートで球を選んで Y 方向へ縮め、円錐を選んで先端を引き伸ばすのと同じ",
                 "動かしたのは入力（梯子の元と配置元）だけ。藤壺の出力先はまだ古い形のまま。"
-              + "グループはどちらの食い違いも見つけられるはず、というのが次の段の検査。");
+              + "スタックはどちらの食い違いも見つけられるはず、というのが次の段の検査。");
         }
     }
 }

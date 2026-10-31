@@ -149,6 +149,12 @@ namespace Poly_Ling.Player
         //   行2(下段のみ)：S      ｜ S｜F ｜ F
         // ================================================================
 
+        private readonly System.Collections.Generic.List<(ViewportSplitMode mode, Button button)> _splitModeButtons
+            = new System.Collections.Generic.List<(ViewportSplitMode, Button)>();
+
+        /// <summary>画面分割の 3×3 ボタン（UI 自動操作の登録用。ID は leftPane.split.&lt;モード名&gt;）。</summary>
+        public System.Collections.Generic.IReadOnlyList<(ViewportSplitMode mode, Button button)> SplitModeButtons => _splitModeButtons;
+
         private VisualElement BuildSplitModeGrid()
         {
             var modes = new ViewportSplitMode[9]
@@ -205,6 +211,7 @@ namespace Poly_Ling.Player
                     b.style.paddingLeft   = 0;
                     b.style.paddingRight  = 0;
                     b.clicked += () => ApplyViewportSplit(mode);
+                    _splitModeButtons.Add((mode, b));
 
                     rowEl.Add(b);
                 }

@@ -304,10 +304,10 @@ namespace Poly_Ling.View
         IMeshView GetMesh(int masterIndex);
 
         /// <summary>
-        /// オブジェクトグループの一覧（表示用の写し。要更新・出力先なしの判定と詳細文も本体で作る）。
+        /// モディファイアスタックの一覧（表示用の写し。要更新・出力先なしの判定と詳細文も本体で作る）。
         /// 作れない実装（スナップショットなど）は空。
         /// </summary>
-        IReadOnlyList<ObjectGroupView> ObjectGroups { get; }
+        IReadOnlyList<ModifierStackView> ModifierStacks { get; }
 
         // マテリアル（操作経路統一計画.md E、M-1）
         /// <summary>マテリアルスロット数。スナップショットでは 0。</summary>
@@ -416,25 +416,25 @@ namespace Poly_Ling.View
         public bool    IsTransparent;
     }
 
-    /// <summary>オブジェクトグループの表示用の写し。</summary>
-    public sealed class ObjectGroupView
+    /// <summary>モディファイアスタックの表示用の写し。</summary>
+    public sealed class ModifierStackView
     {
         public string Name;
         public string Action;
         public int    StepCount;
         public bool   AutoUpdate;
-        /// <summary>入力が出力作成時から変わっている（ObjectGroupOps.IsStale）。</summary>
+        /// <summary>入力が出力作成時から変わっている（ModifierStackOps.IsStale）。</summary>
         public bool   Stale;
         /// <summary>出力先が無い、または 1 つでも引けない。</summary>
         public bool   OutputMissing;
         /// <summary>詳細表示の文（項目・入力・退避）。</summary>
         public string Detail;
         /// <summary>項目ごとの引数（並びは項目順）。</summary>
-        public ObjectGroupStepView[] Steps = System.Array.Empty<ObjectGroupStepView>();
+        public ModifierStackStepView[] Steps = System.Array.Empty<ModifierStackStepView>();
     }
 
-    /// <summary>オブジェクトグループの項目 1 つの引数の写し。</summary>
-    public sealed class ObjectGroupStepView
+    /// <summary>モディファイアスタックの項目 1 つの引数の写し。</summary>
+    public sealed class ModifierStackStepView
     {
         public string   Action;
         public bool     IsExecutable;
@@ -442,7 +442,7 @@ namespace Poly_Ling.View
         public string[] Keys     = System.Array.Empty<string>();
         /// <summary>今の値。Keys と同じ並び。</summary>
         public string[] Values   = System.Array.Empty<string>();
-        /// <summary>書けるか（ObjectGroupOps.ArgWriteBlockReason が null）。Keys と同じ並び。</summary>
+        /// <summary>書けるか（ModifierStackOps.ArgWriteBlockReason が null）。Keys と同じ並び。</summary>
         public bool[]   Writable = System.Array.Empty<bool>();
 
         // ── 逆方向（段 6）

@@ -677,7 +677,7 @@ namespace Poly_Ling.Remote
                 case CreateScenarioFromFolderCommand _:
                 case DeleteScenarioCommand _:
                 case ForkScenarioCommand _:
-                case SaveScenarioFromGroupCommand _:
+                case SaveScenarioFromModifierStackCommand _:
                 case SetScenarioMetaCommand _:
                 case AddScenarioItemCommand _:
                 case SetScenarioItemCommand _:
@@ -689,6 +689,7 @@ namespace Poly_Ling.Remote
                 case BeginTaskCommand _:
                 case EndTaskCommand _:
                 case QueryExecutionLogCommand _:
+                case SetDiagnosticTimingCommand _:
                 case MoveScenarioItemCommand _:
                 case ExpandScenarioRefCommand _:
                 case ExportScenariosCommand _:

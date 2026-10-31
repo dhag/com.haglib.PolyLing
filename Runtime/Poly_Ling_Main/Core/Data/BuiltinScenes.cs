@@ -134,7 +134,7 @@ namespace Poly_Ling.Data
             list.Add(Make("SpringBone設定",
                 "揺れ物のボーン鎖を置き、ウェイト、ジョイント、コライダーを付けて確かめる段階。",
                 "はしご（梯子状ベルト）からの配置は acquireBeltStrips で点列を取ってから行う。",
-                new[] { "dynamics.spring", "rig.skinning", "object.group", "selection", "query" },
+                new[] { "dynamics.spring", "rig.skinning", "object.modifier", "selection", "query" },
                 new[] { "acquireBeltStrips" },
                 PLCommandVerification.SkinWeights | PLCommandVerification.Visual,
                 states: new[] { ("hasBones", true) },
@@ -177,9 +177,9 @@ namespace Poly_Ling.Data
 
             // ---- 派生生成と再構築
             list.Add(Make("派生生成と再構築",
-                "既存の形から派生物（パイプ、フリル、藤壺、歪み複製、穴つなぎ）を作り、オブジェクトグループで作り直す段階。",
-                "ソースを直したら rebuildObjectGroup で出力先へ反映する。",
-                new[] { "geometry.create.derived", "object.group", "selection", "query" },
+                "既存の形から派生物（パイプ、フリル、藤壺、歪み複製、穴つなぎ）を作り、モディファイアスタックで作り直す段階。",
+                "ソースを直したら rebuildModifierStack で出力先へ反映する。",
+                new[] { "geometry.create.derived", "object.modifier", "selection", "query" },
                 null,
                 PLCommandVerification.Topology | PLCommandVerification.Visual,
                 hazards: new[] { (PLCommandHazard.AffectsMultipleObjects, PLHazardAction.RequireConfirmation) }));
@@ -188,7 +188,7 @@ namespace Poly_Ling.Data
             list.Add(Make("髪・装飾物作成",
                 "髪の房、リボン、フリル、パイプなどの装飾物を作る段階。",
                 "揺れ物にする場合は、このあと SpringBone設定 の利用シーンへ切り替える。",
-                new[] { "object.group", "geometry.position", "selection", "query" },
+                new[] { "object.modifier", "geometry.position", "selection", "query" },
                 new[] { "createHairStrand", "createRibbonBow", "createFrill", "createPipe", "createEdgePipe", "createObjectArray", "acquireBeltStrips" },
                 PLCommandVerification.Visual));
 
@@ -261,7 +261,7 @@ namespace Poly_Ling.Data
             list.Add(Make("シナリオ作成・検証",
                 "シナリオを作り、記録・実行・監査する段階。",
                 "利用シーンを消したり改名したりしたら queryScenarioAudit を回す。",
-                new[] { "scenario", "object.group", "mcp", "query" },
+                new[] { "scenario", "object.modifier", "mcp", "query" },
                 null,
                 PLCommandVerification.None));
 

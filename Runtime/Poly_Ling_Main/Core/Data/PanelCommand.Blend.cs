@@ -142,8 +142,8 @@ namespace Poly_Ling.Data
     ///   頂点の位置・法線から読む。バックアップメッシュは作らない（作り直し整備計画 段 13）。
     ///   面構成は書き込み先のまま。頂点数が書き込み先と違えば失敗する。
     ///
-    /// 【オブジェクトグループの作り直し】
-    ///   グループとして残すと、基準（宛先を書き換える設定ではバックアップ、
+    /// 【モディファイアスタックの作り直し】
+    ///   モディファイアスタックとして残すと、基準（宛先を書き換える設定ではバックアップ、
     ///   複製を作る設定では元の宛先）を BaseMasterIndex、書き込み先を
     ///   DestMasterIndex（出力）として記録する。作り直しは
     ///   DestMasterIndex に出力の索引・CreateNewObject に false を書いて流す（RebuildRole）。
@@ -154,7 +154,7 @@ namespace Poly_Ling.Data
     /// 所有権判定の基準が二重になるため。
     /// </summary>
     [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.Targets, Description = "宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]   // PlayerCommandDispatcher.Blend.cs
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]   // PlayerCommandDispatcher.Blend.cs
     public class ApplyBlendCommand : PanelCommand
     {
         /// <summary>1 コマンドで受け付けるソースの上限</summary>
@@ -262,12 +262,12 @@ namespace Poly_Ling.Data
         public Poly_Ling.UI.BlendMatchMode MatchMode { get; }
 
         /// <summary>
-        /// ソースと重みをオブジェクトグループとして残すか。既定 false。
+        /// ソースと重みをモディファイアスタックとして残すか。既定 false。
         /// 残すと、ソースを直したあとに同じ設定で混ぜ直せる。
         /// </summary>
-        [PLParam(TextKey = "KeepAsGroup",
-                 Description = "ソースと重みをオブジェクトグループとして残す")]
-        public bool   KeepAsGroup          { get; }
+        [PLParam(TextKey = "KeepAsModifierStack",
+                 Description = "ソースと重みをモディファイアスタックとして残す")]
+        public bool   KeepAsModifierStack          { get; }
 
         public ApplyBlendCommand(
             int modelIndex,
@@ -277,11 +277,11 @@ namespace Poly_Ling.Data
             bool recalculateNormals   = true,
             bool selectedVerticesOnly = false,
             Poly_Ling.UI.BlendMatchMode matchMode = Poly_Ling.UI.BlendMatchMode.Index,
-            bool keepAsGroup          = false,
+            bool keepAsModifierStack          = false,
             int  baseMasterIndex      = -1)
             : base(modelIndex)
         {
-            KeepAsGroup          = keepAsGroup;
+            KeepAsModifierStack          = keepAsModifierStack;
             BaseMasterIndex      = baseMasterIndex;
             SourceModelIndices   = sourceModelIndices  ?? System.Array.Empty<int>();
             SourceMasterIndices  = sourceMasterIndices ?? System.Array.Empty<int>();

@@ -26,7 +26,7 @@
 //       単調 3 次 Hermite（Fritsch–Carlson）で結ぶ。startT〜endT は mid の一定幅になり、
 //       節点で傾きも連続する。単調なので節点の値を超えず、負にもならない。
 //   方式の切り替えは今は幅だけが持つ（WidthProfileMode）。厚みは LegacyPower のまま。
-//   Default の WidthProfileMode は LegacyPower にしてある。保存済みの ObjectGroup は
+//   Default の WidthProfileMode は LegacyPower にしてある。保存済みの ModifierStack は
 //   無いキーを Default の値で埋めて組み直す（PanelCommandNested.TryBuildNested）ので、
 //   Default を SmoothHermite にすると既存データの幅が変わる。
 //   根元幅の下限を正にしてあるので、根元が潰れることはない。

@@ -8,22 +8,22 @@
 - 棚（`ScenarioLibrary`、流す手本、検索の対象）と実行記録（学習用、検索の対象外）は分ける。値だけ違う派生は棚に置かず、引数で流す。
 - 引数の置き換えは `@prev` / `@<項目ID>` と同じ関数（`PlayerCommandDispatcher.Scenario.cs` の `TryExpandPrev` の周り）で行う。
   記号は `${名前}`（`@名前` は項目 ID と区別できないため）。値の丸ごとだけを置き換え、値の一部（`1,${n},1`）は扱わない。
-- シリアライザを直すときは CSV（`ObjectGroupCsv`、正典）・JSON（`ObjectGroupDTO`）・バイナリ（`RemoteProgressiveSerializer`）を同時に直す。
+- シリアライザを直すときは CSV（`ModifierStackCsv`、正典）・JSON（`ModifierStackDTO`）・バイナリ（`RemoteProgressiveSerializer`）を同時に直す。
 - この計画に入れないもの：焼き付いた索引の参照化（学習に着手するとき）、埋め込み検索（`--metrics-search` の当たり率を見て判断）。
 
 ## 1. 段 1：引数をデータとして持つ（済 2026-10-21）
 
-結果：`ScenarioParam`（ObjectGroup.cs）と `ObjectGroup.Params`／`FindParam`、Clone で複写。
+結果：`ScenarioParam`（ModifierStack.cs）と `ModifierStack.Params`／`FindParam`、Clone で複写。
 CSV は `ga,name,default,description` 行（版 1.6、TryValidate の上限 4 列）、JSON は `scenarioParams`、
 バイナリはモデルメタ版 11（由来の直後に ParamCount と 3 文字列×件数）。
 監査に badParamName / duplicateParam / unknownParam / partialParamRef / unusedParam を追加（引数そのものの指摘は項目 ID 空・keys に名前）。
 literalMeshIndex は `${名前}` の値を見ない。describe（outline でも）に paramNames / paramDefaults / paramDescriptions。
 確認：置き場へ置いた引数付き CSV が describe・監査で期待どおり。exportScenarios で ga 行が往復。
-モデルの objectgroups.csv に ga 行を置き、CSV→JSON（.mfproj）→CSV と CSV→バイナリ（.plrf）→CSV を queryCsvFolderDiff で比べて差なし。
+モデルの modifierstacks.csv に ga 行を置き、CSV→JSON（.mfproj）→CSV と CSV→バイナリ（.plrf）→CSV を queryCsvFolderDiff で比べて差なし。
 メモ：メッシュが 0 個のモデルが CSV 読み込みで落ちていた（`CsvModelSerializer.LoadModel` が entry 0 件で null を返していた）。
-model.csv が無いときだけ null にするよう直した（2026-10-21）。空のモデルとそのオブジェクトグループが CSV・JSON・バイナリの往復で残ることを確認。
+model.csv が無いときだけ null にするよう直した（2026-10-21）。空のモデルとそのモディファイアスタックが CSV・JSON・バイナリの往復で残ることを確認。
 
-- `ObjectGroup.Params`（`List<ScenarioParam>`）。1 件＝名前・既定値・説明。名前は英数字と `_`、シナリオ内で重複不可。
+- `ModifierStack.Params`（`List<ScenarioParam>`）。1 件＝名前・既定値・説明。名前は英数字と `_`、シナリオ内で重複不可。
 - 3 つのシリアライザに足す。引数の欄が無い古いファイル・データは引数なしとして読む。
 - 複製（Clone / Fork）で写す。
 - `queryScenarioAudit`：宣言していない `${名前}` の使用、宣言して使っていない引数を指摘する。
@@ -31,7 +31,7 @@ model.csv が無いときだけ null にするよう直した（2026-10-21）。
 
 ## 2. 段 2：流すときに使う（済 2026-10-21。MCP サーバは再ビルド済み：動いているサーバの polyling_describe の説明に paramKeys / paramValues の文がある〔2026-10-31 確認〕）
 
-結果：共通関数は `ScenarioParam.TryBind` / `TrySubstitute` / `TryBindRef` / `SubstituteStep`（ObjectGroup.cs）。
+結果：共通関数は `ScenarioParam.TryBind` / `TrySubstitute` / `TryBindRef` / `SubstituteStep`（ModifierStack.cs）。
 流し：`Frame.Params` に段ごとの値。`runScenario` の `paramKeys` / `paramValues`（宣言に無い名前は流し始める前に失敗）。
 参照項目の Args を子に結ぶ（値の親 ${…} は親の値で置き換え。キーが子に無ければその項目で失敗）。
 `TryExecuteRunStep` は差し替えの後・@prev の前に ${…} を置き換える。流れの記録に結んだ値を出す。

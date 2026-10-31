@@ -96,17 +96,17 @@ namespace Poly_Ling.Remote
         // [2B] ExpressionCount  [MorphExpression × ExpressionCount]
         //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type  [1B] IsSymmetric
         //                    [2B] EntryCount  ([2B] MeshIndex  [4B] Weight) × EntryCount
-        //   ※ Version 3 で末尾に ObjectGroup ブロックを追加。
-        //     [2B] GroupCount  [ObjectGroup × GroupCount]
-        //     ObjectGroup: [string] Name  [string] Action
+        //   ※ Version 3 で末尾に ModifierStack ブロックを追加。
+        //     [2B] GroupCount  [ModifierStack × GroupCount]
+        //     ModifierStack: [string] Name  [string] Action
         //                  [8B] OutputObjectId  [8B] StashObjectId
         //                  [1B] AutoUpdate  [string] SourceDigest
         //                  [2B] ArgCount     ([string] Key [string] Value) × ArgCount
         //                  [2B] MeshRefCount ([string] Key [2B] IdCount [8B × IdCount]) × MeshRefCount
         //     参照は ObjectId なので受信側でメッシュ索引へ読み替える必要がない。
         //     Version 2 の受信側とは非互換のため Editor/Player を同時更新すること。
-        //   ※ Version 4 で ObjectGroup を項目列にした。
-        //     ObjectGroup: [string] Name  [8B] StashObjectId
+        //   ※ Version 4 で ModifierStack を項目列にした。
+        //     ModifierStack: [string] Name  [8B] StashObjectId
         //                  [1B] AutoUpdate  [string] SourceDigest
         //                  [2B] StepCount  [Step × StepCount]
         //     Step: [string] Action
@@ -117,8 +117,8 @@ namespace Poly_Ling.Remote
         //     単数の OutputObjectId をやめた。読みは Version 3 の形も受ける。
         //     Version 3 の受信側とは非互換のため Editor/Player を同時更新すること。
         //   ※ Version 5 で意味情報を追加した。足したものはすべて既存の欄の直後で、
-        //     ObjectGroup と Step のそれぞれに固まって入る。
-        //     ObjectGroup: … [string] SourceDigest
+        //     ModifierStack と Step のそれぞれに固まって入る。
+        //     ModifierStack: … [string] SourceDigest
         //                  [string] Goal
         //                  [2B] PreconditionCount  [string × N]
         //                  [2B] SuccessCriterionCount [string × N]
@@ -127,7 +127,7 @@ namespace Poly_Ling.Remote
         //                  [2B] StepCount  [Step × StepCount]
         //     Step: [string] Action  [string] ScenarioItemId  [1B] Kind  [string] Purpose
         //           [2B] OutCount … （以下 Version 4 と同じ）
-        //     Kind は ObjectGroupStepKind。0 = 実行する項目で、Version 4 以前は全部 0。
+        //     Kind は ModifierStackStepKind。0 = 実行する項目で、Version 4 以前は全部 0。
         //     読みは Version 3 / 4 の形も受ける。
         //     Version 4 の受信側とは非互換のため Editor/Player を同時更新すること。
         //   ※ Version 6 で参照段を追加した。Step の Purpose の直後に足す。
@@ -142,14 +142,14 @@ namespace Poly_Ling.Remote
         //   ※ Version 8 で各材質の末尾に AssetPath・金属度・滑らかさ・法線強度・遮蔽強度・
         //     ブレンド・各テクスチャ経路（materials.csv と同じ項目）を追加。材質は途中に並ぶので
         //     Version 7 以前の受信側とは非互換。Editor/Player を同時更新すること。
-        //   ※ Version 11 で ObjectGroup の由来の直後にシナリオの引数を追加。
-        //     ObjectGroup: … [string] ProvCreatedBy
+        //   ※ Version 11 で ModifierStack の由来の直後にシナリオの引数を追加。
+        //     ModifierStack: … [string] ProvCreatedBy
         //                  [2B] ParamCount ([string] Name [string] Default [string] Description) × ParamCount
         //                  [2B] StepCount …
-        //     グループは途中に並ぶので Version 10 以前の受信側とは非互換。Editor/Player を同時更新すること。
+        //     スタックは途中に並ぶので Version 10 以前の受信側とは非互換。Editor/Player を同時更新すること。
         //   ※ Version 12 で末尾に表情の作成日時（MorphExpression.CreatedAt。.mfproj の morphExpressions[].createdAt）を追加。
         //     [4B] ExpressionCount  ([8B] DateTime.ToBinary) × ExpressionCount。並びは MorphExpressions と同じ。
-        //     続けて ObjectGroup の付帯（作成日時・出力・項目の利用シーンと点の成分数。WriteObjectGroupExtras）。
+        //     続けて ModifierStack の付帯（作成日時・出力・項目の利用シーンと点の成分数。WriteModifierStackExtras）。
         //     Version 11 以前の受信側は末尾のこの欄を読まずに終わる。
         // ================================================================
 
@@ -168,7 +168,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)12);  // version 12: 表情の作成日時。version 11: シナリオの引数（ObjectGroup.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
+                w.Write((byte)12);  // version 12: 表情の作成日時。version 11: シナリオの引数（ModifierStack.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ModifierStack ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -204,10 +204,10 @@ namespace Poly_Ling.Remote
                     }
                 }
 
-                // ── ObjectGroups（version 3 で追加 / version 4 で項目列へ）
+                // ── ModifierStacks（version 3 で追加 / version 4 で項目列へ）
                 //    並びは保存と同じくキー順に固定する。Dictionary の列挙順は
                 //    保証されないため、固定しないと同じ内容でもバイト列が変わる。
-                var groups = model.ObjectGroups;
+                var groups = model.ModifierStacks;
                 int groupCount = groups?.Count ?? 0;
                 w.Write((ushort)groupCount);
                 for (int i = 0; i < groupCount; i++)
@@ -215,7 +215,7 @@ namespace Poly_Ling.Remote
                     var g = groups[i];
                     if (g == null)
                     {
-                        // 空のグループとして詰めておく（件数と実体をずらさない）。
+                        // 空のスタックとして詰めておく（件数と実体をずらさない）。
                         WriteString(w, "");
                         w.Write(0UL);
                         w.Write(false); WriteString(w, "");
@@ -320,8 +320,8 @@ namespace Poly_Ling.Remote
                 // ── version 12：表情の作成日時（.mfproj の morphExpressions[].createdAt と揃える）
                 WriteMorphExpressionCreatedAt(w, model);
 
-                // ── version 12：ObjectGroup の付帯（作成日時・出力・項目の利用シーンと点の成分数）
-                WriteObjectGroupExtras(w, model);
+                // ── version 12：ModifierStack の付帯（作成日時・出力・項目の利用シーンと点の成分数）
+                WriteModifierStackExtras(w, model);
 
                 return ms.ToArray();
             }
@@ -404,9 +404,9 @@ namespace Poly_Ling.Remote
                     model.MorphExpressions.Add(expr);
                 }
 
-                // ── ObjectGroups（version 3 以降）
+                // ── ModifierStacks（version 3 以降）
                 //    v2 以前の送信側はこのブロックを持たない。読まずに抜ける。
-                //    v3 は 1 グループ 1 コマンド 1 出力。項目 0 として読む。
+                //    v3 は 1 スタック 1 コマンド 1 出力。項目 0 として読む。
                 if (metaVersion >= 3)
                 {
                     ushort groupCount = r.ReadUInt16();
@@ -414,7 +414,7 @@ namespace Poly_Ling.Remote
                     {
                         if (metaVersion >= 4)
                         {
-                            var g = new Poly_Ling.Data.ObjectGroup(ReadString(r))
+                            var g = new Poly_Ling.Data.ModifierStack(ReadString(r))
                             {
                                 StashObjectId = r.ReadUInt64(),
                                 AutoUpdate    = r.ReadBoolean(),
@@ -428,7 +428,7 @@ namespace Poly_Ling.Remote
                                 g.Preconditions   = ReadStringList(r);
                                 g.SuccessCriteria = ReadStringList(r);
                                 g.Tags            = ReadStringList(r);
-                                g.Provenance = new Poly_Ling.Data.ObjectGroupProvenance
+                                g.Provenance = new Poly_Ling.Data.ModifierStackProvenance
                                 {
                                     ParentName    = ReadString(r),
                                     ChangeSummary = ReadString(r),
@@ -453,7 +453,7 @@ namespace Poly_Ling.Remote
                             ushort stepCount = r.ReadUInt16();
                             for (int si = 0; si < stepCount; si++)
                             {
-                                var st = new Poly_Ling.Data.ObjectGroupStep
+                                var st = new Poly_Ling.Data.ModifierStackStep
                                 {
                                     Action = ReadString(r),
                                 };
@@ -464,9 +464,9 @@ namespace Poly_Ling.Remote
 
                                     byte kindByte = r.ReadByte();
                                     st.Kind = System.Enum.IsDefined(
-                                                  typeof(Poly_Ling.Data.ObjectGroupStepKind), (int)kindByte)
-                                        ? (Poly_Ling.Data.ObjectGroupStepKind)kindByte
-                                        : Poly_Ling.Data.ObjectGroupStepKind.Command;
+                                                  typeof(Poly_Ling.Data.ModifierStackStepKind), (int)kindByte)
+                                        ? (Poly_Ling.Data.ModifierStackStepKind)kindByte
+                                        : Poly_Ling.Data.ModifierStackStepKind.Command;
 
                                     st.Purpose = ReadString(r);
 
@@ -512,17 +512,17 @@ namespace Poly_Ling.Remote
                             }
 
                             if (g.Steps.Count == 0)
-                                g.Steps.Add(new Poly_Ling.Data.ObjectGroupStep());
+                                g.Steps.Add(new Poly_Ling.Data.ModifierStackStep());
 
                             // Version 4 以前には ScenarioItemId が無い。
                             g.EnsureScenarioItemIds();
-                            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(g);   // 段 13 より前のブレンド
-                            model.ObjectGroups.Add(g);
+                            Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyBlendRefs(g);   // 段 13 より前のブレンド
+                            model.ModifierStacks.Add(g);
                             continue;
                         }
 
                         // version 3
-                        var g3 = new Poly_Ling.Data.ObjectGroup(ReadString(r))
+                        var g3 = new Poly_Ling.Data.ModifierStack(ReadString(r))
                         {
                             Action         = ReadString(r),
                             OutputObjectId = r.ReadUInt64(),
@@ -550,8 +550,8 @@ namespace Poly_Ling.Remote
                         }
 
                         g3.EnsureScenarioItemIds();
-                        Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyBlendRefs(g3);   // 段 13 より前のブレンド
-                        model.ObjectGroups.Add(g3);
+                        Poly_Ling.Ops.ModifierStackOps.UpgradeLegacyBlendRefs(g3);   // 段 13 より前のブレンド
+                        model.ModifierStacks.Add(g3);
                     }
                 }
 
@@ -571,7 +571,7 @@ namespace Poly_Ling.Remote
                 if (metaVersion >= 12)
                 {
                     ReadMorphExpressionCreatedAt(r, model);
-                    ReadObjectGroupExtras(r, model);
+                    ReadModifierStackExtras(r, model);
                 }
 
                 return (modelIndex, model);

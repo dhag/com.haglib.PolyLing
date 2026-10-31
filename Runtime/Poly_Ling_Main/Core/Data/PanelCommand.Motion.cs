@@ -49,6 +49,7 @@ namespace Poly_Ling.Data
     [PLResult("expressions", PLResultKind.Integer, Description = "表情トラックの数")]
     [PLResult("durationSec", PLResultKind.Number,  Description = "書き出した長さ（秒）")]
     [PLResult("issues",      PLResultKind.Text,    Description = "エラーと警告の一覧（先頭の一部）")]
+    [PLResult("reflattened", PLResultKind.Integer, Description = "reflattenEdit で置き換えた平らなトラックの数")]
     public class ExportMotionJsonCommand : PanelCommand
     {
         [PLParam(TextKey = "MotionJsonSavePath",
@@ -81,6 +82,9 @@ namespace Poly_Ling.Data
         [PLParam(Description = "読み込むファイルが FBX のとき、読むテイク（アニメーションスタック）の番号。0 から。テイクが 1 つなら 0", Min = 0.0)]
         public int FbxTake { get; }
 
+        [PLParam(Description = "読み込んだ PolyLing モーションが編集の構造 edit（version 5）を持つとき、edit を評価し直して（MotionEditFlattener）当たる平らなトラックを置き換えてから書く。edit が無ければ何もしない")]
+        public bool ReflattenEdit { get; }
+
         public ExportMotionJsonCommand(
             int modelIndex, string filePath, string sourcePath,
             MotionSourceKind sourceKind = MotionSourceKind.Vmd,
@@ -88,9 +92,11 @@ namespace Poly_Ling.Data
             BvhSkeletonKind bvhSkeleton = BvhSkeletonKind.Auto,
             string bvhMappingCsvPath = null,
             string fbxRestPath = null,
-            int fbxTake = 0)
+            int fbxTake = 0,
+            bool reflattenEdit = false)
             : base(modelIndex)
         {
+            ReflattenEdit     = reflattenEdit;
             FbxRestPath       = fbxRestPath;
             FbxTake           = fbxTake;
             FilePath          = filePath;
@@ -363,6 +369,7 @@ namespace Poly_Ling.Data
     [PLResult("phonemes",      PLResultKind.Text,    Description = "モーラの文字と母音の音素の並び（例：コ(o) ン(N)）")]
     [PLResult("tracks",        PLResultKind.Text,    Description = "書いた表情トラック名（カンマ区切り）")]
     [PLResult("unresolved",    PLResultKind.Text,    Description = "書いたトラックのうち、今のモデルに同じ名前の表情が無いもの（カンマ区切り。モデルが無ければ空）")]
+    [PLResult("droppedKeys",   PLResultKind.Integer, Description = "クリップが編集の構造 edit を持つとき、edit に取り込むときに同じフレームに丸まって捨てたキーの数（edit はチャンネルごと・フレームごとに 1 キー。平らなトラックも edit から作り直すので、このキーは残らない）。edit の無いクリップは 0")]
     public class CreateLipSyncFromVoicevoxCommand : PanelCommand
     {
         [PLParam(Description = "セリフ（日本語の文）", Required = true)]

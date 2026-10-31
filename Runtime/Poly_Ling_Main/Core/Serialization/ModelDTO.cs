@@ -101,14 +101,14 @@ namespace Poly_Ling.Serialization
         public List<MeshSelectionSetDTO> meshSelectionSets = new List<MeshSelectionSetDTO>();
 
         // ================================================================
-        // オブジェクトグループ（入力ソース＋生成パラメータ＋出力先）
+        // モディファイアスタック（入力ソース＋生成パラメータ＋出力先）
         // ================================================================
 
         /// <summary>
-        /// オブジェクトグループ一覧。
+        /// モディファイアスタック一覧。
         /// 参照は ObjectId で持つので、メッシュの並べ替えでは付け替えが要らない。
         /// </summary>
-        public List<ObjectGroupDTO> objectGroups = new List<ObjectGroupDTO>();
+        public List<ModifierStackDTO> modifierStacks = new List<ModifierStackDTO>();
 
         // ================================================================
         // DataStore（コマンドが返した実データの辞書）
@@ -116,7 +116,7 @@ namespace Poly_Ling.Serialization
 
         /// <summary>
         /// 結果辞書の項目一覧。
-        /// 参照は ObjectGroups と同じく ObjectId を併せて持つので、
+        /// 参照は ModifierStacks と同じく ObjectId を併せて持つので、
         /// メッシュの並べ替えでは付け替えが要らない。
         /// </summary>
         public List<PLDataEntryDTO> dataStore = new List<PLDataEntryDTO>();

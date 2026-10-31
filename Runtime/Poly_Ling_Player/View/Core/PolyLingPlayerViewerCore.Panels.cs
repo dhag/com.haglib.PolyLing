@@ -324,13 +324,13 @@ namespace Poly_Ling.Player
             _meshSelSetSubPanel?.Refresh();
         }
 
-        private void ShowObjectGroupPanel()
+        private void ShowModifierStackPanel()
         {
             // カテゴリ 3
             ApplyGeneralPanelMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.ObjectGroupSection, _layoutRoot?.ObjectGroupBtn);
+            ShowRightPanel(_layoutRoot?.ModifierStackSection, _layoutRoot?.ModifierStackBtn);
             // 要更新の判定はソースの全頂点を走査する。パネルを出したこの一度だけ行う。
-            _objectGroupSubPanel?.Refresh();
+            _modifierStackSubPanel?.Refresh();
         }
 
         private void ShowMergeMeshesPanel()

@@ -1,7 +1,7 @@
 // PlayerProfile2DTestSubPanel.cs
 // 2D 押し出し自動検証。ボタン 1 回で
 //   輪郭（外周＋穴）を描画オブジェクト（2 頂点ライン）として置く → そこから取り込む
-//   → 2D 押し出しを生成（グループとして保持）→ 輪郭の線を編集
+//   → 2D 押し出しを生成（モディファイアスタックとして保持）→ 輪郭の線を編集
 //   → 要更新の検出 → 作り直す
 // までを流す。共通部は PlayerBeltGroupTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
@@ -21,7 +21,7 @@
 //
 // 【平坦な列を必ず埋めること】
 //   Profile2DParams.Loops は PLParam(Ignore) なので ToArgs に出ない。
-//   グループが輪郭を控えられるよう、コマンドを組むときに LoopPointValues /
+//   スタックが輪郭を控えられるよう、コマンドを組むときに LoopPointValues /
 //   LoopStarts / LoopIsHole も埋める（BuildProfile2DCommand と同じ扱い）。
 
 using System;
@@ -61,7 +61,7 @@ namespace Poly_Ling.Player
         protected override string TitleText => "2D押し出し自動検証";
 
         protected override string NoteText =>
-            "輪郭（外周＋穴・描画オブジェクト）→ 取り込み → 2D 押し出しを生成（グループとして保持）\n"
+            "輪郭（外周＋穴・描画オブジェクト）→ 取り込み → 2D 押し出しを生成（モディファイアスタックとして保持）\n"
           + "→ 輪郭の線を編集 → 要更新の検出 → 作り直し、までを通しで流します。\n"
           + "梯子は使いません。入力は輪郭のループ群だけです。";
 
@@ -102,10 +102,10 @@ namespace Poly_Ling.Player
             stages.Add(("2. 輪郭の生成完了を待つ",             StageWaitProfileAsSource));
             stages.Add(("3. 描画オブジェクトから取り込む",     StageImportLoops));
             stages.Add(("4. 2D 押し出しを生成",                StageCreateProfile2D));
-            stages.Add(("5. グループが出来たか検査",           StageVerifyGroup));
+            stages.Add(("5. スタックが出来たか検査",           StageVerifyGroup));
             stages.Add(("6. 輪郭の線を編集",                   StageEditSource));
             stages.Add(("7. 要更新になったか検査",             StageVerifyStale));
-            stages.Add(("8. グループを作り直す",               StageRebuild));
+            stages.Add(("8. スタックを作り直す",               StageRebuild));
             stages.Add(("9. 作り直しの結果を検査",             StageVerifyRebuild));
         }
 
@@ -145,7 +145,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = false;
+            pl.KeepAsModifierStack = false;
 
             SendCommand(new AddGeneratedMeshCommand(
                 ModelIndex, mo, ProfileName, pl, poseAlreadyBaked: true));
@@ -271,7 +271,7 @@ namespace Poly_Ling.Player
                 arr[i] = new Profile2DParams.LoopData(_loops[i]);
             pp.Loops = arr;
 
-            // Loops は PLParam(Ignore) で ToArgs に出ない。グループが輪郭を
+            // Loops は PLParam(Ignore) で ToArgs に出ない。スタックが輪郭を
             // 控えられるよう、平坦な列も必ず埋める（BuildProfile2DCommand と同じ）。
             Profile2DParams.SplitLoops(
                 pp.Loops, out var vals, out var starts, out var holes);
@@ -281,7 +281,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;   // ← ここがグループを残す指定
+            pl.KeepAsModifierStack = true;   // ← ここがスタックを残す指定
 
             SendCommand(new CreateProfile2DCommand(
                 ModelIndex, pp, pl,
@@ -292,7 +292,7 @@ namespace Poly_Ling.Player
               + $"厚み{pp.Thickness:0.###} / エッジ分割{pp.SegmentsFront}）。"
               + $"取り込み元は索引 {ProfileIndex}、読み方は閉ループ群",
                 "図形生成パネル → 図形「2D押し出し」→ 「取り込み(メッシュ→プロファイル)」"
-              + "→ 『オブジェクトグループとして残す』をオン → 生成",
+              + "→ 『モディファイアスタックとして残す』をオン → 生成",
                 "2D 押し出しの入力は輪郭だけなので、梯子は要らない。"
               + "Loops はスキーマに出せない形なので、外へ渡すときは平坦な 3 本"
               + "（点の連結・ループ開始位置・穴フラグ）で持つ。"
@@ -348,7 +348,7 @@ namespace Poly_Ling.Player
                 $"穴側の点 {moved} 個を外へ {grow:0.###} 広げた（原点からの距離 {border:0.###} 未満を穴とみなした）",
                 "ビューポートで輪郭の線を選び、穴の点を外へ動かすのと同じ",
                 "動かしたのは入力（輪郭の線オブジェクト）だけ。押し出しの出力先はまだ古い形のまま。"
-              + "グループはこの食い違いを見つけられるはず、というのが次の段の検査。");
+              + "スタックはこの食い違いを見つけられるはず、というのが次の段の検査。");
         }
     }
 }

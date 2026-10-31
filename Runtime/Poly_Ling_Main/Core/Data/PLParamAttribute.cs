@@ -72,7 +72,7 @@ namespace Poly_Ling.Data
     /// </summary>
     public enum PLMeshRefSpace
     {
-        /// <summary>未指定。グループに残るコマンドの入力キーでは PanelCommandFactoryAudit.RunAll が数える。</summary>
+        /// <summary>未指定。スタックに残るコマンドの入力キーでは PanelCommandFactoryAudit.RunAll が数える。</summary>
         Unspecified = 0,
 
         /// <summary>
@@ -154,7 +154,7 @@ namespace Poly_Ling.Data
         /// 値が MeshContextList の索引（int）または索引配列（int[]）であることを示す。
         ///
         /// 【何のために要るか】
-        ///   ObjectGroup は生成コマンドを ToArgs の文字列で保存し、あとで Create で
+        ///   ModifierStack は生成コマンドを ToArgs の文字列で保存し、あとで Create で
         ///   組み直す。索引はリストの挿入・削除・並べ替えでずれるため、
         ///   保存した値をそのまま使うと別のオブジェクトを指す。
         ///   再構築の直前に、この印が付いたキーだけ ObjectId から索引を引き直す。
@@ -166,7 +166,7 @@ namespace Poly_Ling.Data
         ///
         /// 【付けても意味が変わらないもの】
         ///   スキーマ生成・ToArgs・Create の扱いは変わらない。読むのは
-        ///   ObjectGroup の再構築だけで、印が無いキーは従来どおり素通りする。
+        ///   ModifierStack の再構築だけで、印が無いキーは従来どおり素通りする。
         /// </summary>
         public bool IsMeshRef { get; set; }
 
@@ -222,7 +222,7 @@ namespace Poly_Ling.Data
         ///   （例 "addMode=AddToExisting|ReplaceExisting"）。空なら無条件で書き込み先。
         ///   文字列の引数は空のときだけを "キー=" と書ける。
         ///   "&amp;" で節を並べると、すべての節を満たすとき書き込み先（段 D。
-        ///   例 "placement.keepAsGroup=true&amp;edgeSetName="）。入れ子の型のメンバでは各節に接頭辞が付く。
+        ///   例 "placement.keepAsModifierStack=true&amp;edgeSetName="）。入れ子の型のメンバでは各節に接頭辞が付く。
         ///   読むのは担当者判定・出力の保護・依存グラフで、どれも PanelCommandFactory.IsWriteActive を通す。
         ///   キーと値の妥当性は PanelCommandFactoryAudit.RunAll が検査する。
         /// </summary>
@@ -250,7 +250,7 @@ namespace Poly_Ling.Data
         /// このパラメータがプロファイル（断面の点列・輪郭のループ群）の本体であることを示す。
         ///
         /// 【何のために要るか】
-        ///   IsMeshRef と同じ考え方。ObjectGroup は生成コマンドを文字列で保存し、
+        ///   IsMeshRef と同じ考え方。ModifierStack は生成コマンドを文字列で保存し、
         ///   あとで組み直す。プロファイルを焼き込んだままだと、取り込み元の
         ///   描画オブジェクトを直しても出力先は古いままになる。
         ///   再構築の直前に、この印が付いたキーだけ取り込みを掛け直して差し替える。
@@ -289,11 +289,11 @@ namespace Poly_Ling.Data
         /// 旧版の保存データではこの値を x,y の 2 個ずつで書いていた（今は x,y,z の 3 個ずつ）。
         ///
         /// 【何のために要るか】
-        ///   プロファイルの点を 3D にしたとき、保存済みの ObjectGroup の Args は
+        ///   プロファイルの点を 3D にしたとき、保存済みの ModifierStack の Args は
         ///   2 個ずつのまま残っている。値の個数だけでは 2 個ずつか 3 個ずつかを
         ///   区別できない（6 個なら 3 点とも 2 点とも読める）ので、項目に控えた
-        ///   ObjectGroupStep.ProfileDim が 2 のときだけ、この印のキーを z=0 で 3 個ずつへ直す
-        ///   （ObjectGroupOps.UpgradeLegacyProfileArgs）。
+        ///   ModifierStackStep.ProfileDim が 2 のときだけ、この印のキーを z=0 で 3 個ずつへ直す
+        ///   （ModifierStackOps.UpgradeLegacyProfileArgs）。
         /// </summary>
         public bool LegacyXYPairs { get; set; }
 
@@ -304,7 +304,7 @@ namespace Poly_Ling.Data
         /// 作り直しで出力先へ書き戻すときの役割。
         ///
         /// 【何のために要るか】
-        ///   ObjectGroup の作り直しは、新しいオブジェクトを作らず既存の出力先へ
+        ///   ModifierStack の作り直しは、新しいオブジェクトを作らず既存の出力先へ
         ///   中身を書き戻す。そのために「出力先の索引を書くキー」と
         ///   「書き戻す形へ切り替えるキー」が要る。
         ///   コマンド型で分岐すると、対応するコマンドを足すたびに分岐が伸びるので、

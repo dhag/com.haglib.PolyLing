@@ -3,9 +3,9 @@
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
 // 【止まる所】
-//   判断が要る項目（ObjectGroupStep.RequiresJudgment：指示・確認）と、失敗した項目。
+//   判断が要る項目（ModifierStackStep.RequiresJudgment：指示・確認）と、失敗した項目。
 //   注意の項目は読み飛ばし、別のシナリオを呼ぶ項目では呼ばれたシナリオをその場で流す。
-//   止める条件は ObjectGroupStep.RequiresJudgment の 1 か所だけを見る。
+//   止める条件は ModifierStackStep.RequiresJudgment の 1 か所だけを見る。
 //
 // 【途中の項目だけを撃つ口を置かない】
 //   @prev は「直前に実行した項目」、@<項目 ID> は「その項目の結果」を指すので、
@@ -24,9 +24,9 @@
 // 【シナリオは流し始めに写す】
 //   流している途中でシナリオのファイルが書き換わっても、流れは写しを使う。
 //
-// 【グループと同じに扱う】（作り直し整備計画 段 11）
-//   シナリオは疎なグループで、違いは密か疎か・処理時間だけにする。そのため項目ごとに
-//     ・梯子・断面は取り込み元から読み直す（ObjectGroupOps.RefreshInputs。作り直しと同じ）
+// 【スタックと同じに扱う】（作り直し整備計画 段 11）
+//   シナリオは疎なスタックで、違いは密か疎か・処理時間だけにする。そのため項目ごとに
+//     ・梯子・断面は取り込み元から読み直す（ModifierStackOps.RefreshInputs。作り直しと同じ）
 //     ・書き込みのある項目のあとに評価器を流す（RunModifierEvaluation）
 //
 // 【実行は Dispatch の再入】
@@ -75,7 +75,7 @@ namespace Poly_Ling.Player
         internal sealed class Frame
         {
             public string      Name;
-            public ObjectGroup Group;
+            public ModifierStack Group;
             public int         Index;
 
             /// <summary>
@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
         public string          StopMessage      { get; internal set; } = "";
 
         /// <summary>止まった項目の種別（判断待ちのとき、指示か確認かを表示で分けるため）。</summary>
-        public ObjectGroupStepKind StopStepKind { get; internal set; } = ObjectGroupStepKind.Command;
+        public ModifierStackStepKind StopStepKind { get; internal set; } = ModifierStackStepKind.Command;
 
         public int             ExecutedCommands { get; internal set; }
 
@@ -162,13 +162,13 @@ namespace Poly_Ling.Player
         public string CurrentScenario => Top?.Name ?? "";
 
         /// <summary>いま居るシナリオ（写し）。</summary>
-        public ObjectGroup CurrentGroup => Top?.Group;
+        public ModifierStack CurrentGroup => Top?.Group;
 
         /// <summary>いま居る項目の位置。0 始まり。終わっていれば項目数と同じ。</summary>
         public int CurrentIndex => Top?.Index ?? -1;
 
         /// <summary>いま居る項目。無ければ null。</summary>
-        public ObjectGroupStep CurrentStep
+        public ModifierStackStep CurrentStep
         {
             get
             {
@@ -449,7 +449,7 @@ namespace Poly_Ling.Player
                 run.PassJudgment = false;
 
                 // ── 注意：読むだけ ──
-                if (step.Kind == ObjectGroupStepKind.Note)
+                if (step.Kind == ModifierStackStepKind.Note)
                 {
                     run.SetStatus(frame.Name, step.ScenarioItemId, ScenarioItemRunStatus.Done);
                     run.AddLog($"{at} 注意: {step.Purpose}");
@@ -542,7 +542,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>済ませた項目に経路があれば、次の項目の経路選びの基準として控える。</summary>
-        private static void NotePrevRoute(ScenarioRunState run, ObjectGroupStep step)
+        private static void NotePrevRoute(ScenarioRunState run, ModifierStackStep step)
         {
             var r = UiRouteCatalog.Choose(PanelCommandFactory.ResolveType(step?.Action), run.PrevRoute);
             if (r != null) run.PrevRoute = r;
@@ -622,7 +622,7 @@ namespace Poly_Ling.Player
         }
 
         private static void FailRunStep(
-            ScenarioRunState run, ScenarioRunState.Frame frame, ObjectGroupStep step, string at, string reason)
+            ScenarioRunState run, ScenarioRunState.Frame frame, ModifierStackStep step, string at, string reason)
         {
             run.SetStatus(frame.Name, step.ScenarioItemId, ScenarioItemRunStatus.Failed);
             run.Stop         = ScenarioRunStop.Failed;
@@ -639,7 +639,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private bool TryExecuteRunStep(
             ScenarioRunState run, string scenarioName, IReadOnlyDictionary<string, string> frameParams,
-            ObjectGroupStep step, int modelIndex, out string reason, out int waitCallNo)
+            ModifierStackStep step, int modelIndex, out string reason, out int waitCallNo)
         {
             reason = null;
             waitCallNo = 0;
@@ -698,10 +698,10 @@ namespace Poly_Ling.Player
             if (stepModelIndex < 0) stepModelIndex = modelIndex;
 
             // 梯子・断面は、取り込み方と取り込み元が書いてあれば取り込み元から読み直す。
-            // グループの作り直し（ObjectGroupOps.BuildCommand）と同じ読み方にする（作り直し整備計画 段 11）。
+            // スタックの作り直し（ModifierStackOps.BuildCommand）と同じ読み方にする（作り直し整備計画 段 11）。
             // 取り込み方が Baked・取り込み元が -1 なら書いてある点列のまま。
             if (cmdType != null)
-                Poly_Ling.Ops.ObjectGroupOps.RefreshInputs(_getProject(), stepModelIndex, cmdType, args, out _, out _);
+                Poly_Ling.Ops.ModifierStackOps.RefreshInputs(_getProject(), stepModelIndex, cmdType, args, out _, out _);
 
             var inner = PanelCommandFactory.Create(step.Action, stepModelIndex, args, out string createError);
             if (inner == null) { reason = $"{step.Action} を組み立てられません: {createError}"; return false; }
@@ -724,7 +724,7 @@ namespace Poly_Ling.Player
                 return true;
             }
 
-            // 書き込みのある項目のあとに、グループの項目（モディファイア）を依存の順に流す（作り直し整備計画 段 11）。
+            // 書き込みのある項目のあとに、スタックの項目（モディファイア）を依存の順に流す（作り直し整備計画 段 11）。
             // 項目は入れ子の Dispatch なので一番外側の終わり（DispatchAuthorized）の評価に乗らず、
             // 流しの中では画面更新のきっかけ（RebuildAdapter）も通らない。署名を取り直してから流す。
             // こうしないと、同じコマンドの並びを 1 つずつ撃ったときとシナリオで流したときで結果が変わる。
@@ -976,14 +976,14 @@ namespace Poly_Ling.Player
             }
         }
 
-        private static string KindWord(ObjectGroupStepKind k)
+        private static string KindWord(ModifierStackStepKind k)
         {
             switch (k)
             {
-                case ObjectGroupStepKind.Instruction: return "指示";
-                case ObjectGroupStepKind.Observe:     return "確認";
-                case ObjectGroupStepKind.Note:        return "注意";
-                case ObjectGroupStepKind.ScenarioRef: return "別のシナリオ";
+                case ModifierStackStepKind.Instruction: return "指示";
+                case ModifierStackStepKind.Observe:     return "確認";
+                case ModifierStackStepKind.Note:        return "注意";
+                case ModifierStackStepKind.ScenarioRef: return "別のシナリオ";
                 default:                              return "実行";
             }
         }

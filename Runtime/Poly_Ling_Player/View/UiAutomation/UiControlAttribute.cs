@@ -89,7 +89,10 @@ namespace Poly_Ling.Player
             Id = id ?? "";
         }
 
-        /// <summary>Ignore 用。ID は持たない。</summary>
+        /// <summary>
+        /// ID を持たない。Ignore 用と、ID を別に決めるもの（左ペインのボタンは PlayerLayoutRoot のプロパティ名から ID を作り、
+        /// この属性からは Safety だけを読む。PolyLingPlayerViewerCore.UiAutomation.cs の RegisterLeftPaneUiAutomation）。
+        /// </summary>
         public UiControlAttribute()
         {
             Id = "";

@@ -128,6 +128,12 @@ namespace Poly_Ling.Motion
                         $"version {version} の bakedBones（{bbArr.Count} 本）は意味が正準と限らないため読みません");
                 jo.Remove("bakedBones");
             }
+            // version 5：編集の構造 edit を足した。version 4 以前に edit があれば捨てる。
+            if (version < 5 && jo["edit"] != null)
+            {
+                result.Warning(MotionFileCodes.DroppedField, $"version {version} の edit は version 5 の欄なので読みません");
+                jo.Remove("edit");
+            }
             if (version < MotionClipDTO.CurrentVersion) result.UpgradedFromVersion = version;
 
             MotionClipDTO dto;
@@ -277,6 +283,10 @@ namespace Poly_Ling.Motion
             dto.format  = MotionClipDTO.FormatName;
             dto.version = MotionClipDTO.CurrentVersion;
 
+            // edit の bakedBones のトラックでキーが残らず平らなトラックの無いもの（Studio は書かない）は書かない。
+            // BakeBones の後にもう一度行う（muscles が正本のクリップは bakedBones を作り直すため）。
+            MotionEditOps.DropUnmatchedBakedTracks(dto);
+
             // muscles を持つなら bakedBones を必ず添える（マッスルから Unity で解いた正準ローカル回転。
             // PolyLing_VRMA整備計画.md 2.1）。Unity の外（JS など）はこれで骨を動かす。
             // rotationSource が "bakedBones" のクリップは bakedBones が正本なので作り直さない。
@@ -291,12 +301,25 @@ namespace Poly_Ling.Motion
                 }
             }
 
+            MotionEditOps.DropUnmatchedBakedTracks(dto);
+
             Validate(dto, result);
             if (result.ErrorCount > 0) return false;
 
             if (dto.duration <= 0f) dto.duration = MaxKeyTime(dto);
             return true;
         }
+
+        /// <summary>
+        /// DTO の写しを作る（ToJson を同じ設定で読み戻す。ToSaveJson と同じ写し方）。
+        /// 窓口の編集の口が、変える前の状態を残すのと取り消しの記録に使う。
+        /// </summary>
+        public static MotionClipDTO Clone(MotionClipDTO dto)
+            => dto == null ? null : FromJsonRaw(ToJson(dto, indented: false));
+
+        /// <summary>ToJson で作った文字列を、検証・引き上げをせずに DTO へ戻す。</summary>
+        public static MotionClipDTO FromJsonRaw(string json)
+            => JsonConvert.DeserializeObject<MotionClipDTO>(json, Settings);
 
         /// <summary>書き出す。エラーがあれば例外。</summary>
         public static void SaveJson(MotionClipDTO dto, string path)
@@ -534,6 +557,224 @@ namespace Poly_Ling.Motion
             else if (dto.rotationSource == MotionClipDTO.RotationSourceBakedBones
                      && (dto.bakedBones == null || dto.bakedBones.Count == 0))
                 r.Error(MotionFileCodes.InvalidHeader, "rotationSource が \"bakedBones\" なのに bakedBones がありません");
+
+            if (dto.edit != null) ValidateEdit(dto, r);
+        }
+
+        // ================================================================
+        // 編集の構造（edit）の検証
+        // ================================================================
+
+        private static void ValidateEdit(MotionClipDTO dto, MotionClipLoadResult r)
+        {
+            var e = dto.edit;
+            var trackIds  = new HashSet<string>(StringComparer.Ordinal);
+            var targets   = new HashSet<string>(StringComparer.Ordinal);
+            var clipIds   = new HashSet<string>(StringComparer.Ordinal);
+
+            if (e.tracks != null)
+            {
+                for (int ti = 0; ti < e.tracks.Count; ti++)
+                {
+                    var tr = e.tracks[ti];
+                    if (tr == null) { r.Error(MotionFileCodes.InvalidEdit, $"edit.tracks[{ti}] が空です"); continue; }
+                    string label = $"edit.tracks[{tr.id}]";
+                    if (string.IsNullOrEmpty(tr.id)) r.Error(MotionFileCodes.InvalidEdit, $"edit.tracks[{ti}] に id がありません");
+                    else if (!trackIds.Add(tr.id)) r.Error(MotionFileCodes.EditDuplicateId, $"{label} の id が重複しています");
+
+                    bool bone = MotionEditDTO.IsBoneRole(tr.role), scalar = MotionEditDTO.IsScalarRole(tr.role);
+                    if (!bone && !scalar)
+                        r.Error(MotionFileCodes.InvalidEdit, $"{label} の role \"{tr.role}\" は読めません");
+                    else
+                    {
+                        if (tr.target == null) r.Error(MotionFileCodes.InvalidEdit, $"{label} に target がありません");
+                        else
+                        {
+                            if (!targets.Add(tr.role + "\n" + (tr.targetKind ?? "") + "\n" + tr.target))
+                                r.Error(MotionFileCodes.EditDuplicateId, $"{label} の当たる平らなトラック（{tr.role}:{tr.target}）が重複しています");
+                            if (!HasFlatTrack(dto, tr))
+                                r.Error(MotionFileCodes.EditUnmatchedTrack, $"{label} の当たる平らなトラック（{tr.role}:{tr.targetKind}:{tr.target}）がありません");
+                        }
+                    }
+                    CheckWrap(tr.preWrapMode,  label, "preWrapMode",  r);
+                    CheckWrap(tr.postWrapMode, label, "postWrapMode", r);
+
+                    if (tr.clips == null) continue;
+                    for (int ci = 0; ci < tr.clips.Count; ci++)
+                    {
+                        var c = tr.clips[ci];
+                        if (c == null) { r.Error(MotionFileCodes.InvalidEdit, $"{label} のクリップ {ci} が空です"); continue; }
+                        string cl = $"{label}.clips[{c.id}]";
+                        if (string.IsNullOrEmpty(c.id)) r.Error(MotionFileCodes.InvalidEdit, $"{label} のクリップ {ci} に id がありません");
+                        else if (!clipIds.Add(c.id)) r.Error(MotionFileCodes.EditDuplicateId, $"{cl} の id が重複しています");
+                        if (!IsFinite(c.start) || c.start < 0f) r.Error(MotionFileCodes.InvalidEdit, $"{cl} の start は 0 以上であること（{c.start}）");
+                        if (!IsFinite(c.len) || c.len < 1f)     r.Error(MotionFileCodes.InvalidEdit, $"{cl} の len は 1 以上であること（{c.len}）");
+                        if (!IsFinite(c.weight) || c.weight < 0f || c.weight > 1f)
+                            r.Error(MotionFileCodes.InvalidEdit, $"{cl} の weight は 0～1 であること（{c.weight}）");
+
+                        if (bone && c.w != null)
+                            r.Error(MotionFileCodes.InvalidEdit, $"{cl} に w があります（{tr.role} のチャンネルは rot / pos / scl）");
+                        if (scalar && (c.rot != null || c.pos != null || c.scl != null))
+                            r.Error(MotionFileCodes.InvalidEdit, $"{cl} に rot / pos / scl があります（{tr.role} のチャンネルは w）");
+                        ValidateEditKeys(c.rot, 4, true, cl, "rot", r);
+                        ValidateEditKeys(c.pos, 3, false, cl, "pos", r);
+                        ValidateEditKeys(c.scl, 3, false, cl, "scl", r);
+                        ValidateEditScalarKeys(c.w, cl, r);
+                    }
+                }
+            }
+
+            // ---- バンドル ----
+            if (e.bundles == null) return;
+            var byId = new Dictionary<string, MotionEditBundleDTO>(StringComparer.Ordinal);
+            for (int bi = 0; bi < e.bundles.Count; bi++)
+            {
+                var b = e.bundles[bi];
+                if (b == null) { r.Error(MotionFileCodes.InvalidEdit, $"edit.bundles[{bi}] が空です"); continue; }
+                if (string.IsNullOrEmpty(b.id)) { r.Error(MotionFileCodes.InvalidEdit, $"edit.bundles[{bi}] に id がありません"); continue; }
+                if (byId.ContainsKey(b.id)) { r.Error(MotionFileCodes.EditDuplicateId, $"edit.bundles[{b.id}] の id が重複しています"); continue; }
+                byId.Add(b.id, b);
+                if (b.layer != null)
+                {
+                    if (b.layer.mode != MotionEditDTO.LayerOverride && b.layer.mode != MotionEditDTO.LayerAdditive)
+                        r.Error(MotionFileCodes.InvalidEdit, $"edit.bundles[{b.id}] の layer.mode は \"override\" か \"additive\" であること（\"{b.layer.mode}\"）");
+                    if (!IsFinite(b.layer.weight) || b.layer.weight < 0f || b.layer.weight > 1f)
+                        r.Error(MotionFileCodes.InvalidEdit, $"edit.bundles[{b.id}] の layer.weight は 0～1 であること（{b.layer.weight}）");
+                }
+            }
+
+            var clipOwner  = new Dictionary<string, string>(StringComparer.Ordinal);
+            var childOwner = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var b in byId.Values)
+            {
+                string bl = $"edit.bundles[{b.id}]";
+                if (b.clipIds != null)
+                    foreach (var id in b.clipIds)
+                    {
+                        if (id == null || !clipIds.Contains(id)) { r.Error(MotionFileCodes.EditBundleLink, $"{bl} の clipIds に無いクリップ \"{id}\" があります"); continue; }
+                        if (clipOwner.TryGetValue(id, out string other))
+                            r.Error(MotionFileCodes.EditBundleLink, $"クリップ \"{id}\" が {other} と {b.id} の両方に直接属しています");
+                        else clipOwner.Add(id, b.id);
+                    }
+                if (b.childIds != null)
+                    foreach (var id in b.childIds)
+                    {
+                        if (id == null || !byId.TryGetValue(id, out var ch)) { r.Error(MotionFileCodes.EditBundleLink, $"{bl} の childIds に無いバンドル \"{id}\" があります"); continue; }
+                        if (childOwner.TryGetValue(id, out string other))
+                            r.Error(MotionFileCodes.EditBundleLink, $"バンドル \"{id}\" が {other} と {b.id} の両方の childIds にあります");
+                        else childOwner.Add(id, b.id);
+                        if (ch.parentId != b.id)
+                            r.Error(MotionFileCodes.EditBundleLink, $"{bl} の childIds にある \"{id}\" の parentId が \"{ch.parentId}\" です");
+                    }
+                if (b.parentId != null)
+                {
+                    if (!byId.TryGetValue(b.parentId, out var par))
+                        r.Error(MotionFileCodes.EditBundleLink, $"{bl} の parentId \"{b.parentId}\" のバンドルがありません");
+                    else if (par.childIds == null || !par.childIds.Contains(b.id))
+                        r.Error(MotionFileCodes.EditBundleLink, $"{bl} の parentId \"{b.parentId}\" の childIds に {b.id} がありません");
+                }
+            }
+
+            // parentId の循環
+            foreach (var b in byId.Values)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal) { b.id };
+                var p = b.parentId;
+                while (p != null && byId.TryGetValue(p, out var pb))
+                {
+                    if (!seen.Add(p)) { r.Error(MotionFileCodes.EditBundleCycle, $"edit.bundles[{b.id}] の parentId をたどると循環しています"); break; }
+                    p = pb.parentId;
+                }
+            }
+        }
+
+        /// <summary>edit のトラックに当たる平らなトラックがあるか。</summary>
+        private static bool HasFlatTrack(MotionClipDTO dto, MotionEditTrackDTO tr)
+        {
+            switch (tr.role)
+            {
+                case MotionEditDTO.RoleBones:
+                    if (dto.bones != null) foreach (var t in dto.bones) if (t != null && t.id == tr.target && t.targetKind == tr.targetKind) return true;
+                    return false;
+                case MotionEditDTO.RoleBakedBones:
+                    if (dto.bakedBones != null) foreach (var t in dto.bakedBones) if (t != null && t.id == tr.target) return true;
+                    return false;
+                case MotionEditDTO.RoleBody:
+                    return dto.body != null && tr.target == MotionClipDTO.BodyTrackId;
+                case MotionEditDTO.RoleLookAt:
+                    return dto.lookAt != null && tr.target == MotionClipDTO.LookAtTrackId;
+                case MotionEditDTO.RoleExpressions:
+                    if (dto.expressions != null) foreach (var t in dto.expressions) if (t != null && t.name == tr.target && string.IsNullOrEmpty(t.path)) return true;
+                    return false;
+                case MotionEditDTO.RoleMuscles:
+                    if (dto.muscles != null) foreach (var t in dto.muscles) if (t != null && t.name == tr.target) return true;
+                    return false;
+            }
+            return false;
+        }
+
+        private static void ValidateEditKeys(List<MotionEditKeyDTO> keys, int n, bool isRot, string label, string ch, MotionClipLoadResult r)
+        {
+            if (keys == null) return;
+            var frames = new HashSet<float>();
+            bool sorted = true;
+            for (int i = 0; i < keys.Count; i++)
+            {
+                var k = keys[i];
+                string at = $"{label} {ch} キー {i}";
+                if (k == null) { r.Error(MotionFileCodes.InvalidEdit, $"{at} が空です"); continue; }
+                CheckEditFrame(k.f, k.t0, at, r);
+                if (IsFinite(k.f) && !frames.Add(k.f)) r.Error(MotionFileCodes.EditDuplicateKey, $"{at} のフレーム {k.f} が重複しています");
+                if (k.v == null || k.v.Length != n) { r.Error(MotionFileCodes.InvalidEdit, $"{at} の v は {n} 個であること"); }
+                else
+                {
+                    bool fin = true;
+                    foreach (var x in k.v) if (!IsFinite(x)) fin = false;
+                    if (!fin) r.Error(MotionFileCodes.InvalidEdit, $"{at} の v に数でない値があります");
+                    else if (isRot && k.v[0] * k.v[0] + k.v[1] * k.v[1] + k.v[2] * k.v[2] + k.v[3] * k.v[3] < 1e-8f)
+                        r.Error(MotionFileCodes.InvalidEdit, $"{at} の回転の長さがほぼ 0 です");
+                }
+                if (k.tan != null)
+                {
+                    if (k.tan.Length != n) r.Error(MotionFileCodes.InvalidEdit, $"{at} の tan は {n} 個であること（{k.tan.Length} 個）");
+                    else for (int c = 0; c < n; c++) CheckTangent(k.tan[c], $"{label} {ch}", i, $" tan[{c}]", r);
+                }
+                if (i > 0 && keys[i - 1] != null && keys[i - 1].f > k.f) sorted = false;
+            }
+            if (!sorted)
+            {
+                keys.Sort((a, b) => (a?.f ?? 0f).CompareTo(b?.f ?? 0f));
+                r.Warning(MotionFileCodes.KeyOrder, $"{label} {ch} のキーをフレーム順に並べ替えました");
+            }
+        }
+
+        private static void ValidateEditScalarKeys(List<MotionEditScalarKeyDTO> keys, string label, MotionClipLoadResult r)
+        {
+            if (keys == null) return;
+            var frames = new HashSet<float>();
+            bool sorted = true;
+            for (int i = 0; i < keys.Count; i++)
+            {
+                var k = keys[i];
+                string at = $"{label} w キー {i}";
+                if (k == null) { r.Error(MotionFileCodes.InvalidEdit, $"{at} が空です"); continue; }
+                CheckEditFrame(k.f, k.t0, at, r);
+                if (IsFinite(k.f) && !frames.Add(k.f)) r.Error(MotionFileCodes.EditDuplicateKey, $"{at} のフレーム {k.f} が重複しています");
+                if (!IsFinite(k.v)) r.Error(MotionFileCodes.InvalidEdit, $"{at} の v が数ではありません");
+                CheckTangent(k.tan, $"{label} w", i, "", r);
+                if (i > 0 && keys[i - 1] != null && keys[i - 1].f > k.f) sorted = false;
+            }
+            if (!sorted)
+            {
+                keys.Sort((a, b) => (a?.f ?? 0f).CompareTo(b?.f ?? 0f));
+                r.Warning(MotionFileCodes.KeyOrder, $"{label} w のキーをフレーム順に並べ替えました");
+            }
+        }
+
+        private static void CheckEditFrame(float f, float? t0, string at, MotionClipLoadResult r)
+        {
+            if (!IsFinite(f) || f < 0f) r.Error(MotionFileCodes.InvalidEdit, $"{at} の f は 0 以上であること（{f}）");
+            if (t0.HasValue && (!IsFinite(t0.Value) || t0.Value < 0f)) r.Error(MotionFileCodes.InvalidEdit, $"{at} の t0 は 0 以上であること（{t0.Value}）");
         }
 
         private static HashSet<string> _humanoidNames;
@@ -715,6 +956,12 @@ namespace Poly_Ling.Motion
         public const string BvhNotRead            = "BVH_NOT_READ";
         public const string FbxInvalid            = "FBX_INVALID";
         public const string FbxNotRead            = "FBX_NOT_READ";
+        public const string InvalidEdit           = "INVALID_EDIT";
+        public const string EditDuplicateId       = "EDIT_DUPLICATE_ID";
+        public const string EditUnmatchedTrack    = "EDIT_UNMATCHED_TRACK";
+        public const string EditDuplicateKey      = "EDIT_DUPLICATE_KEY";
+        public const string EditBundleLink        = "EDIT_BUNDLE_LINK";
+        public const string EditBundleCycle       = "EDIT_BUNDLE_CYCLE";
     }
 
     /// <summary>検査で見つかった 1 件。</summary>

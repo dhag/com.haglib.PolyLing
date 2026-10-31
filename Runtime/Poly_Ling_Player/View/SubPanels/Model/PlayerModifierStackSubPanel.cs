@@ -1,23 +1,23 @@
-// PlayerObjectGroupSubPanel.cs
-// オブジェクトグループ（入力ソース＋生成パラメータ＋出力先）の一覧と操作。
+// PlayerModifierStackSubPanel.cs
+// モディファイアスタック（入力ソース＋生成パラメータ＋出力先）の一覧と操作。
 // Runtime/Poly_Ling_Player/View/SubPanels/Model/ に配置
 //
 // 【できること】
-//   ・グループの一覧と、ソースが変わっているか（要更新）の表示
+//   ・スタックの一覧と、ソースが変わっているか（要更新）の表示
 //   ・作り直し（退避を残すかを選べる）。項目が複数あるものは順に実行する
-//   ・1 つ上のグループへ足してマクロにする
+//   ・1 つ上のスタックへ足してマクロにする
 //   ・自動更新の切り替え（立てると、はしごなどのソースをスキンド化したときに流れる）
 //   ・解除（描画オブジェクトは消さない）
-//   ・参照切れのグループの片づけ
+//   ・参照切れのスタックの片づけ
 //
 // 【マクロの組み方】
-//   生成コマンドは 1 つで 1 グループを作る。順に並べたいときは、
-//   下のグループを選んで「1つ上へ足す」を押す。上のグループの末尾へ
-//   項目が移り、下のグループは消える（描画オブジェクトは残る）。
+//   生成コマンドは 1 つで 1 スタックを作る。順に並べたいときは、
+//   下のスタックを選んで「1つ上へ足す」を押す。上のスタックの末尾へ
+//   項目が移り、下のスタックは消える（描画オブジェクトは残る）。
 //   実行順は項目の並びそのもの。
 //
 // 【要更新の判定を毎フレームやらない】
-//   ObjectGroupOps.IsStale はソースの全頂点を走査する。
+//   ModifierStackOps.IsStale はソースの全頂点を走査する。
 //   パネルを開いたとき（Refresh）と、更新ボタンを押したときにだけ呼ぶ。
 //   編集のたびに印を立てるフックは置かない。
 //
@@ -37,7 +37,7 @@ using Poly_Ling.View;
 
 namespace Poly_Ling.Player
 {
-    public class PlayerObjectGroupSubPanel
+    public class PlayerModifierStackSubPanel
     {
         // ================================================================
         // 外部依存（Viewer から設定）
@@ -59,10 +59,10 @@ namespace Poly_Ling.Player
         // 内部状態
         // ================================================================
 
-        // UI 自動操作の ID は "objectGroup.<下の Id>"（UiControlAttribute.cs）。
-        [UiControl("groups", Description = "オブジェクトグループ（一覧の行番号）")]
+        // UI 自動操作の ID は "modifierStack.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("stacks", Description = "モディファイアスタック（一覧の行番号）")]
         private ListView  _listView;
-        [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだグループの詳細")]
+        [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだスタックの詳細")]
         private Label     _detailLabel;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
@@ -71,13 +71,13 @@ namespace Poly_Ling.Player
         [UiControl("autoUpdate", Description = "ソースが変わったら自動で作り直す（スキンド化のとき）")]
         private Toggle    _autoUpdateToggle;
         [UiControl("rebuild", Safety = UiSafety.Destructive,
-                   Description = "選んだグループの出力を作り直す（「退避として残す」がオフなら前の出力は残らない）")]
+                   Description = "選んだスタックの出力を作り直す（「退避として残す」がオフなら前の出力は残らない）")]
         private Button    _btnRebuild;
-        [UiControl("release", Safety = UiSafety.Destructive, Description = "選んだグループを解除する")]
+        [UiControl("release", Safety = UiSafety.Destructive, Description = "選んだスタックを解除する")]
         private Button    _btnRelease;
         [UiControl("purge", Safety = UiSafety.Destructive, Description = "参照切れを片づける")]
         private Button    _btnPurge;
-        [UiControl("mergeUp", Safety = UiSafety.SafeWrite, Description = "1 つ上のグループへ足す（マクロにする）")]
+        [UiControl("mergeUp", Safety = UiSafety.SafeWrite, Description = "1 つ上のスタックへ足す（マクロにする）")]
         private Button    _btnMerge;
 
         // ── 項目の引数（段 3）
@@ -125,14 +125,14 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("オブジェクトグループ"));
+            root.Add(SecLabel("モディファイアスタック"));
 
             var hint = new Label(
                 "帯・断面・パラメータと出力先をひとまとめにしたものです。\n"
               + "ソースを直したあと「作り直す」を押すと、出力先の中身が入れ替わります"
               + "（オブジェクトは作り直されないので、名前・階層・姿勢はそのまま）。\n"
-              + "出力先に頂点IDを手で振るなら、先にグループを解除してください。"
-              + "グループがある間は作り直しで中身が総入れ替えされます。");
+              + "出力先に頂点IDを手で振るなら、先にスタックを解除してください。"
+              + "スタックがある間は作り直しで中身が総入れ替えされます。");
             hint.style.whiteSpace = WhiteSpace.Normal;
             hint.style.fontSize   = 10;
             hint.style.marginBottom = 4;
@@ -177,7 +177,7 @@ namespace Poly_Ling.Player
             {
                 var g = SelectedGroup();
                 if (g == null || g.AutoUpdate == e.newValue) return;
-                SendCmd(new SetObjectGroupAutoUpdateCommand(ModelIndex, g.Name, e.newValue));
+                SendCmd(new SetModifierStackAutoUpdateCommand(ModelIndex, g.Name, e.newValue));
                 Refresh();
             });
             root.Add(_autoUpdateToggle);
@@ -195,7 +195,7 @@ namespace Poly_Ling.Player
             _btnRelease = MkBtn("解除",     OnRelease); _btnRelease.style.flexGrow = 1; opRow.Add(_btnRelease);
             root.Add(opRow);
 
-            _btnMerge = MkBtn("1つ上のグループへ足す（マクロにする）", OnMerge);
+            _btnMerge = MkBtn("1つ上のスタックへ足す（マクロにする）", OnMerge);
             _btnMerge.style.marginBottom = 3;
             root.Add(_btnMerge);
 
@@ -259,7 +259,7 @@ namespace Poly_Ling.Player
         {
             _rows.Clear();
             _labels.Clear();
-            _groups = CurrentModel?.ObjectGroups ?? System.Array.Empty<Poly_Ling.View.ObjectGroupView>();
+            _groups = CurrentModel?.ModifierStacks ?? System.Array.Empty<Poly_Ling.View.ModifierStackView>();
 
             foreach (var g in _groups)
             {
@@ -287,11 +287,11 @@ namespace Poly_Ling.Player
             UpdateDetail();
         }
 
-        /// <summary>直近の Refresh で読んだグループの写し。</summary>
-        private IReadOnlyList<Poly_Ling.View.ObjectGroupView> _groups
-            = System.Array.Empty<Poly_Ling.View.ObjectGroupView>();
+        /// <summary>直近の Refresh で読んだスタックの写し。</summary>
+        private IReadOnlyList<Poly_Ling.View.ModifierStackView> _groups
+            = System.Array.Empty<Poly_Ling.View.ModifierStackView>();
 
-        private Poly_Ling.View.ObjectGroupView SelectedGroup()
+        private Poly_Ling.View.ModifierStackView SelectedGroup()
         {
             if (_selected < 0 || _selected >= _rows.Count) return null;
             string name = _rows[_selected].Name;
@@ -307,7 +307,7 @@ namespace Poly_Ling.Player
             if (_btnRebuild != null) _btnRebuild.SetEnabled(has);
             if (_btnRelease != null) _btnRelease.SetEnabled(has);
 
-            // 足し先は 1 つ上のグループ。先頭のグループには足し先が無い。
+            // 足し先は 1 つ上のスタック。先頭のスタックには足し先が無い。
             if (_btnMerge != null) _btnMerge.SetEnabled(has && _selected >= 1);
 
             if (!has)
@@ -328,7 +328,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>項目の選択肢を作り直す。前に選んでいた項目番号は保つ。</summary>
-        private void UpdateArgSteps(Poly_Ling.View.ObjectGroupView g)
+        private void UpdateArgSteps(Poly_Ling.View.ModifierStackView g)
         {
             if (_argStepDropdown == null) return;
 
@@ -344,7 +344,7 @@ namespace Poly_Ling.Player
             UpdateArgKeys();
         }
 
-        private Poly_Ling.View.ObjectGroupStepView SelectedArgStep()
+        private Poly_Ling.View.ModifierStackStepView SelectedArgStep()
         {
             var g = SelectedGroup();
             int si = _argStepDropdown?.index ?? -1;
@@ -398,7 +398,7 @@ namespace Poly_Ling.Player
         {
             var g = SelectedGroup();
             int si = _argStepDropdown?.index ?? -1;
-            if (g == null || si < 0) { SetStatus("グループと項目を選んでください"); return; }
+            if (g == null || si < 0) { SetStatus("スタックと項目を選んでください"); return; }
             SendCmd(new CommitModifierOutputEditCommand(ModelIndex, g.Name, si));
             SetStatus($"「{g.Name}」項目 {si} の出力の編集の確定を送りました");
             Refresh();
@@ -408,7 +408,7 @@ namespace Poly_Ling.Player
         {
             var g = SelectedGroup();
             int si = _argStepDropdown?.index ?? -1;
-            if (g == null || si < 0) { SetStatus("グループと項目を選んでください"); return; }
+            if (g == null || si < 0) { SetStatus("スタックと項目を選んでください"); return; }
             SendCmd(new DiscardModifierOutputEditCommand(ModelIndex, g.Name, si));
             SetStatus($"「{g.Name}」項目 {si} の出力の編集の破棄を送りました");
             Refresh();
@@ -430,14 +430,14 @@ namespace Poly_Ling.Player
         private void OnArgWrite()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("グループを選んでください"); return; }
+            if (g == null) { SetStatus("スタックを選んでください"); return; }
             int si = _argStepDropdown?.index ?? -1;
             if (si < 0) { SetStatus("項目を選んでください"); return; }
             string key = _argKeyDropdown?.value;
             if (string.IsNullOrEmpty(key)) { SetStatus("書けるキーがありません"); return; }
             string val = _argValueField?.value ?? "";
 
-            SendCmd(new SetObjectGroupStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { val }));
+            SendCmd(new SetModifierStackStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { val }));
             SetStatus($"「{g.Name}」項目 {si} の {key} を書いて作り直しを送りました");
             Refresh();
         }
@@ -454,10 +454,10 @@ namespace Poly_Ling.Player
         private void OnRebuild()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("グループを選んでください"); return; }
+            if (g == null) { SetStatus("スタックを選んでください"); return; }
 
             bool keepStash = _keepStashToggle != null && _keepStashToggle.value;
-            SendCmd(new RebuildObjectGroupCommand(ModelIndex, g.Name, keepStash));
+            SendCmd(new RebuildModifierStackCommand(ModelIndex, g.Name, keepStash));
             SetStatus(g.StepCount > 1
                 ? $"「{g.Name}」の {g.StepCount} 項目を実行しました"
                 : $"「{g.Name}」を作り直しました");
@@ -467,12 +467,12 @@ namespace Poly_Ling.Player
         private void OnRelease()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("グループを選んでください"); return; }
+            if (g == null) { SetStatus("スタックを選んでください"); return; }
 
             // 解除するとパラメータは復元できない。作り直したいなら同じ操作を
             // 最初からやり直すことになるので、必ず確認を通す。
             bool ok = PLEditorBridge.I.DisplayDialogYesNo(
-                "グループ解除の確認",
+                "スタック解除の確認",
                 $"「{g.Name}」を解除します。\n\n"
               + "帯・断面・パラメータの記録が失われ、作り直せなくなります。\n"
               + "（出力先の描画オブジェクトは残ります）\n\n"
@@ -480,15 +480,15 @@ namespace Poly_Ling.Player
                 "解除", "キャンセル");
             if (!ok) return;
 
-            SendCmd(new DeleteObjectGroupCommand(ModelIndex, g.Name));
+            SendCmd(new DeleteModifierStackCommand(ModelIndex, g.Name));
             SetStatus($"「{g.Name}」を解除しました");
             _selected = -1;
             Refresh();
         }
 
         /// <summary>
-        /// 選んだグループを 1 つ上のグループの末尾へ足す。
-        /// 足したあと、選んだグループは消える（描画オブジェクトは残る）。
+        /// 選んだスタックを 1 つ上のスタックの末尾へ足す。
+        /// 足したあと、選んだスタックは消える（描画オブジェクトは残る）。
         /// </summary>
         private void OnMerge()
         {
@@ -496,20 +496,20 @@ namespace Poly_Ling.Player
             if (model == null) { SetStatus("モデルがありません"); return; }
 
             if (_selected < 1 || _selected >= _rows.Count)
-            { SetStatus("2 番目以降のグループを選んでください"); return; }
+            { SetStatus("2 番目以降のスタックを選んでください"); return; }
 
             string sourceName = _rows[_selected].Name;
             string targetName = _rows[_selected - 1].Name;
 
             bool ok = PLEditorBridge.I.DisplayDialogYesNo(
-                "グループ結合の確認",
+                "スタック結合の確認",
                 $"「{sourceName}」を「{targetName}」の末尾へ足します。\n\n"
-              + $"「{sourceName}」のグループは消えます（描画オブジェクトは残ります）。\n"
+              + $"「{sourceName}」のスタックは消えます（描画オブジェクトは残ります）。\n"
               + "実行順は項目の並びそのものです。",
                 "足す", "キャンセル");
             if (!ok) return;
 
-            SendCmd(new MergeObjectGroupCommand(ModelIndex, targetName, sourceName));
+            SendCmd(new MergeModifierStackCommand(ModelIndex, targetName, sourceName));
             SetStatus($"「{sourceName}」を「{targetName}」へ足しました");
             _selected = -1;
             Refresh();
@@ -520,10 +520,10 @@ namespace Poly_Ling.Player
             var model = CurrentModel;
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            int before = model.ObjectGroups.Count;
-            SendCmd(new PurgeObjectGroupsCommand(ModelIndex));
-            int n = before - (CurrentModel?.ObjectGroups.Count ?? before);
-            SetStatus(n > 0 ? $"参照切れのグループを {n} 件片づけました" : "参照切れはありませんでした");
+            int before = model.ModifierStacks.Count;
+            SendCmd(new PurgeModifierStacksCommand(ModelIndex));
+            int n = before - (CurrentModel?.ModifierStacks.Count ?? before);
+            SetStatus(n > 0 ? $"参照切れのスタックを {n} 件片づけました" : "参照切れはありませんでした");
             Refresh();
         }
 

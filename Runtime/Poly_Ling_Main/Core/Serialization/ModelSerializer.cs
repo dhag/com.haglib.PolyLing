@@ -6,7 +6,7 @@
 // Phase BonePose: BonePoseData対応
 //
 // 【分割先】このファイルから次へ分けてある。
-//   ModelSerializer_Data.cs          マテリアル参照・選択セット・モーフ・ミラーペア・データストア・オブジェクトグループ・BonePose の変換。
+//   ModelSerializer_Data.cs          マテリアル参照・選択セット・モーフ・ミラーペア・データストア・モディファイアスタック・BonePose の変換。
 //   ModelSerializer_ModelContext.cs  ModelContext ⇔ ModelDTO の統合変換と復元（モデルレベルの付帯データを含む）。
 //   ModelSerializer_Vrm.cs           IK／剛体／JOINT・VRM 1.0 設定・スプリングボーン・TPoseBackup の変換。
 

@@ -134,34 +134,43 @@ namespace Poly_Ling.Player
 
                 var prop = p;
                 string id = $"{LeftPanePanelId}.{char.ToLowerInvariant(p.Name[0])}{p.Name.Substring(1)}";
+                // 安全度はプロパティの宣言に付けた [UiControl(Safety = …)] で決める。無ければ未指定（監査に出る）。
+                var attr = (UiControlAttribute)Attribute.GetCustomAttribute(p, typeof(UiControlAttribute));
                 _uiAutomationRegistry.RegisterControl(
                     id, LeftPanePanelId,
                     () => prop.GetValue(_layoutRoot) as VisualElement,
                     LeftPaneDescription(e),
-                    LeftPaneSafety(p.Name), source: $"PlayerLayoutRoot.{p.Name}");
+                    attr?.Safety ?? UiSafety.Unspecified, source: $"PlayerLayoutRoot.{p.Name}");
             }
-        }
 
-        /// <summary>
-        /// 左ペインのボタンや入力欄の安全度。個別に判定済みのものだけ明示し、それ以外は Unspecified。
-        /// リモート接続系（接続・切断・プロジェクト取得）はファイルや編集内容を壊さず、
-        /// 取得はクライアント側の表示を受信内容で置き換えるだけなので SafeWrite。
-        /// </summary>
-        private static UiSafety LeftPaneSafety(string propertyName)
-        {
-            switch (propertyName)
+            // 画面分割の 3×3 ボタン（配列で持つのでプロパティの走査に掛からない）。押した瞬間に仕切りを並べ直すだけ。
+            foreach (var (mode, button) in _layoutRoot.SplitModeButtons)
             {
-                case nameof(PlayerLayoutRoot.ConnectBtn):
-                case nameof(PlayerLayoutRoot.DisconnectBtn):
-                case nameof(PlayerLayoutRoot.FetchBtn):
-                // Python アドオンのパネルを開くだけ（起動・実行はパネルの中のボタン）。
-                case nameof(PlayerLayoutRoot.PyAddonBtn):
-                // Undo / Redo は 1 段戻す・やり直すだけで、逆の操作でいつでも元に戻せる。
-                case nameof(PlayerLayoutRoot.UndoBtn):
-                case nameof(PlayerLayoutRoot.RedoBtn):
-                    return UiSafety.SafeWrite;
-                default:
-                    return UiSafety.Unspecified;
+                var b = button;
+                string name = mode.ToString();
+                _uiAutomationRegistry.RegisterControl(
+                    $"{LeftPanePanelId}.split.{char.ToLowerInvariant(name[0])}{name.Substring(1)}", LeftPanePanelId,
+                    () => b,
+                    $"画面分割「{b.text}」：{b.tooltip}（ボタン・左ペイン）",
+                    UiSafety.SafeWrite, source: $"PlayerLayoutRoot.SplitModeButtons[{name}]");
+            }
+
+            // 表示のチェック（4 画面 × VD_COUNT。2 次元配列なのでプロパティの走査に掛からない）。表示を切り替えるだけ。
+            var vd = _layoutRoot.ViewportDisplayToggles;
+            if (vd != null)
+            {
+                for (int slot = 0; slot < vd.GetLength(0); slot++)
+                    for (int item = 0; item < vd.GetLength(1); item++)
+                    {
+                        var t = vd[slot, item];
+                        if (t == null) continue;
+                        string slotId = PlayerLayoutRoot.ViewportDisplaySlotIds[slot];
+                        _uiAutomationRegistry.RegisterControl(
+                            $"{LeftPanePanelId}.display.{slotId}.{PlayerLayoutRoot.ViewportDisplayItemIds[item]}", LeftPanePanelId,
+                            () => t,
+                            $"表示「{PlayerLayoutRoot.ViewportDisplayItemLabels[item]}」の {PlayerLayoutRoot.ViewportDisplaySlotLabels[slot]} 画面（チェックボックス・左ペイン Display）",
+                            UiSafety.SafeWrite, source: $"PlayerLayoutRoot.ViewportDisplayToggles[{slot},{item}]");
+                    }
             }
         }
 
@@ -344,8 +353,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.MeshSelectionSetSection, ShowMeshSelectionSetPanel, _meshSelSetSubPanel);
             RegisterUiPanel("partsSelectionSet", "パーツ選択セット（頂点・辺・面の選択辞書）",
                 _layoutRoot.PartsSelectionSetSection, ShowPartsSelectionSetPanel, _partsSelSetSubPanel);
-            RegisterUiPanel("objectGroup", "オブジェクトグループ",
-                _layoutRoot.ObjectGroupSection, ShowObjectGroupPanel, _objectGroupSubPanel);
+            RegisterUiPanel("modifierStack", "モディファイアスタック",
+                _layoutRoot.ModifierStackSection, ShowModifierStackPanel, _modifierStackSubPanel);
             RegisterUiPanel("materialList", "マテリアル一覧（作成・シェーダー・選択面への適用）",
                 _layoutRoot.MaterialListSection, ShowMaterialListPanel, _materialListSubPanel);
             RegisterUiPanel("humanoidBoneSelect", "ヒューマノイドボーン選択（体・頭・手の図の丸印でボーンを選ぶ。背景と丸印の位置は差し替え可）",
@@ -526,7 +535,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.VMDTestSection, ShowVMDTestPanel, _vmdTestSubPanel);
             RegisterUiPanel("vmdToVrma", "VMD＋モデルから PolyLing モーション（と VRMA）への書き出し",
                 _layoutRoot.VmdToVrmaSection, ShowVmdToVrmaPanel, _vmdToVrmaSubPanel);
-            RegisterUiPanel("motionClipTest", "モーション（.plmotion / .vrma / .vmd / .bvh / .fbx）の読込と再生、JSON・VRMA・BVH・FBX 書き出し",
+            RegisterUiPanel("motionClipTest", "モーション（.plmotion / .vrma / .vmd / .bvh / .fbx）の読込と再生、編集の構造 edit の数値の編集（トラック・クリップ・キー・接線・バンドル・レイヤー）、JSON・VRMA・BVH・FBX 書き出し",
                 _layoutRoot.MotionClipTestSection, ShowMotionClipTestPanel, _motionClipTestSubPanel);
             RegisterUiPanel("mediaPipe", "MediaPipe の顔ランドマークによる変形・表情転写（メディアパイプ（顔フィット））",
                 _layoutRoot.MediaPipeSection, ShowMediaPipePanel, _mediaPipeSubPanel);

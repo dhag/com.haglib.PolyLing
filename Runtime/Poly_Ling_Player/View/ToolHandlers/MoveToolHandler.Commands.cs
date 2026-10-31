@@ -204,7 +204,9 @@ namespace Poly_Ling.Player
                 MagnetRadius       = savedRadius;
                 MagnetFalloff      = savedFalloff;
                 MagnetDistanceMode = savedDistance;
-                OnExitTransformDragging?.Invoke();
+                // ドラッグ状態の出入りは ApplyNumericMove が対で持つ（例外でも抜ける）。
+                // ここでもう一度抜けると DragEnd（全ビューの描き直しと評価の口）が二重に走っていた
+                // （モディファイア高速化計画 段 6）。
             }
 
             if (!moved) return false;
@@ -240,19 +242,20 @@ namespace Poly_Ling.Player
             if (worldDelta == Vector3.zero) return false;
 
             OnEnterTransformDragging?.Invoke();
+            try
+            {
+                UpdateAffectedVertices();
+                if (!HasAnyAffected()) return false;
 
-            UpdateAffectedVertices();
-            if (!HasAnyAffected())
+                BeginMove();
+                ApplyDelta(worldDelta);
+                EndMove();
+            }
+            finally
             {
                 OnExitTransformDragging?.Invoke();
-                return false;
             }
 
-            BeginMove();
-            ApplyDelta(worldDelta);
-            EndMove();
-
-            OnExitTransformDragging?.Invoke();
             OnRepaint?.Invoke();
             return true;
         }

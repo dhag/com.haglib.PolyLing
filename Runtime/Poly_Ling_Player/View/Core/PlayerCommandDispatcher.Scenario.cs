@@ -15,10 +15,10 @@
 //   QueryCommandAuditCommand と同じく、ここで直に処理して ReportData する。
 //
 // 【シナリオは実体に縛らない】
-//   saveScenarioFromGroup は MeshRefIds と OutputObjectIds を落としてから登録する。
+//   saveScenarioFromModifierStack は MeshRefIds と OutputObjectIds を落としてから登録する。
 //   焼き付けると、そのモデルを閉じた時点で死んだ ObjectId がシナリオに残る。
-//   つながりは捨てずに書き換える（作り直し整備計画 段 11。ObjectGroupOps.BuildScenarioSteps）：
-//   同じグループの前の項目の出力 → @<項目 ID>.masterIndices、グループの外 → シナリオの引数。
+//   つながりは捨てずに書き換える（作り直し整備計画 段 11。ModifierStackOps.BuildScenarioSteps）：
+//   同じスタックの前の項目の出力 → @<項目 ID>.masterIndices、スタックの外 → シナリオの引数。
 
 using System;
 using System.Collections.Generic;
@@ -43,7 +43,7 @@ namespace Poly_Ling.Player
                 case CreateScenarioFromFolderCommand c: RunCreateScenarioFromFolder(c); return true;
                 case DeleteScenarioCommand c:        RunDeleteScenario(c);        return true;
                 case ForkScenarioCommand c:          RunForkScenario(c);          return true;
-                case SaveScenarioFromGroupCommand c: RunSaveScenarioFromGroup(c); return true;
+                case SaveScenarioFromModifierStackCommand c: RunSaveScenarioFromModifierStack(c); return true;
                 case SetScenarioMetaCommand c:       RunSetScenarioMeta(c);       return true;
                 case AddScenarioItemCommand c:       RunAddScenarioItem(c);       return true;
                 case SetScenarioItemCommand c:       RunSetScenarioItem(c);       return true;
@@ -74,6 +74,7 @@ namespace Poly_Ling.Player
                 case BeginTaskCommand c:              RunBeginTask(c);              return true;
                 case EndTaskCommand c:                RunEndTask(c);                return true;
                 case QueryExecutionLogCommand c:      RunQueryExecutionLog(c);      return true;
+                case SetDiagnosticTimingCommand c:    RunSetDiagnosticTiming(c);    return true;
                 default: return false;
             }
         }
@@ -141,6 +142,15 @@ namespace Poly_Ling.Player
                 .Num ("mainMsTotal", s.MainMsTotal)
                 .Num ("mainMsPer",   s.Records > 0 ? s.MainMsTotal / s.Records : 0.0)
                 .Text("lastError",   s.LastError ?? "")
+                .Build());
+        }
+
+        /// <summary>時間の計測の診断スイッチを切り替える（モディファイア高速化計画 段 15）。</summary>
+        private void RunSetDiagnosticTiming(SetDiagnosticTimingCommand cmd)
+        {
+            Poly_Ling.Diagnostics.PLDiag.Timing = cmd.Enabled;
+            ReportData(CommandDataJson.New()
+                .Flag("enabled", Poly_Ling.Diagnostics.PLDiag.Timing)
                 .Build());
         }
 
@@ -494,7 +504,7 @@ namespace Poly_Ling.Player
             }
 
             // 参照項目の戻り値は、呼ぶシナリオが宣言した出力だけ（ScenarioOutput）。宣言の無い名前は流したとき失敗する。
-            void AuditChildOutputRef(ObjectGroupStep target, string v, string key, string id, string argKey)
+            void AuditChildOutputRef(ModifierStackStep target, string v, string key, string id, string argKey)
             {
                 if (target == null || !target.IsScenarioRef) return;
                 var child = ScenarioLibrary.Get(target.RefName);
@@ -675,7 +685,7 @@ namespace Poly_Ling.Player
             if (g == null) { error = $"シナリオがありません: {name}"; return null; }
 
             // 項目の並び。resolve のときは参照を辿って平たくしたもの。
-            var ordered = new List<ObjectGroupStep>();
+            var ordered = new List<ModifierStackStep>();
             var owners  = new List<string>();
             var depths  = new List<int>();
 
@@ -701,7 +711,7 @@ namespace Poly_Ling.Player
             int totalSteps = ordered.Count;
             if (wanted.Count > 0)
             {
-                var picked = new List<ObjectGroupStep>();
+                var picked = new List<ModifierStackStep>();
                 var found  = new HashSet<string>();
                 foreach (var step in ordered)
                     if (wanted.Contains(step.ScenarioItemId ?? "")) { picked.Add(step); found.Add(step.ScenarioItemId); }
@@ -744,7 +754,7 @@ namespace Poly_Ling.Player
                 }
             }
 
-            var prov = g.Provenance ?? new ObjectGroupProvenance();
+            var prov = g.Provenance ?? new ModifierStackProvenance();
 
             // 引数の宣言。outline でも載せる（流す前に何を渡せるか分かるように。量は宣言の数だけ）。
             var paramNames    = new List<string>();
@@ -816,7 +826,7 @@ namespace Poly_Ling.Player
         {
             if (string.IsNullOrEmpty(cmd.Name)) { Fail("シナリオの名前が空です"); return; }
 
-            var g = new ObjectGroup(cmd.Name) { Goal = cmd.Goal ?? "" };
+            var g = new ModifierStack(cmd.Name) { Goal = cmd.Goal ?? "" };
             g.Steps.Clear();   // 項目は addScenarioItem で足す
 
             string folder = string.IsNullOrWhiteSpace(cmd.Folder) ? null : cmd.Folder;
@@ -894,19 +904,19 @@ namespace Poly_Ling.Player
             }
             if (calls.Count == 0) { Fail($"呼ぶシナリオがありません: {folder}"); return; }
 
-            var g = new ObjectGroup(cmd.Name) { Goal = cmd.Goal ?? "" };
+            var g = new ModifierStack(cmd.Name) { Goal = cmd.Goal ?? "" };
             g.Steps.Clear();
             foreach (var n in calls)
             {
                 var child = ScenarioLibrary.Get(n);
-                g.AddStep(new ObjectGroupStep
+                g.AddStep(new ModifierStackStep
                 {
-                    Kind    = ObjectGroupStepKind.ScenarioRef,
+                    Kind    = ModifierStackStepKind.ScenarioRef,
                     RefName = n,
                     Purpose = child?.Goal ?? "",
                 });
             }
-            g.Provenance = new ObjectGroupProvenance
+            g.Provenance = new ModifierStackProvenance
             {
                 ParentName    = "",
                 ChangeSummary = $"フォルダ {folder} のシナリオを順に呼ぶ親として作った",
@@ -941,7 +951,7 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(cmd.NewName)) { Fail("複製の名前が空です"); return; }
 
             src.Name = cmd.NewName;
-            src.Provenance = new ObjectGroupProvenance
+            src.Provenance = new ModifierStackProvenance
             {
                 ParentName    = cmd.SourceName,
                 ChangeSummary = cmd.ChangeSummary ?? "",
@@ -957,20 +967,20 @@ namespace Poly_Ling.Player
                 .Build());
         }
 
-        private void RunSaveScenarioFromGroup(SaveScenarioFromGroupCommand cmd)
+        private void RunSaveScenarioFromModifierStack(SaveScenarioFromModifierStackCommand cmd)
         {
             // この 1 本だけは現在のモデルを読む。
             var project = _getProject();
             var model = project?.CurrentModel;
             if (model == null) { Fail("no current model"); return; }
 
-            var group = model.FindObjectGroupByName(cmd.GroupName);
-            if (group == null) { Fail($"オブジェクトグループがありません: {cmd.GroupName}"); return; }
+            var group = model.FindModifierStackByName(cmd.StackName);
+            if (group == null) { Fail($"モディファイアスタックがありません: {cmd.StackName}"); return; }
             if (string.IsNullOrEmpty(cmd.ScenarioName)) { Fail("シナリオの名前が空です"); return; }
 
             // 実体への参照は落とし、つながりは書き換えて残す（作り直し整備計画 段 11）。
-            //   同じグループの前の項目の出力 → @<項目 ID>.masterIndices、グループの外 → シナリオの引数。
-            if (!Poly_Ling.Ops.ObjectGroupOps.BuildScenarioSteps(
+            //   同じスタックの前の項目の出力 → @<項目 ID>.masterIndices、スタックの外 → シナリオの引数。
+            if (!Poly_Ling.Ops.ModifierStackOps.BuildScenarioSteps(
                     project, project.CurrentModelIndex, group,
                     out var convSteps, out var convParams, out string convError))
             { Fail($"シナリオへ写せません: {convError}"); return; }
@@ -990,10 +1000,10 @@ namespace Poly_Ling.Player
                 g.Params.Add(p);
             }
 
-            g.Provenance = new ObjectGroupProvenance
+            g.Provenance = new ModifierStackProvenance
             {
                 ParentName    = "",
-                ChangeSummary = $"オブジェクトグループ {cmd.GroupName} から起こした",
+                ChangeSummary = $"モディファイアスタック {cmd.StackName} から起こした",
                 CreatedBy     = "",
             };
 
@@ -1025,7 +1035,7 @@ namespace Poly_Ling.Player
             if (cmd.Tags            != null && cmd.Tags.Length            > 0)
                 g.Tags            = new List<string>(cmd.Tags);
 
-            if (g.Provenance == null) g.Provenance = new ObjectGroupProvenance();
+            if (g.Provenance == null) g.Provenance = new ModifierStackProvenance();
             if (!string.IsNullOrEmpty(cmd.ChangeSummary)) g.Provenance.ChangeSummary = cmd.ChangeSummary;
             if (!string.IsNullOrEmpty(cmd.CreatedBy))     g.Provenance.CreatedBy     = cmd.CreatedBy;
 
@@ -1045,7 +1055,7 @@ namespace Poly_Ling.Player
             if (!TryBuildScenarioItem(
                     cmd.Kind, cmd.Action, cmd.Purpose, cmd.ArgKeys, cmd.ArgValues,
                     cmd.RefName, cmd.ExpansionPolicy, cmd.UsageScene,
-                    out ObjectGroupStep step, out string reason))
+                    out ModifierStackStep step, out string reason))
             { Fail(reason); return; }
 
             if (!string.IsNullOrEmpty(cmd.ScenarioItemId))
@@ -1099,7 +1109,7 @@ namespace Poly_Ling.Player
             if (!TryBuildScenarioItem(
                     cmd.Kind, cmd.Action, cmd.Purpose, cmd.ArgKeys, cmd.ArgValues,
                     cmd.RefName, cmd.ExpansionPolicy, cmd.UsageScene,
-                    out ObjectGroupStep step, out string reason))
+                    out ModifierStackStep step, out string reason))
             { Fail(reason); return; }
 
             step.ScenarioItemId = cmd.ScenarioItemId;
@@ -1225,7 +1235,7 @@ namespace Poly_Ling.Player
                 .Build());
         }
 
-        private static List<string> OutputNames(ObjectGroup g)
+        private static List<string> OutputNames(ModifierStack g)
         {
             var list = new List<string>();
             if (g?.Outputs != null)
@@ -1233,7 +1243,7 @@ namespace Poly_Ling.Player
             return list;
         }
 
-        private static List<string> ParamNames(ObjectGroup g)
+        private static List<string> ParamNames(ModifierStack g)
         {
             var list = new List<string>();
             if (g?.Params != null)
@@ -1354,7 +1364,7 @@ namespace Poly_Ling.Player
 
             // 参照先の項目をそのまま写す。参照先がさらに参照項目を持つ場合は
             // 参照項目のまま入る（その Args も置き換わる）。深い項目を開くにはもう一度この口を使う。
-            var inserted = new List<ObjectGroupStep>();
+            var inserted = new List<ModifierStackStep>();
             var oldIds   = new List<string>();
             if (src.Steps != null)
             {
@@ -1624,10 +1634,10 @@ namespace Poly_Ling.Player
         /// 引数から項目を 1 つ作る。実体への参照は持たせない。
         /// </summary>
         private static bool TryBuildScenarioItem(
-            ObjectGroupStepKind kind, string action, string purpose,
+            ModifierStackStepKind kind, string action, string purpose,
             string[] argKeys, string[] argValues,
             string refName, ScenarioExpansionPolicy expansionPolicy, string usageScene,
-            out ObjectGroupStep step, out string reason)
+            out ModifierStackStep step, out string reason)
         {
             step   = null;
             reason = null;
@@ -1655,8 +1665,8 @@ namespace Poly_Ling.Player
                 return false;
             }
 
-            bool executable  = kind == ObjectGroupStepKind.Command;
-            bool scenarioRef = kind == ObjectGroupStepKind.ScenarioRef;
+            bool executable  = kind == ModifierStackStepKind.Command;
+            bool scenarioRef = kind == ModifierStackStepKind.ScenarioRef;
 
             if (executable && string.IsNullOrEmpty(action))
             {
@@ -1688,7 +1698,7 @@ namespace Poly_Ling.Player
                 return false;
             }
 
-            var made = new ObjectGroupStep
+            var made = new ModifierStackStep
             {
                 Kind            = kind,
                 Action          = action ?? "",

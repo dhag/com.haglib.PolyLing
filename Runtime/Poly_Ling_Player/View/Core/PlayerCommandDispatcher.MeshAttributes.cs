@@ -279,13 +279,13 @@ namespace Poly_Ling.Player
 
                     // 「維持する」が立っているときだけ、実行前後の ObjectId を比べて
                     // 出来た出力先を突き止める。立っていなければ従来どおり何も残さない。
-                    var __beforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
+                    var __beforeIds = c.Placement.KeepAsModifierStack ? SnapshotObjectIds() : null;
 
                     string cpmReason = OnCreatePrimitiveMesh.Invoke(c);
                     if (cpmReason != null) { Fail(cpmReason); return true; }
 
-                    if (c.Placement.KeepAsGroup)
-                        CaptureObjectGroup(c, __beforeIds, FallbackOutputIndex(c));
+                    if (c.Placement.KeepAsModifierStack)
+                        CaptureModifierStack(c, __beforeIds, FallbackOutputIndex(c));
 
                     // 生成系は受け口（PolyLingPlayerViewerCore.ReportCreatedMesh）が
                     // ReportTargets で対象を報告済み。その対象を保ったまま、

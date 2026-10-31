@@ -3,8 +3,8 @@
 //
 //   PLRH v2 … 作業軸辞書（workaxis_library.csv）
 //   PLRS v8 … モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt。書き読みは本体側）
-//   PLRM v12 … 表情の作成日時（.mfproj の morphExpressions[].createdAt）と ObjectGroup の付帯
-//              （objectGroups[] の createdAt・scenarioOutputs、steps[] の usageScene・profileDim）
+//   PLRM v12 … 表情の作成日時（.mfproj の morphExpressions[].createdAt）と ModifierStack の付帯
+//              （modifierStacks[] の createdAt・scenarioOutputs、steps[] の usageScene・profileDim）
 //   PLRM v10 … グループモーフの子（morphgroups.csv の子の欄）
 //   PLRM v9 … モデル単位の付帯（materials.csv の既定材質、vrmexpressions.csv、meshselsets.csv、
 //              datastore.csv、mirrorpairs.csv、tposebackup.csv、springbonegroups.csv、
@@ -136,17 +136,17 @@ namespace Poly_Ling.Remote
         }
 
         // ================================================================
-        // PLRM v12：ObjectGroup の付帯（.mfproj の objectGroups[] と揃える）
-        //   グループの数（int）、グループごとに
+        // PLRM v12：ModifierStack の付帯（.mfproj の modifierStacks[] と揃える）
+        //   スタックの数（int）、スタックごとに
         //     [8B] CreatedAt（DateTime.ToBinary）
         //     [int] 出力の数 ([string] Name [string] From [string] Description) × N（名前の無いものは書かない）
         //     [int] 項目の数 ([string] UsageScene [int] ProfileDim) × N
-        //   並びは本体の ObjectGroups（null は空として詰めてある）・Steps と同じ。
+        //   並びは本体の ModifierStacks（null は空として詰めてある）・Steps と同じ。
         // ================================================================
 
-        private static void WriteObjectGroupExtras(BinaryWriter w, ModelContext model)
+        private static void WriteModifierStackExtras(BinaryWriter w, ModelContext model)
         {
-            var groups = model.ObjectGroups;
+            var groups = model.ModifierStacks;
             int n = groups?.Count ?? 0;
             w.Write(n);
             for (int i = 0; i < n; i++)
@@ -166,7 +166,7 @@ namespace Poly_Ling.Remote
                     WriteString(w, o.Description ?? "");
                 }
 
-                // 本体の書き（SerializeModelMeta）は null グループを空の項目 0 件で詰める。
+                // 本体の書き（SerializeModelMeta）は null スタックを空の項目 0 件で詰める。
                 var steps = g?.Steps;
                 int sc = steps?.Count ?? 0;
                 w.Write(sc);
@@ -174,17 +174,17 @@ namespace Poly_Ling.Remote
                 {
                     var st = steps[s];
                     WriteString(w, st?.UsageScene ?? "");
-                    w.Write(st?.ProfileDim ?? Poly_Ling.Data.ObjectGroupStep.CurrentProfileDim);
+                    w.Write(st?.ProfileDim ?? Poly_Ling.Data.ModifierStackStep.CurrentProfileDim);
                 }
             }
         }
 
-        private static void ReadObjectGroupExtras(BinaryReader r, ModelContext model)
+        private static void ReadModifierStackExtras(BinaryReader r, ModelContext model)
         {
             int n = r.ReadInt32();
             for (int i = 0; i < n; i++)
             {
-                var g = (model.ObjectGroups != null && i < model.ObjectGroups.Count) ? model.ObjectGroups[i] : null;
+                var g = (model.ModifierStacks != null && i < model.ModifierStacks.Count) ? model.ModifierStacks[i] : null;
 
                 var createdAt = DateTime.FromBinary(r.ReadInt64());
                 if (g != null) g.CreatedAt = createdAt;

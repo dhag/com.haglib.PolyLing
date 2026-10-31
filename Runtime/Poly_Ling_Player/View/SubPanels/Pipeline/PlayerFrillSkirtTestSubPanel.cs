@@ -1,7 +1,7 @@
 // PlayerFrillSkirtTestSubPanel.cs
 // フリルスカート自動検証。ボタン 1 回で
 //   スカート円筒を生成 → 断面プロファイルを描画オブジェクトとして作る
-//   → そこから断面を取り込む → 円筒を梯子にしてフリルを生成（グループとして残す）
+//   → そこから断面を取り込む → 円筒を梯子にしてフリルを生成（モディファイアスタックとして残す）
 //   → ソースを動かして「要更新」になることを確かめる → 作り直す
 // までを流す。共通部は PlayerBeltGroupTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
@@ -56,7 +56,7 @@ namespace Poly_Ling.Player
         protected override string TitleText => "フリルスカート自動検証";
 
         protected override string NoteText =>
-            "スカート円筒 → 断面プロファイル（描画オブジェクト）→ フリル生成（グループとして保持）\n"
+            "スカート円筒 → 断面プロファイル（描画オブジェクト）→ フリル生成（モディファイアスタックとして保持）\n"
           + "→ ソースを動かす → 要更新の検出 → 作り直し、までを通しで流します。\n"
           + "各段のログに「UI でやるならどこを押すか」を書き出します。";
 
@@ -108,10 +108,10 @@ namespace Poly_Ling.Player
             stages.Add(("4. プロファイルの生成完了を待つ",   StageWaitProfile));
             stages.Add(("5. 描画オブジェクトから断面を取り込む",           StageImportProfile));
             stages.Add(("6. 円筒を梯子にしてフリルを生成",   StageCreateFrill));
-            stages.Add(("7. グループが出来たか検査",         StageVerifyGroup));
+            stages.Add(("7. スタックが出来たか検査",         StageVerifyGroup));
             stages.Add(("8. ソース（円筒）を編集",           StageEditSource));
             stages.Add(("9. 要更新になったか検査",           StageVerifyStale));
-            stages.Add(("10. グループを作り直す",            StageRebuild));
+            stages.Add(("10. スタックを作り直す",            StageRebuild));
             stages.Add(("11. 作り直しの結果を検査",          StageVerifyRebuild));
         }
 
@@ -137,7 +137,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = false;
+            pl.KeepAsModifierStack = false;
 
             SendCommand(new CreateCylinderCommand(ModelIndex, prms, pl));
 
@@ -148,7 +148,7 @@ namespace Poly_Ling.Player
                 "梯子は「四角形が一列に並んだ帯」。円筒の側面がそのまま帯になる。"
               + "ふたを張ると円形の面が混ざり、円環の自動検索がその面まで拾ってしまう。"
               + "高さ分割を 2 以上にすると段グループが出来る。"
-              + "この段の『グループとして残す』はオフ。円筒は入力であって、"
+              + "この段の『モディファイアスタックとして残す』はオフ。円筒は入力であって、"
               + "作り直したいのはフリルの方だから。");
         }
 
@@ -218,7 +218,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;   // ← ここがグループを残す指定
+            pl.KeepAsModifierStack = true;   // ← ここがスタックを残す指定
 
             SendCommand(new CreateFrillCommand(
                 ModelIndex, fp,
@@ -237,9 +237,9 @@ namespace Poly_Ling.Player
               + $"CreateFrillCommand を送った。取り込み方=円環の自動検索（上下展開あり）、"
               + $"取り込み元は索引 {SourceIndex}",
                 "図形生成パネル → フリル → 「円環を自動検索」で梯子を拾う → 断面を取り込む "
-              + "→ 『オブジェクトグループとして残す』をオン → 生成",
+              + "→ 『モディファイアスタックとして残す』をオン → 生成",
                 "出力先を先に作っておく必要は無い。フリルの生成コマンド自体が新しい描画オブジェクトを作り、"
-              + "『グループとして残す』が立っていればディスパッチャが実行前後の ObjectId を比べて"
+              + "『モディファイアスタックとして残す』が立っていればディスパッチャが実行前後の ObjectId を比べて"
               + "出来たものを出力先として控える。"
               + "コマンドに載せるのは点列と『取り込み方』。作り直しでは取り込みを掛け直すので、"
               + "頂点ID や頂点番号を控える必要が無い。人が管理するのはメッシュ側だけで済む。");
@@ -252,7 +252,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 円筒の裾を外へ広げる。コマンドではなく頂点を直接動かす検証用の段。
         /// 実際の作業ではツールで動かすが、ここで確かめたいのは
-        /// 「ソースが変わったことをグループが気づけるか」だけなので経路は問わない。
+        /// 「ソースが変わったことをスタックが気づけるか」だけなので経路は問わない。
         /// </summary>
         protected override StageResult StageEditSource()
         {
@@ -295,7 +295,7 @@ namespace Poly_Ling.Player
                 $"円筒の頂点 {moved} 個を半径方向へ最大 {bulge:0.###} 広げた",
                 "ビューポートで円筒を選び、拡大や移動のツールで裾を広げるのと同じ",
                 "ここで動かしたのは入力（円筒）だけ。フリルの出力先はまだ古い形のまま。"
-              + "グループはこの食い違いを見つけられるはず、というのが次の段の検査。");
+              + "スタックはこの食い違いを見つけられるはず、というのが次の段の検査。");
         }
     }
 }

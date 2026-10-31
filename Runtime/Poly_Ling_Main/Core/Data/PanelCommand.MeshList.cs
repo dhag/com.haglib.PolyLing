@@ -1,5 +1,5 @@
 // PanelCommand.MeshList.cs
-// オブジェクトリスト操作・モデル操作・メッシュマージ・オブジェクトグループの操作要求。
+// オブジェクトリスト操作・モデル操作・メッシュマージ・モディファイアスタックの操作要求。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置（PanelCommand.cs と同じ名前空間。PanelCommand.cs から分割）
 
 using System.Collections.Generic;
@@ -300,130 +300,130 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
-    // オブジェクトグループ
+    // モディファイアスタック
     // ================================================================
 
     /// <summary>
-    /// オブジェクトグループを作り直す。
+    /// モディファイアスタックを作り直す。
     ///
     /// 記録してある生成コマンドを今のモデルに合わせて組み直し、実行する。
     /// 参照は ObjectId で控えてあるので、並べ替えや追加削除のあとでも
     /// 同じオブジェクトを指す。ソースが編集されていれば、梯子の位置は
     /// 頂点IDから引き直されるので新しい形になる。
     /// </summary>
-    [PLCommand(Category = "object.group", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.DeletesObject | PLCommandEffect.Topology, Hazards = PLCommandHazard.AffectsMultipleObjects, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを作り直す。ソースの編集が出力先へ反映される。")]
-    public class RebuildObjectGroupCommand : PanelCommand
+    [PLCommand(Category = "object.modifier", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.DeletesObject | PLCommandEffect.Topology, Hazards = PLCommandHazard.AffectsMultipleObjects, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.ModelWide, Description = "モディファイアスタックを作り直す。ソースの編集が出力先へ反映される。")]
+    public class RebuildModifierStackCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "作り直すグループの名前", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "作り直すスタックの名前", Required = true)]
+        public string StackName { get; }
 
         /// <summary>
         /// 作り直す前の出力先を退避として残すか。
         /// 残すと頂点ID・パーツIDを保った複製が別オブジェクトとして残る。
         /// </summary>
-        [PLParam(TextKey = "ObjectGroupKeepStash", Description = "作り直す前の出力先を退避として残す")]
+        [PLParam(TextKey = "ModifierStackKeepStash", Description = "作り直す前の出力先を退避として残す")]
         public bool KeepStash { get; }
 
-        public RebuildObjectGroupCommand(int modelIndex, string groupName, bool keepStash = false)
-            : base(modelIndex) { GroupName = groupName; KeepStash = keepStash; }
+        public RebuildModifierStackCommand(int modelIndex, string stackName, bool keepStash = false)
+            : base(modelIndex) { StackName = stackName; KeepStash = keepStash; }
     }
 
     /// <summary>
-    /// 参照先（出力先など）が消えたオブジェクトグループを片づける（ObjectGroupOps.PurgeMissing）。
+    /// 参照先（出力先など）が消えたモディファイアスタックを片づける（ModifierStackOps.PurgeMissing）。
     /// 描画オブジェクトは消さない。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide, Description = "参照先が消えたオブジェクトグループを片づける。描画オブジェクトは消さない。")]
-    public class PurgeObjectGroupsCommand : PanelCommand
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide, Description = "参照先が消えたモディファイアスタックを片づける。描画オブジェクトは消さない。")]
+    public class PurgeModifierStacksCommand : PanelCommand
     {
-        public PurgeObjectGroupsCommand(int modelIndex) : base(modelIndex) { }
+        public PurgeModifierStacksCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>
-    /// オブジェクトグループを解除する。描画オブジェクトは消さない。
+    /// モディファイアスタックを解除する。描画オブジェクトは消さない。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを解除する。出力先の描画オブジェクトは残る。")]
-    public class DeleteObjectGroupCommand : PanelCommand
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide, Description = "モディファイアスタックを解除する。出力先の描画オブジェクトは残る。")]
+    public class DeleteModifierStackCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "解除するグループの名前", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "解除するスタックの名前", Required = true)]
+        public string StackName { get; }
 
-        public DeleteObjectGroupCommand(int modelIndex, string groupName)
-            : base(modelIndex) { GroupName = groupName; }
+        public DeleteModifierStackCommand(int modelIndex, string stackName)
+            : base(modelIndex) { StackName = stackName; }
     }
 
     /// <summary>
-    /// オブジェクトグループを 1 つにまとめる（マクロを組む）。
+    /// モディファイアスタックを 1 つにまとめる（マクロを組む）。
     ///
-    /// ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。
+    /// ソースの全項目をターゲットの末尾へ移し、ソースのスタックを消す。
     /// 描画オブジェクトは 1 つも消さない。
     ///
-    /// 【なぜ生成コマンド側で「どのグループへ足すか」を指定しないか】
+    /// 【なぜ生成コマンド側で「どのスタックへ足すか」を指定しないか】
     ///   生成コマンドに足し先を持たせると、フリル・パイプ・藤壺・鎖の全部へ
     ///   同じパラメータを足すことになり、往復と検査の面が広がる。
-    ///   1 コマンド＝1 グループとして作ってから順に足す形なら、
+    ///   1 コマンド＝1 スタックとして作ってから順に足す形なら、
     ///   足す側の知識はこのコマンド 1 つに収まる。
     ///
     /// 【並び順】
     ///   項目の実行順はリストの並びそのもの。足した順に実行される。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを 1 つにまとめる。ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
-    public class MergeObjectGroupCommand : PanelCommand
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide, Description = "モディファイアスタックを 1 つにまとめる。ソースの全項目をターゲットの末尾へ移し、ソースのスタックを消す。描画オブジェクトは消さない。")]
+    public class MergeModifierStackCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "足し先のグループの名前", Required = true)]
-        public string TargetGroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "足し先のスタックの名前", Required = true)]
+        public string TargetStackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupName", Description = "足すグループの名前。まとめたあと消える", Required = true)]
-        public string SourceGroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "足すスタックの名前。まとめたあと消える", Required = true)]
+        public string SourceStackName { get; }
 
-        public MergeObjectGroupCommand(int modelIndex, string targetGroupName, string sourceGroupName)
+        public MergeModifierStackCommand(int modelIndex, string targetStackName, string sourceStackName)
             : base(modelIndex)
         {
-            TargetGroupName = targetGroupName;
-            SourceGroupName = sourceGroupName;
+            TargetStackName = targetStackName;
+            SourceStackName = sourceStackName;
         }
     }
 
     /// <summary>
-    /// オブジェクトグループの自動更新の可否を切り替える。
+    /// モディファイアスタックの自動更新の可否を切り替える。
     /// </summary>
-    [PLCommand(Category = "object.group", Effects = PLCommandEffect.ObjectAttribute, Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループの自動更新の可否を切り替える。")]
-    public class SetObjectGroupAutoUpdateCommand : PanelCommand
+    [PLCommand(Category = "object.modifier", Effects = PLCommandEffect.ObjectAttribute, Writes = PLWriteScope.ModelWide, Description = "モディファイアスタックの自動更新の可否を切り替える。")]
+    public class SetModifierStackAutoUpdateCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupAutoUpdate", Description = "ソースが変わったら自動で作り直す", Required = true)]
+        [PLParam(TextKey = "ModifierStackAutoUpdate", Description = "ソースが変わったら自動で作り直す", Required = true)]
         public bool AutoUpdate { get; }
 
-        public SetObjectGroupAutoUpdateCommand(int modelIndex, string groupName, bool autoUpdate)
-            : base(modelIndex) { GroupName = groupName; AutoUpdate = autoUpdate; }
+        public SetModifierStackAutoUpdateCommand(int modelIndex, string stackName, bool autoUpdate)
+            : base(modelIndex) { StackName = stackName; AutoUpdate = autoUpdate; }
     }
 
     /// <summary>
-    /// オブジェクトグループの項目 1 つの引数を書き換え、その項目だけを作り直す
+    /// モディファイアスタックの項目 1 つの引数を書き換え、その項目だけを作り直す
     /// （PolyLing_作り直し整備計画.md 段 3）。
     ///
     /// 書けないキー（入力・出力先の参照、作り直しが上書きするもの、入力の中身と取り方）は
-    /// ObjectGroupOps.ArgWriteBlockReason が決める。書いた結果がコマンドの型で読み直せないとき
+    /// ModifierStackOps.ArgWriteBlockReason が決める。書いた結果がコマンドの型で読み直せないとき
     /// （PanelCommandFactory.Create が通らないとき）は何も書かずに失敗を返す。
     /// 書き換えと作り直しは Undo 1 件。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide,
         Effects = PLCommandEffect.Topology | PLCommandEffect.ObjectAttribute,
         Verification = PLCommandVerification.Visual,
-        Description = "オブジェクトグループの項目 1 つの引数を書き換え、その項目だけを作り直す（出力の ObjectId は変わらない）。入力・出力先の参照や入力の中身は書けない。値はコマンドの型で読み直せないと拒否する。")]
-    public class SetObjectGroupStepArgsCommand : PanelCommand
+        Description = "モディファイアスタックの項目 1 つの引数を書き換え、その項目だけを作り直す（出力の ObjectId は変わらない）。入力・出力先の参照や入力の中身は書けない。値はコマンドの型で読み直せないと拒否する。")]
+    public class SetModifierStackStepArgsCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
-        [PLParam(TextKey = "ObjectGroupArgKeys", Description = "書く引数のキー。queryObjectGroupStepArgs の keys の名前", Required = true)]
+        [PLParam(TextKey = "ModifierStackArgKeys", Description = "書く引数のキー。queryModifierStackStepArgs の keys の名前", Required = true)]
         public string[] Keys { get; }
 
-        [PLParam(TextKey = "ObjectGroupArgValues", Description = "書く値。keys と同じ並び。カンマを含む値（配列など）は二重引用符で包む", Required = true)]
+        [PLParam(TextKey = "ModifierStackArgValues", Description = "書く値。keys と同じ並び。カンマを含む値（配列など）は二重引用符で包む", Required = true)]
         public string[] Values { get; }
 
         /// <summary>
@@ -433,11 +433,11 @@ namespace Poly_Ling.Data
         [PLParam(Ignore = true, Description = "断面のキーも書いてよいか（内部用）")]
         public bool AllowProfileKeys { get; }
 
-        public SetObjectGroupStepArgsCommand(int modelIndex, string groupName, int stepIndex, string[] keys, string[] values,
+        public SetModifierStackStepArgsCommand(int modelIndex, string stackName, int stepIndex, string[] keys, string[] values,
                                              bool allowProfileKeys = false)
             : base(modelIndex)
         {
-            GroupName = groupName;
+            StackName = stackName;
             StepIndex = stepIndex;
             Keys      = keys   ?? System.Array.Empty<string>();
             Values    = values ?? System.Array.Empty<string>();
@@ -451,22 +451,22 @@ namespace Poly_Ling.Data
     /// 下流を依存の順に流す。出力の編集は作り直した形に置き換わる（丸められる）。Undo 1 回で全部戻る。
     /// 確定の前に queryModifierInverse で保つもの・失うもの・ずれを見ること。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide,
         Effects = PLCommandEffect.Topology | PLCommandEffect.VertexPosition | PLCommandEffect.ObjectAttribute,
         Verification = PLCommandVerification.Visual,
         Description = "逆方向を持つ項目の出力の位置の編集を確定する。逆方向で入力（梯子の頂点・項目の引数・選択辞書の頂点）を書き直し、正方向で出力を作り直し、下流を流す。出力は作り直した形に置き換わる（編集は丸められる）。書き直す入力が別の項目の出力なら、その項目の逆方向へ連ねて一番上流の入力まで書き直す（逆方向を持たない項目があれば断る）。Undo 1 回で入力・途中の出力・出力・下流が戻る。")]
     public class CommitModifierOutputEditCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
-        public CommitModifierOutputEditCommand(int modelIndex, string groupName, int stepIndex)
+        public CommitModifierOutputEditCommand(int modelIndex, string stackName, int stepIndex)
             : base(modelIndex)
         {
-            GroupName = groupName;
+            StackName = stackName;
             StepIndex = stepIndex;
         }
     }
@@ -474,22 +474,22 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 逆方向を持つ項目の出力の編集を捨てる（段 6）。今の入力から正方向で作り直す。Undo 1 回で戻る。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide,
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide,
         Effects = PLCommandEffect.Topology | PLCommandEffect.VertexPosition,
         Verification = PLCommandVerification.Visual,
         Description = "逆方向を持つ項目の出力の未確定の編集を捨て、今の入力から作り直す。Undo 1 回で戻る。")]
     public class DiscardModifierOutputEditCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
-        public DiscardModifierOutputEditCommand(int modelIndex, string groupName, int stepIndex)
+        public DiscardModifierOutputEditCommand(int modelIndex, string stackName, int stepIndex)
             : base(modelIndex)
         {
-            GroupName = groupName;
+            StackName = stackName;
             StepIndex = stepIndex;
         }
     }

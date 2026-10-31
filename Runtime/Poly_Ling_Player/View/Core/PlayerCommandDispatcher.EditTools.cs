@@ -356,22 +356,22 @@ namespace Poly_Ling.Player
                         ? c.Placement.AddTargetIndex
                         : -1;
 
-                    // 辞書を作らない経路（グループに残さない／辞書名が指定済み）。
-                    if (!c.Placement.KeepAsGroup || !string.IsNullOrEmpty(c.EdgeSetName))
+                    // 辞書を作らない経路（スタックに残さない／辞書名が指定済み）。
+                    if (!c.Placement.KeepAsModifierStack || !string.IsNullOrEmpty(c.EdgeSetName))
                     {
-                        var erfBeforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
+                        var erfBeforeIds = c.Placement.KeepAsModifierStack ? SnapshotObjectIds() : null;
 
                         string erfReason = OnEdgeRibbonFace.Invoke(c);
                         if (erfReason != null) { Fail(erfReason); return true; }
 
-                        if (c.Placement.KeepAsGroup)
-                            CaptureObjectGroup(c, erfBeforeIds, erfFallback);
+                        if (c.Placement.KeepAsModifierStack)
+                            CaptureModifierStack(c, erfBeforeIds, erfFallback);
                         return true;
                     }
 
                     // 「維持する」が立っていて辞書名が無い。選択辺のままでは作り直しのときに
                     // 同じ辺を読めないので、選択辺を辞書へ保存し、その名前を控えたコマンドで
-                    // 実行してグループに残す。辞書の追加・帯・グループを Undo 1 件にまとめる。
+                    // 実行してスタックに残す。辞書の追加・帯・スタックを Undo 1 件にまとめる。
                     if (project == null) { Fail("no current project"); return true; }
 
                     if (!PlayerCommandTargets.MatchesSelectedDrawables(model, c.MasterIndices, out string erfSelReason))
@@ -379,7 +379,7 @@ namespace Poly_Ling.Player
 
                     _undoController?.SetModelContext(model);
                     var erfListBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
-                    int erfGroupsBefore = model.ObjectGroupCount;
+                    int erfGroupsBefore = model.ModifierStackCount;
 
                     string erfFail = null;
                     bool   erfSetFailed = false;
@@ -399,7 +399,7 @@ namespace Poly_Ling.Player
 
                             erfFail = OnEdgeRibbonFace.Invoke(erfCmd);
                             if (erfFail == null)
-                                CaptureObjectGroup(erfCmd, erfBeforeId, erfFallback);
+                                CaptureModifierStack(erfCmd, erfBeforeId, erfFallback);
                         }
                     }
                     finally

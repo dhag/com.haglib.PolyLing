@@ -1,5 +1,5 @@
 // CsvModelSerializer.StoreCsv.cs
-// CSV モデル入出力：meshselsets.csv・datastore.csv・objectgroups.csv・mirrorpairs.csv。
+// CSV モデル入出力：meshselsets.csv・datastore.csv・modifierstacks.csv・mirrorpairs.csv。
 // Runtime/Poly_Ling_Main/Core/Serialization/FolderSerializer/ に配置
 
 using System;
@@ -87,7 +87,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         //   v,key,isText,number,text                            … 値 1 件
         //
         //   s / l / v は直前の e に属する。項目 1 件がループを数十本持つので、
-        //   1 行に詰めると列が伸びて読めない。objectgroups.csv と同じく
+        //   1 行に詰めると列が伸びて読めない。modifierstacks.csv と同じく
         //   種別を先頭列に置いて行を分ける。
         //
         // 【s 行の列並び】
@@ -97,7 +97,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         //
         // 【ObjectId を書く】
         //   参照は索引と ObjectId の両方で持つ。名前ベース保存でも
-        //   ObjectId は 10 進のまま（objectgroups.csv と同じ）。
+        //   ObjectId は 10 進のまま（modifierstacks.csv と同じ）。
         // ================================================================
 
         private static void WriteOrDeleteDataStoreCsv(string folderPath, ModelContext model)
@@ -373,9 +373,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
-        // objectgroups.csv（オブジェクトグループ）
+        // modifierstacks.csv（モディファイアスタック）
         //
-        // 行の形と版の扱いは ObjectGroupCsv.cs を正典とする。
+        // 行の形と版の扱いは ModifierStackCsv.cs を正典とする。
         //
         // 【索引を書かない】
         //   参照は ObjectId（10 進）そのまま。名前ベース保存でも変換しない。
@@ -383,23 +383,23 @@ namespace Poly_Ling.Serialization.FolderSerializer
         //   useNameBased の分岐が要らない。
         // ================================================================
 
-        // 本文の組み立てと読み取りは ObjectGroupCsv が持つ。ここはファイルの
-        // 入出力だけ。シナリオのグループ（ScenarioLibrary）が同じ形のファイルを
+        // 本文の組み立てと読み取りは ModifierStackCsv が持つ。ここはファイルの
+        // 入出力だけ。シナリオのスタック（ScenarioLibrary）が同じ形のファイルを
         // 読み書きするので、構文解析を 2 か所に置かない。
-        private static void WriteObjectGroupsCsv(string folderPath, ModelContext model)
+        private static void WriteModifierStacksCsv(string folderPath, ModelContext model)
         {
             File.WriteAllText(
-                Path.Combine(folderPath, "objectgroups.csv"),
-                ObjectGroupCsv.Build(model.ObjectGroups),
+                Path.Combine(folderPath, "modifierstacks.csv"),
+                ModifierStackCsv.Build(model.ModifierStacks),
                 Encoding.UTF8);
         }
 
-        private static void ReadObjectGroupsCsv(string folderPath, ModelContext model)
+        private static void ReadModifierStacksCsv(string folderPath, ModelContext model)
         {
-            string path = Path.Combine(folderPath, "objectgroups.csv");
+            string path = Path.Combine(folderPath, "modifierstacks.csv");
             if (!File.Exists(path)) return;
 
-            model.ObjectGroups = ObjectGroupCsv.Parse(File.ReadAllLines(path, Encoding.UTF8));
+            model.ModifierStacks = ModifierStackCsv.Parse(File.ReadAllLines(path, Encoding.UTF8));
         }
 
         // ================================================================

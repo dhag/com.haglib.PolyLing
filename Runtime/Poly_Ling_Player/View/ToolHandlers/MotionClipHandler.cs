@@ -3,8 +3,12 @@
 // 受け持つ（操作経路統一計画.md E）。
 //
 // PlayerMotionClipTestSubPanel が MotionClipDTO と MotionClipApplier を持ち、ModelContext へ直接
-// ポーズを当てていたものを移した。当てるのは再生用の姿勢（保存しない表示状態）で、Undo は持たない
-// （従来と同じ）。パネルは時刻・再生位置の UI だけを持ち、setTime で頼む。
+// ポーズを当てていたものを移した。当てるのは再生用の姿勢（保存しない表示状態）で、読込・時刻・倍率などの操作は
+// Undo を持たない（従来と同じ）。パネルは時刻・再生位置の UI だけを持ち、setTime で頼む。
+//
+// 【編集の口】（PolyLing_モーション編集構造計画.md 段 3。MotionClipHandler.Edit.cs）
+//   クリップの編集の構造 edit（トラック・クリップ・キー・接線・ラップ・バンドル・レイヤー）を変える口は edit* の操作。
+//   中身は MotionEditOps（意味は Motion Studio にそろえる）。口は 1 回で取り消しの記録を 1 件積む。
 
 using System;
 using System.Collections.Generic;
@@ -17,7 +21,7 @@ using Poly_Ling.VMD;
 namespace Poly_Ling.Player
 {
     [PLTool("motionClip", Description = "モーションクリップの試し再生（読み込み・対応付け・フレーム適用）")]
-    public sealed class MotionClipHandler
+    public sealed partial class MotionClipHandler
     {
         public Func<ModelContext> GetModel;
         /// <summary>PMX 単位から Unity 単位への倍率（EditorState.PmxUnityRatio）。VMD の位置の既定倍率。</summary>
@@ -120,14 +124,17 @@ namespace Poly_Ling.Player
             {
                 Error = ex.Message;
                 UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
+                return;
             }
+            // パネルを通さない読込（invokeToolAction の load など）でも、開いているパネルの長さ・時刻を合わせる。
+            OnClipReplaced?.Invoke(time);
         }
 
         /// <summary>
         /// PolyLing モーション JSON の文字列（.plmotion.json と同じ中身）を MotionClipSerializer.Parse で読み、
         /// 読み込んだクリップにして time 秒のフレームを当てる（Load の sourceKind=1 と同じ扱い。位置の倍率は 1）。
         /// 元ファイルは無いので SourcePath は空になる。読めなければ今のクリップはそのままで、Error に理由が入る。
-        /// 成功したら OnClipLoadedFromJson を呼ぶ（パネルの表示を合わせる）。
+        /// 成功したら OnClipReplaced を呼ぶ（パネルの表示を合わせる）。
         /// コマンド loadMotionClipJson（Blender ブリッジのモーション送信）が使う。
         /// </summary>
         public MotionClipLoadResult LoadJson(string json, float time)
@@ -147,12 +154,14 @@ namespace Poly_Ling.Player
                 UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
                 return loaded;
             }
-            OnClipLoadedFromJson?.Invoke(time);
+            OnClipReplaced?.Invoke(time);
             return loaded;
         }
 
-        /// <summary>LoadJson で読み込んだ後に呼ぶ（引数は当てた時刻）。パネルの表示を合わせる。</summary>
-        public Action<float> OnClipLoadedFromJson;
+        /// <summary>
+        /// クリップを入れ替えた後（Load・LoadJson・EditClip が成功したとき）に呼ぶ（引数は当てた時刻）。パネルの表示を合わせる。
+        /// </summary>
+        public Action<float> OnClipReplaced;
 
         /// <summary>読み込んでいるクリップ（無ければ null）。書き換えないこと。</summary>
         public MotionClipDTO Clip => _dto;
@@ -198,15 +207,21 @@ namespace Poly_Ling.Player
             return true;
         }
 
-        /// <summary>SaveJson で元ファイルが変わった後に呼ぶ（パネルの表示を合わせる）。</summary>
+        /// <summary>SaveJson で元ファイルが変わった後と、Clear の後に呼ぶ（パネルの表示を合わせる）。</summary>
         public Action OnSourceChanged;
 
         /// <summary>
         /// 読み込んでいるクリップを edit で書き換え、対応付けをやり直して time 秒のフレームを当てる。
         /// クリップが無ければ空のクリップ（newName）を作ってから書き換える（元ファイルは無し）。
-        /// 書き換えの後 OnClipLoadedFromJson を呼ぶ（パネルの表示を合わせる）。
+        /// 書き換えの後 OnClipReplaced を呼ぶ（パネルの表示を合わせる）。
+        /// 編集の構造（dto.edit）があれば MotionEditOps.SyncEditAfterFlatChange で合わせる
+        /// （中身の変わった平らなトラックの edit トラックはクリップ 1 本の形で作り直し、新しい平らなトラックは足す）。
+        /// 取り消しの記録は積まず、それより前の編集の口の記録は戻せなくなる（読込と同じ扱い）。
         /// コマンド createLipSyncFromVoicevox が使う。
         /// </summary>
+        /// <summary>直前の EditClip で、edit に取り込むときに同じフレームに丸まって捨てたキーの数（edit の無いクリップは 0）。</summary>
+        public int LastDroppedKeys { get; private set; }
+
         public void EditClip(Action<MotionClipDTO> edit, string newName, float time)
         {
             Error = "";
@@ -221,7 +236,17 @@ namespace Poly_Ling.Player
                 };
                 created = true;
             }
+            var flatBefore = dto.edit != null ? MotionEditOps.FlatSignatures(dto) : null;
             edit?.Invoke(dto);
+            // 平らなトラックだけを書き換えたので、編集の構造（version 5 の edit）をそれに合わせ、
+            // 平らなトラックを edit から作り直す（edit はフレームごとに 1 キーなので、同じフレームに丸まったキーはここで消える。
+            // 消さないと保存の平らなトラックと edit が食い違い、次の口・Studio の読込で黙って消える）。
+            LastDroppedKeys = 0;
+            if (dto.edit != null)
+            {
+                LastDroppedKeys = MotionEditOps.SyncEditAfterFlatChange(dto, flatBefore);
+                MotionEditFlattener.Reflatten(dto, Math.Max(0f, MotionClipSerializer.Length(dto)));
+            }
             float scale = _applier?.PositionScale ?? 1f;
             try
             {
@@ -238,13 +263,17 @@ namespace Poly_Ling.Player
                 SourcePath = "";
                 SourceKind = (int)MotionSourceKind.PolyLingMotionJson;
             }
-            OnClipLoadedFromJson?.Invoke(time);
+            OnClipReplaced?.Invoke(time);
         }
 
         private void SetClipCore(MotionClipDTO dto, MotionClipLoadResult report, float positionScale, float time)
         {
             _loadResult = report;
             _dto = dto;
+            // 読み込んだ（入れ替えた）ときの長さ。編集の口が平らにし直すときの「元の長さ」（Studio の meta.duration）。
+            _loadedDuration = Math.Max(0f, MotionClipSerializer.Length(dto));
+            _generation++;
+            EditedSinceLoad = false;
             EnsureApplier();
             _applier.PositionScale = positionScale;
             _applier.SetClip(_dto);
@@ -257,9 +286,13 @@ namespace Poly_Ling.Player
         {
             ResetPoseCore();
             _dto = null;
+            _generation++;
+            EditedSinceLoad = false;
             _loadResult = null;
             SourcePath = "";
             SourceKind = 0;
+            // パネルを通さない clear でも、開いているパネルの表示（長さ 0・クリップの節を隠す）を合わせる。
+            OnSourceChanged?.Invoke();
         }
 
         [PLToolAction(Description = "姿勢を初期へ戻す（クリップは残す）")]
@@ -360,6 +393,7 @@ namespace Poly_Ling.Player
 
         private bool ApplyFrameCore(float time)
         {
+            _lastTime = time;
             var model = GetModel?.Invoke();
             if (_dto == null || model == null || _applier == null) return false;
             _applier.ApplyFrame(model, time);

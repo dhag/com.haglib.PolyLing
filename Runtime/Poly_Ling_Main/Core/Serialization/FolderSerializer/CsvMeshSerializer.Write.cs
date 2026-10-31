@@ -47,7 +47,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
-            // オブジェクトグループの項目の出力で、手の編集が未確定（段 F）。未確定のときだけ書く。
+            // モディファイアスタックの項目の出力で、手の編集が未確定（段 F）。未確定のときだけ書く。
             if (Poly_Ling.Ops.ModifierEvaluator.IsOutputEdited(mc))
                 sb.AppendLine("modifierOutputEdited,True");
             // 協働編集: 安定オブジェクトID

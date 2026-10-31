@@ -2,14 +2,14 @@
 // サブディビジョン（細分化曲面）のコマンド。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置（PanelCommand.cs と同じ名前空間）
 //
-// 【つながりはオブジェクトグループに残す】
+// 【つながりはモディファイアスタックに残す】
 //   SubdivideMeshCommand を実行すると、親（cageMasterIndex）と回数（level）と
-//   子（出力先）を 1 項目のグループとして残す。つながりの正本はこれで、
+//   子（出力先）を 1 項目のモディファイアスタックとして残す。つながりの正本はこれで、
 //   実行時の追随（SubdivisionSync）はここから引く。
 //
 // 【作り直し】
 //   targetMasterIndex に既にある子を渡すと、新しく作らず中身だけ入れ替える
-//   （RebuildRole=TargetIndex）。グループの作り直しもこの形で流れる。
+//   （RebuildRole=TargetIndex）。スタックの作り直しもこの形で流れる。
 
 namespace Poly_Ling.Data
 {
@@ -17,7 +17,7 @@ namespace Poly_Ling.Data
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Topology | PLCommandEffect.Hierarchy,
         Description = "メッシュを親（ケージ）として Catmull-Clark で細分化した滑らかな子を作る。子は親の子に置かれ、親の頂点編集・面の増減・移動に追随する。")]
     [PLUiRoute("サブディビジョン", "leftPane.fold.Topology", "leftPane.subdivisionBtn", "subdivision.level", "subdivision.create")]
-    [PLModifier(Capture = PLGroupCapture.Always, FollowsDrag = true)]   // 新しく子を作るとき（PlayerCommandDispatcher.Subdivision.cs）。ドラッグ中はステンシルで追随
+    [PLModifier(Capture = PLStackCapture.Always, FollowsDrag = true)]   // 新しく子を作るとき（PlayerCommandDispatcher.Subdivision.cs）。ドラッグ中はステンシルで追随
     public class SubdivideMeshCommand : PanelCommand
     {
         [PLParam(Description = "細分化する親（ケージ）の masterIndex", Required = true,
@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.Targets,
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.Targets,
         Effects = PLCommandEffect.ObjectAttribute | PLCommandEffect.DeletesObject,
         Description = "サブディビジョンを解除する。親と子のつながりを外し、子を消すか通常のメッシュとして残す。")]
     [PLUiRoute("サブディビジョンの解除", "leftPane.fold.Topology", "leftPane.subdivisionBtn", "subdivision.deleteChild", "subdivision.release")]

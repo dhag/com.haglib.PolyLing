@@ -64,7 +64,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 追加先モード。
         ///
-        /// RebuildRole=TargetMode … オブジェクトグループの作り直しでは、
+        /// RebuildRole=TargetMode … モディファイアスタックの作り直しでは、
         /// 新しいオブジェクトを作らず既存の出力先へ中身を書き戻す。
         /// そのときここへ ReplaceExisting が書かれる（PLRebuildRole を参照）。
         /// </summary>
@@ -93,16 +93,16 @@ namespace Poly_Ling.Data
         public bool MergeDuplicateVertices;
 
         /// <summary>
-        /// 生成に使った入力とパラメータをオブジェクトグループとして残すか。既定 false。
+        /// 生成に使った入力とパラメータをモディファイアスタックとして残すか。既定 false。
         ///
         /// false（＝これまでのやり方）のときは、生成が終わった時点で
         /// 入力もパラメータも残らない。あとから作り直すには同じ操作をやり直す。
-        /// true のときは ModelContext.ObjectGroups へ 1 件入り、
+        /// true のときは ModelContext.ModifierStacks へ 1 件入り、
         /// ソースを直したあとに作り直せるようになる。
         /// </summary>
-        [PLParam(TextKey = "KeepAsGroup",
-                 Description = "生成に使った入力とパラメータをオブジェクトグループとして残す")]
-        public bool KeepAsGroup;
+        [PLParam(TextKey = "KeepAsModifierStack",
+                 Description = "生成に使った入力とパラメータをモディファイアスタックとして残す")]
+        public bool KeepAsModifierStack;
 
         public static PrimitivePlacement Default => new PrimitivePlacement
         {
@@ -116,7 +116,7 @@ namespace Poly_Ling.Data
             AddTargetIndex         = -1,
             MaterialIndex          = -1,
             MergeDuplicateVertices = true,
-            KeepAsGroup            = false,
+            KeepAsModifierStack            = false,
         };
     }
 
@@ -127,8 +127,8 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "生成物の境界ループ（穴）の数の合計")]
     // 画面での経路は図形名から割り出す（UiRouteCatalog）。図形ごとには書かない。
     [PLUiRouteByShape]
-    // グループへの記録は「グループとして残す」が立っているときだけ（PlayerCommandDispatcher.MeshAttributes.cs）。全図形へ引き継ぐ。
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]
+    // スタックへの記録は「モディファイアスタックとして残す」が立っているときだけ（PlayerCommandDispatcher.MeshAttributes.cs）。全図形へ引き継ぐ。
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]
     public abstract class CreatePrimitiveMeshCommand : PanelCommand
     {
         /// <summary>配置と後処理の指定。</summary>
@@ -316,7 +316,7 @@ namespace Poly_Ling.Data
     ///
     /// 【画像のパス】
     ///   作業フォルダの下だけを読める。画面で選んだ画像は生成ボタンを押すたびに 1 回だけ許可される。
-    ///   オブジェクトグループの作り直しでは許可が無いので、作業フォルダの外の画像は読めない。
+    ///   モディファイアスタックの作り直しでは許可が無いので、作業フォルダの外の画像は読めない。
     /// </summary>
     [PLCommand(Category = "geometry.create.primitive", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
         Description = "画像の縦横比で厚みのある板を作り、表面に画像を貼った材質を作って割り当てる。画像は作業フォルダの下だけを読める。")]
@@ -664,7 +664,7 @@ namespace Poly_Ling.Data
     /// 配置元の索引から MeshObject への解決はディスパッチャ側が行う（藤壺と同じ口）。
     /// </summary>
     [PLCommand(Category = "geometry.create.mechanical", Writes = PLWriteScope.Targets, Description = "ネジ配置。配置元オブジェクトを円周上（PCD）または長方形の周上へ複製する。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BoltPattern,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BoltPattern,
         InverseKeeps = "個数・並べる面・配置元・割り当て",
         InverseLoses = "部品ごとのずれ・回転・歪み、並びの中心のずれ、面の傾き")]
     public sealed class CreateBoltPatternCommand : CreatePrimitiveMeshCommand

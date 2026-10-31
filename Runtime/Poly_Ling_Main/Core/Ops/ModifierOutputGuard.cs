@@ -1,16 +1,16 @@
 // ModifierOutputGuard.cs
-// オブジェクトグループの出力（モディファイアの出力）を書き換えるコマンドを、受け口で止める判定。
+// モディファイアスタックの出力（モディファイアの出力）を書き換えるコマンドを、受け口で止める判定。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【何のためにあるか】（PolyLing_作り直し整備計画.md 2.5・段 2）
 //   出力は入力と引数から導かれるもので、手で書き換えても次の作り直しで消える。
-//   書き換えたいときはグループを解除（適用）して普通のメッシュにする。
+//   書き換えたいときはスタックを解除（適用）して普通のメッシュにする。
 //   逆方向を持つ項目（PLModifierAttribute.Inverse）は、頂点の位置だけを動かすコマンド
 //   （分類 geometry.position）を通す。編集は未確定になり、確定で入力へ書き戻す（段 6）。
 //   ミラーの有無の切り替え（setMirrorEnabled）はどの出力にも通す（段 6）。
 //
 // 【呼ぶ所】PlayerCommandDispatcher.Dispatch の担当者判定の直後。各深さで呼ぶ。
-//   作り直しの書き戻し（RunObjectGroupStep の入れ子の Dispatch）の中では呼ばない。
+//   作り直しの書き戻し（RunModifierStackStep の入れ子の Dispatch）の中では呼ばない。
 //   評価器（ModifierEvaluator の処理器）は Dispatch を通らずに書くので、ここに掛からない。
 //
 // 【判定の対象】
@@ -26,7 +26,7 @@
 //     （PlayerCommandDispatcher.CollectSelectedMeshContexts と同じ決め方）
 //   ・作業空間の反映・取消し・閉じる（applyEditSpace 等）は、引数でも選択でもなく作業空間が
 //     書く先を呼び出し側が渡す（DenyReason の explicitTargets。段 8）
-//   書き込み先がどれかのグループの実行項目の出力なら拒否する。
+//   書き込み先がどれかのスタックの実行項目の出力なら拒否する。
 
 using System;
 using System.Collections.Generic;
@@ -118,7 +118,7 @@ namespace Poly_Ling.Ops
             var mainModel = GetModel(project, cmd.ModelIndex);
             if (mainModel == null) return null;
 
-            // モデルにグループの出力が 1 つも無ければ何もしない（大半のコマンドはここで抜ける）。
+            // モデルにスタックの出力が 1 つも無ければ何もしない（大半のコマンドはここで抜ける）。
             if (!HasAnyOutput(project)) return null;
 
             var targets = new List<KeyValuePair<ModelContext, MeshContext>>();
@@ -173,7 +173,7 @@ namespace Poly_Ling.Ops
             return CheckTargets(targets, positionOnly);
         }
 
-        /// <summary>書き込み先のどれかがグループの出力なら拒否の理由。</summary>
+        /// <summary>書き込み先のどれかがスタックの出力なら拒否の理由。</summary>
         private static string CheckTargets(List<KeyValuePair<ModelContext, MeshContext>> targets, bool positionOnly)
         {
             foreach (var kv in targets)
@@ -188,10 +188,10 @@ namespace Poly_Ling.Ops
                 if (hasInverse && positionOnly) continue;
 
                 if (hasInverse)
-                    return $"出力は位置の編集だけができます → {mc.Name}（グループ「{group}」の項目 {owner.StepIndex} {action} の出力。"
-                         + "逆方向で入力へ戻せるのは頂点の位置の編集だけ）。面の追加・削除などはグループを解除（適用）してから行ってください。";
-                return $"出力は編集できません → {mc.Name}（グループ「{group}」の項目 {owner.StepIndex} {action} の出力）。"
-                     + "編集するにはグループを解除（適用）してください。";
+                    return $"出力は位置の編集だけができます → {mc.Name}（スタック「{group}」の項目 {owner.StepIndex} {action} の出力。"
+                         + "逆方向で入力へ戻せるのは頂点の位置の編集だけ）。面の追加・削除などはスタックを解除（適用）してから行ってください。";
+                return $"出力は編集できません → {mc.Name}（スタック「{group}」の項目 {owner.StepIndex} {action} の出力）。"
+                     + "編集するにはスタックを解除（適用）してください。";
             }
             return null;
         }
@@ -215,8 +215,8 @@ namespace Poly_Ling.Ops
             for (int m = 0; m < project.ModelCount; m++)
             {
                 var model = project.GetModel(m);
-                if (model?.ObjectGroups == null) continue;
-                foreach (var g in model.ObjectGroups)
+                if (model?.ModifierStacks == null) continue;
+                foreach (var g in model.ModifierStacks)
                 {
                     if (g?.Steps == null) continue;
                     foreach (var s in g.Steps)

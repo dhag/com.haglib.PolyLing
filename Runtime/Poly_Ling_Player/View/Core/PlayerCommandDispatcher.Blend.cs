@@ -146,10 +146,10 @@ namespace Poly_Ling.Player
                         }
                     }
 
-                    // 選択は引数に残らないので、選択頂点だけのブレンドをグループに残すと
+                    // 選択は引数に残らないので、選択頂点だけのブレンドをスタックに残すと
                     // 作り直しの結果がそのときの選択で変わる。残さない。
-                    if (c.KeepAsGroup && c.SelectedVerticesOnly)
-                    { Fail("選択頂点だけのブレンドはグループとして残せません（選択は引数に残らず、作り直しの結果が選択で変わるため）"); return true; }
+                    if (c.KeepAsModifierStack && c.SelectedVerticesOnly)
+                    { Fail("選択頂点だけのブレンドはモディファイアスタックとして残せません（選択は引数に残らず、作り直しの結果が選択で変わるため）"); return true; }
 
                     // ToolContext 構築（UndoController・CommandQueue 接続済み）。
                     // Undo の対象メッシュ指定は BlendOperation が SetMeshObjectFor で行う。
@@ -163,7 +163,7 @@ namespace Poly_Ling.Player
                     var preview = new BlendPreviewState();
                     preview.Start(model, c.DestMasterIndex, hideIndices);
 
-                    var __blendBeforeIds = c.KeepAsGroup ? SnapshotObjectIds() : null;
+                    var __blendBeforeIds = c.KeepAsModifierStack ? SnapshotObjectIds() : null;
 
                     int blendWriteIndex = BlendOperation.ApplyBlend(
                         model, preview, sources,
@@ -177,7 +177,7 @@ namespace Poly_Ling.Player
                         return true;
                     }
 
-                    if (c.KeepAsGroup)
+                    if (c.KeepAsModifierStack)
                     {
                         // 作り直し整備計画 段 13：基準を入力、書き込み先を出力として記録する。
                         //   宛先を書き換える設定 … 基準＝バックアップ、出力＝宛先
@@ -190,9 +190,9 @@ namespace Poly_Ling.Player
                             c.SourceModelIndices, c.SourceMasterIndices, c.SourceWeights,
                             blendWriteIndex,
                             c.CreateNewObject, c.RecalculateNormals, c.SelectedVerticesOnly,
-                            c.MatchMode, c.KeepAsGroup,
+                            c.MatchMode, c.KeepAsModifierStack,
                             blendBaseIndex);
-                        CaptureObjectGroup(recordCmd, __blendBeforeIds, -1,
+                        CaptureModifierStack(recordCmd, __blendBeforeIds, -1,
                             blendWriteCtx != null && blendWriteCtx.ObjectId != 0UL
                                 ? new List<ulong> { blendWriteCtx.ObjectId }
                                 : null);
@@ -204,7 +204,7 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                // ── オブジェクトグループ：作り直し
+                // ── モディファイアスタック：作り直し
                 //
                 // 【出力先は作り直さず、中身だけ入れ替える】
                 //   新しいオブジェクトを作ると ObjectId が変わり、名前・階層・姿勢・
@@ -213,16 +213,16 @@ namespace Poly_Ling.Player
                 //
                 // 【頂点IDは残らない】
                 //   中身の総入れ替えなので、出力先へ手で振った頂点IDは失われる。
-                //   出力先にIDを振るなら、先にグループを解除すること。
-                case RebuildObjectGroupCommand c:
+                //   出力先にIDを振るなら、先にスタックを解除すること。
+                case RebuildModifierStackCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
 
-                    var g = model.FindObjectGroupByName(c.GroupName);
-                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return true; }
-                    if (g.StepCount == 0) { Fail($"グループにステップがありません: {c.GroupName}"); return true; }
+                    var g = model.FindModifierStackByName(c.StackName);
+                    if (g == null) { Fail($"スタックが見つかりません: {c.StackName}"); return true; }
+                    if (g.StepCount == 0) { Fail($"スタックにステップがありません: {c.StackName}"); return true; }
 
-                    int gIndex = model.ObjectGroups.IndexOf(g);
+                    int gIndex = model.ModifierStacks.IndexOf(g);
                     var oldSnapshot = g.Clone();
 
                     // 【Undo はマクロ全体で 1 件】
@@ -243,7 +243,7 @@ namespace Poly_Ling.Player
                     {
                         for (int si = 0; si < g.StepCount; si++)
                         {
-                            if (!RunObjectGroupStep(
+                            if (!RunModifierStackStep(
                                     project, model, c.ModelIndex, c.KeepStash, g, si, out string stepErr))
                             { rbFail = stepErr; break; }
                             rbDone++;
@@ -257,27 +257,27 @@ namespace Poly_Ling.Player
                         _undoController?.ResumeRecording();
                     }
 
-                    g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+                    g.SourceDigest = ModifierStackOps.ComputeSourceDigest(project, g);
 
                     // 途中で落ちても記録は積む。そこまでの変更を Undo で戻せるようにする。
                     // 同じスタックへ続けて積むので Undo のログは 1 件に集約される。
                     if (_undoController != null)
                     {
-                        _undoController.MeshListStack.BeginGroup($"オブジェクトグループ実行: {g.Name}");
+                        _undoController.MeshListStack.BeginGroup($"モディファイアスタック実行: {g.Name}");
 
                         RecordMeshListSnapshot(
-                            rbListBefore, model, $"オブジェクトグループ実行: {g.Name}");
+                            rbListBefore, model, $"モディファイアスタック実行: {g.Name}");
 
                         if (gIndex >= 0)
                         {
-                            RecordObjectGroupUndo(
-                                new ObjectGroupChangeRecord
+                            RecordModifierStackUndo(
+                                new ModifierStackChangeRecord
                                 {
                                     ReplacedIndex = gIndex,
                                     OldGroup      = oldSnapshot,
                                     NewGroup      = g.Clone(),
                                 },
-                                $"オブジェクトグループ実行: {g.Name}");
+                                $"モディファイアスタック実行: {g.Name}");
                         }
 
                         _undoController.MeshListStack.EndGroup();

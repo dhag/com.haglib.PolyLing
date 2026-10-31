@@ -87,6 +87,7 @@ namespace Poly_Ling.Player
         private Toggle        _diagAttrToggle;
         [UiControl("diag.undo", Description = "診断ログ: Undo")]
         private Toggle        _diagUndoToggle;
+        private Toggle        _diagTimingToggle;
         [UiControl("diag.pick", Description = "診断ログ: 逐次出力 (Pick)")]
         private Toggle        _diagPickToggle;
         [UiControl("diag.pickAutoDump", Description = "診断ログ: 自動ダンプ (PickAutoDump)")]
@@ -256,6 +257,9 @@ namespace Poly_Ling.Player
             parent.Add(_diagViewportToggle = DiagToggle("描画入口 (Viewport)", () => PLDiag.Viewport, v => PLDiag.Viewport = v));
             parent.Add(_diagAttrToggle     = DiagToggle("属性 (Attr)",        () => PLDiag.Attr,     v => PLDiag.Attr     = v));
             parent.Add(_diagUndoToggle     = DiagToggle("Undo",               () => PLDiag.Undo,     v => PLDiag.Undo     = v));
+            // モディファイアの作り直し・描画準備の区間の計測（モディファイア高速化計画 段 15）。
+            // 結果は Console ではなく queryModifierGraph の lastPass に出る。
+            parent.Add(_diagTimingToggle   = DiagToggle("時間の計測 (Timing)", () => PLDiag.Timing,   v => PLDiag.Timing   = v));
 
             parent.Add(PlayerIoUiKit.SectionLabel("ピック／移動"));
 
@@ -319,6 +323,8 @@ namespace Poly_Ling.Player
         public void Refresh()
         {
             _saveDest?.Refresh();
+            // setDiagnosticTiming（MCP）で切り替えた値を表示へ写す（段 15）。
+            _diagTimingToggle?.SetValueWithoutNotify(PLDiag.Timing);
             UpdateText();
         }
 

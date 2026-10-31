@@ -1,4 +1,4 @@
-// ObjectGroup.cs
+// ModifierStack.cs
 // 「入力ソース＋生成パラメータ＋出力先」をコマンド列（項目）で持つもの。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
@@ -11,17 +11,17 @@
 //   その関係をモデルに残すのがこれ。
 //
 // 【項目】
-//   1 グループは 1 つ以上の項目（ObjectGroupStep）を並び順に持つ。
+//   1 スタックは 1 つ以上の項目（ModifierStackStep）を並び順に持つ。
 //   項目 1 つが生成コマンド 1 つで、出力は複数ありうる
 //   （はしごから作る揺れボーンの鎖は 1 回の実行で何本もできる）。
 //
-//   依存の順はここに持たず、ModifierGraph が全グループの項目の入出力（ObjectId）から導く
+//   依存の順はここに持たず、ModifierGraph が全スタックの項目の入出力（ObjectId）から導く
 //   （作り直し整備計画 段 4）。リストの並びは同じ順位の中での順。
 //   項目間の参照は ObjectId で成立する（前の項目の出力は実在するので
 //   ObjectId が振られており、冪等なら作り直されずに同じ ID が残る）。
 //   「項目 n の出力 k」という相対参照は持たない（シナリオでは @<項目 ID> がそれに当たる。下の注記）。
 //
-//   項目が 1 つのグループは、これまでの ObjectGroup と同じもの。
+//   項目が 1 つのスタックは、これまでの ModifierStack と同じもの。
 //   Action / Args / MeshRefIds / OutputObjectId は項目 0 への窓口として
 //   残してあり、既存の呼び出しはそのまま通る。二重には持たない
 //   （フィールドと項目の両方に置くと必ず食い違う）。
@@ -32,7 +32,7 @@
 //   （MeshContextCloneOps の StateSnapshot）、複製では新しい値が振られる
 //   （ModelContext.Add / Insert）。よって「複製物は自動的に非メンバー」になる。
 //   これは MeshContext 側にフィールドを足す案では作れない性質で、
-//   参照はグループ → オブジェクトの片方向だけに保つこと。
+//   参照はスタック → オブジェクトの片方向だけに保つこと。
 //
 // 【生成パラメータの持ち方】
 //   PanelCommandFactory.ToArgs で文字列の対にし、Create で戻す。
@@ -40,14 +40,14 @@
 //   Args のうち「索引で描画オブジェクトを指す」ものだけは、再構築のときに
 //   項目の MeshRefIds から引き直す（PLParam.IsMeshRef）。
 //
-// 【一時グループ】
-//   ModelContext.ObjectGroups へ入れなければ、保存・転送・Undo・不変条件検査の
-//   どれにも触れない。「ちょっと作るだけ」はグループを組んで実行し、そのまま
-//   参照を捨てる。捨てたグループは復元できない（生成物からパラメータは逆算できない）。
+// 【一時スタック】
+//   ModelContext.ModifierStacks へ入れなければ、保存・転送・Undo・不変条件検査の
+//   どれにも触れない。「ちょっと作るだけ」はスタックを組んで実行し、そのまま
+//   参照を捨てる。捨てたスタックは復元できない（生成物からパラメータは逆算できない）。
 //
 // 【手順の知識として使う】
 //   同じ型を 2 通りに使う。
-//     実体付き … ModelContext.ObjectGroups に入るもの。項目の参照が
+//     実体付き … ModelContext.ModifierStacks に入るもの。項目の参照が
 //                実在の ObjectId を指し、作り直しで出力先へ書き戻す。今までどおり。
 //     シナリオ     … ScenarioLibrary に入るもの。モデルに属さず、参照は空でよい。
 //                目的・前提・成功条件・由来を持ち、元を残したまま派生を増やす。
@@ -57,9 +57,9 @@
 //   つながりの表し方（作り直し整備計画 段 11）
 //     実体付き … MeshRefIds（ObjectId）。依存は ModifierGraph が導き、密にリアルタイムで流れる。
 //     シナリオ … Args の @prev / @<項目 ID>（流したときの戻り値）と ${引数}。疎で、流して作る。
-//   実体付きからシナリオへは saveScenarioFromGroup（ObjectGroupOps.BuildScenarioSteps）が写す：
-//     同じグループの前の項目の出力 → @<項目 ID>.masterIndices、グループの外 → シナリオの引数。
-//   シナリオから実体付きへは流すことで戻る（グループとして残す生成項目が CaptureObjectGroup でグループになる）。
+//   実体付きからシナリオへは saveScenarioFromModifierStack（ModifierStackOps.BuildScenarioSteps）が写す：
+//     同じスタックの前の項目の出力 → @<項目 ID>.masterIndices、スタックの外 → シナリオの引数。
+//   シナリオから実体付きへは流すことで戻る（モディファイアスタックとして残す生成項目が CaptureModifierStack でスタックになる）。
 //   流すときも項目は実体付きと同じに扱う：梯子・断面は取り込み元から読み直し、
 //   書き込みのある項目のあとに評価器を流す（PlayerCommandDispatcher.ScenarioRun.cs）。
 
@@ -77,10 +77,10 @@ namespace Poly_Ling.Data
     ///   手順の知識には「なぜこの項目が要るか」「ここは対象を見て人が決める」
     ///   「この項目のあとに何を確かめるか」が混ざる。別のリストに分けると
     ///   並び順の対応を二重に管理することになり、必ずずれる。
-    ///   実行側（ObjectGroupOps.BuildCommand /
-    ///   PlayerCommandDispatcher.RunObjectGroupStep）が Command 以外を飛ばす。
+    ///   実行側（ModifierStackOps.BuildCommand /
+    ///   PlayerCommandDispatcher.RunModifierStackStep）が Command 以外を飛ばす。
     /// </summary>
-    public enum ObjectGroupStepKind
+    public enum ModifierStackStepKind
     {
         /// <summary>生成コマンドを実行する項目。既定。</summary>
         Command = 0,
@@ -119,15 +119,15 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// グループの由来。どれを元に、何を変えて作ったか。
+    /// スタックの由来。どれを元に、何を変えて作ったか。
     ///
     /// 元を書き換えずに派生を増やす使い方をするので、たどれるようにしておく。
     /// 全部空でもよい（手で組んだ最初の 1 件）。
     /// </summary>
     [Serializable]
-    public class ObjectGroupProvenance
+    public class ModifierStackProvenance
     {
-        /// <summary>元にしたグループの名前。空 = 元がない。</summary>
+        /// <summary>元にしたスタックの名前。空 = 元がない。</summary>
         public string ParentName = "";
 
         /// <summary>元から何を変えたか。</summary>
@@ -142,7 +142,7 @@ namespace Poly_Ling.Data
             && string.IsNullOrEmpty(ChangeSummary)
             && string.IsNullOrEmpty(CreatedBy);
 
-        public ObjectGroupProvenance Clone() => new ObjectGroupProvenance
+        public ModifierStackProvenance Clone() => new ModifierStackProvenance
         {
             ParentName    = ParentName,
             ChangeSummary = ChangeSummary,
@@ -218,7 +218,7 @@ namespace Poly_Ling.Data
         /// 流す（runScenario・参照項目）・平らにする（describe の resolve）・展開（expandScenarioRef）が共通に使う。
         /// </summary>
         /// <param name="supplied">渡された名前と値。値の中の ${…} は呼ぶ側で置き換えておく。null は何も渡さない。</param>
-        public static bool TryBind(ObjectGroup g, IEnumerable<KeyValuePair<string, string>> supplied,
+        public static bool TryBind(ModifierStack g, IEnumerable<KeyValuePair<string, string>> supplied,
                                    out Dictionary<string, string> bound, out string error)
         {
             bound = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -267,7 +267,7 @@ namespace Poly_Ling.Data
         /// 値に親の ${名前} が書いてあれば parentBound で置き換えてから渡す（親の引数を子へ送る）。
         /// parentBound が null なら親の ${…} はそのまま子へ渡る（describe の起点など、親を結ばない場面）。
         /// </summary>
-        public static bool TryBindRef(ObjectGroupStep refStep, ObjectGroup child,
+        public static bool TryBindRef(ModifierStackStep refStep, ModifierStack child,
                                       IReadOnlyDictionary<string, string> parentBound,
                                       out Dictionary<string, string> bound, out string error)
         {
@@ -289,7 +289,7 @@ namespace Poly_Ling.Data
         /// 項目の引数の値を、結んだ値で置き換えた複製を返す（平らにする・展開するとき用）。
         /// 失敗したら null を返し、理由を error に入れる。
         /// </summary>
-        public static ObjectGroupStep SubstituteStep(ObjectGroupStep step, IReadOnlyDictionary<string, string> bound,
+        public static ModifierStackStep SubstituteStep(ModifierStackStep step, IReadOnlyDictionary<string, string> bound,
                                                      out string error)
         {
             error = null;
@@ -341,23 +341,23 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// グループの 1 項目。生成コマンド 1 つぶんのパラメータと出力先。
+    /// スタックの 1 項目。生成コマンド 1 つぶんのパラメータと出力先。
     /// </summary>
     [Serializable]
-    public class ObjectGroupStep
+    public class ModifierStackStep
     {
         /// <summary>
-        /// この項目を指す名前。グループ内で一意。
+        /// この項目を指す名前。スタック内で一意。
         ///
         /// 【なぜ番号で指さないか】
         ///   「3 番目の項目を差し替える」は、前に 1 項目挿すだけで別の項目を指す。
         ///   項目を足す・消す・並べ替える使い方をするので、位置ではなく
-        ///   この ID で指す。読み込み時に空なら ObjectGroup.EnsureScenarioItemIds が振る。
+        ///   この ID で指す。読み込み時に空なら ModifierStack.EnsureScenarioItemIds が振る。
         /// </summary>
         public string ScenarioItemId = "";
 
         /// <summary>項目の種別。既定は実行する項目。</summary>
-        public ObjectGroupStepKind Kind = ObjectGroupStepKind.Command;
+        public ModifierStackStepKind Kind = ModifierStackStepKind.Command;
 
         /// <summary>この項目が要る理由。空でもよい。</summary>
         public string Purpose = "";
@@ -393,7 +393,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// Args の中のプロファイルの点が何成分で書かれているか。今は 3（x,y,z）。
-        /// 2 は旧版の保存データ（x,y）。読み込み直後に ObjectGroupOps.UpgradeLegacyProfileArgs が
+        /// 2 は旧版の保存データ（x,y）。読み込み直後に ModifierStackOps.UpgradeLegacyProfileArgs が
         /// LegacyXYPairs の印のキーを z=0 で 3 成分へ直し、3 にする。
         /// 実行時に作る項目はすべて 3。
         /// </summary>
@@ -422,10 +422,10 @@ namespace Poly_Ling.Data
         public List<ulong> OutputObjectIds = new List<ulong>();
 
         /// <summary>実行する項目か（Kind が Command）。</summary>
-        public bool IsExecutable => Kind == ObjectGroupStepKind.Command;
+        public bool IsExecutable => Kind == ModifierStackStepKind.Command;
 
         /// <summary>別のシナリオを指す項目か。</summary>
-        public bool IsScenarioRef => Kind == ObjectGroupStepKind.ScenarioRef;
+        public bool IsScenarioRef => Kind == ModifierStackStepKind.ScenarioRef;
 
         /// <summary>
         /// シナリオを流すとき、ここで止めて人か AI の判断を待つ項目か。
@@ -436,7 +436,7 @@ namespace Poly_Ling.Data
         /// 止める条件はここ 1 か所だけに置く（パネルと MCP で割れないように）。
         /// </summary>
         public bool RequiresJudgment =>
-            Kind == ObjectGroupStepKind.Instruction || Kind == ObjectGroupStepKind.Observe;
+            Kind == ModifierStackStepKind.Instruction || Kind == ModifierStackStepKind.Observe;
 
         /// <summary>
         /// 再構築に必要なものが揃っているか。
@@ -553,9 +553,9 @@ namespace Poly_Ling.Data
             return list;
         }
 
-        public ObjectGroupStep Clone()
+        public ModifierStackStep Clone()
         {
-            var c = new ObjectGroupStep
+            var c = new ModifierStackStep
             {
                 ScenarioItemId       = ScenarioItemId,
                 Kind            = Kind,
@@ -579,26 +579,26 @@ namespace Poly_Ling.Data
         }
 
         public override string ToString()
-            => $"ObjectGroupStep[{Kind}:{ScenarioItemId}:{(IsScenarioRef ? RefName : Action)}] "
+            => $"ModifierStackStep[{Kind}:{ScenarioItemId}:{(IsScenarioRef ? RefName : Action)}] "
              + $"out={(OutputObjectIds?.Count ?? 0)}";
     }
 
     /// <summary>入力ソース・生成パラメータ・出力先をまとめた 1 件。</summary>
     [Serializable]
-    public class ObjectGroup
+    public class ModifierStack
     {
         // ================================================================
         // 識別
         // ================================================================
 
-        /// <summary>グループ名。モデル内で一意にする。</summary>
+        /// <summary>スタック名。モデル内で一意にする。</summary>
         public string Name = "";
 
         /// <summary>
         /// 実行するコマンド列。並び順がそのまま実行順。
         /// 必ず 1 件以上ある（新しく作った時点で 1 件）。
         /// </summary>
-        public List<ObjectGroupStep> Steps = new List<ObjectGroupStep>();
+        public List<ModifierStackStep> Steps = new List<ModifierStackStep>();
 
         // ================================================================
         // 意味情報
@@ -623,7 +623,7 @@ namespace Poly_Ling.Data
         public List<string> Tags = new List<string>();
 
         /// <summary>どれを元に、何を変えて作ったか。null にはしない。</summary>
-        public ObjectGroupProvenance Provenance = new ObjectGroupProvenance();
+        public ModifierStackProvenance Provenance = new ModifierStackProvenance();
 
         /// <summary>
         /// シナリオの引数。並びは宣言の順。null にはしない。
@@ -673,7 +673,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 前回ビルドした時点でのソースのダイジェスト。
         /// 現在の値と食い違えば「ソースが変わった」。
-        /// 毎フレーム比べてはならない（ObjectGroupOps.IsStale の注記を参照）。
+        /// 毎フレーム比べてはならない（ModifierStackOps.IsStale の注記を参照）。
         /// </summary>
         public string SourceDigest = "";
 
@@ -696,12 +696,12 @@ namespace Poly_Ling.Data
         // コンストラクタ
         // ================================================================
 
-        public ObjectGroup()
+        public ModifierStack()
         {
-            AddStep(new ObjectGroupStep());
+            AddStep(new ModifierStackStep());
         }
 
-        public ObjectGroup(string name) : this() { Name = name ?? ""; }
+        public ModifierStack(string name) : this() { Name = name ?? ""; }
 
         // ================================================================
         // 項目
@@ -714,32 +714,32 @@ namespace Poly_Ling.Data
         /// 項目 0。無ければ空の項目を作って返す。
         /// 「1 項目だったころの窓口」がここを通る。
         /// </summary>
-        public ObjectGroupStep Step0
+        public ModifierStackStep Step0
         {
             get
             {
-                if (Steps == null) Steps = new List<ObjectGroupStep>();
-                if (Steps.Count == 0) AddStep(new ObjectGroupStep());
+                if (Steps == null) Steps = new List<ModifierStackStep>();
+                if (Steps.Count == 0) AddStep(new ModifierStackStep());
                 return Steps[0];
             }
         }
 
         /// <summary>番号で項目を読む。範囲外は null。</summary>
-        public ObjectGroupStep GetStep(int index)
+        public ModifierStackStep GetStep(int index)
             => (Steps != null && index >= 0 && index < Steps.Count) ? Steps[index] : null;
 
         /// <summary>末尾へ項目を 1 つ足す。ScenarioItemId が空なら振る。</summary>
-        public ObjectGroupStep AddStep(ObjectGroupStep step)
+        public ModifierStackStep AddStep(ModifierStackStep step)
         {
             if (step == null) return null;
-            if (Steps == null) Steps = new List<ObjectGroupStep>();
+            if (Steps == null) Steps = new List<ModifierStackStep>();
             Steps.Add(step);
             if (string.IsNullOrEmpty(step.ScenarioItemId)) step.ScenarioItemId = NextScenarioItemId();
             return step;
         }
 
         /// <summary>ScenarioItemId で項目を引く。無ければ null。</summary>
-        public ObjectGroupStep FindStep(string scenarioItemId)
+        public ModifierStackStep FindStep(string scenarioItemId)
         {
             int i = IndexOfStep(scenarioItemId);
             return i >= 0 ? Steps[i] : null;
@@ -760,7 +760,7 @@ namespace Poly_Ling.Data
         ///
         /// 項目導入より前の保存データには ID が無いので、読み込みの最後に呼ぶ。
         /// 既に入っている ID は書き換えない（書き換えると、その ID を指している
-        /// 派生グループの参照が切れる）。
+        /// 派生スタックの参照が切れる）。
         /// </summary>
         public void EnsureScenarioItemIds()
         {
@@ -1005,9 +1005,9 @@ namespace Poly_Ling.Data
         // クローン
         // ================================================================
 
-        public ObjectGroup Clone()
+        public ModifierStack Clone()
         {
-            var c = new ObjectGroup
+            var c = new ModifierStack
             {
                 Name          = Name,
                 StashObjectId = StashObjectId,
@@ -1015,13 +1015,13 @@ namespace Poly_Ling.Data
                 AutoUpdate    = AutoUpdate,
                 CreatedAt     = CreatedAt,
                 Goal          = Goal,
-                Steps         = new List<ObjectGroupStep>(),
+                Steps         = new List<ModifierStackStep>(),
             };
 
             c.Preconditions   = Preconditions   != null ? new List<string>(Preconditions)   : new List<string>();
             c.SuccessCriteria = SuccessCriteria != null ? new List<string>(SuccessCriteria) : new List<string>();
             c.Tags            = Tags            != null ? new List<string>(Tags)            : new List<string>();
-            c.Provenance      = Provenance      != null ? Provenance.Clone() : new ObjectGroupProvenance();
+            c.Provenance      = Provenance      != null ? Provenance.Clone() : new ModifierStackProvenance();
 
             c.Params = new List<ScenarioParam>();
             if (Params != null)
@@ -1037,16 +1037,16 @@ namespace Poly_Ling.Data
                 foreach (var s in Steps)
                     if (s != null) c.Steps.Add(s.Clone());
 
-            // 項目の無いグループ（組み立て途中のシナリオ）はそのまま写す。
+            // 項目の無いスタック（組み立て途中のシナリオ）はそのまま写す。
             // ここで空の項目を足すと、ScenarioLibrary へ登録した時点で
             // action の無い実行項目が 1 つ生える。
-            // 実体付きのグループが項目 0 個になることはなく、
+            // 実体付きのスタックが項目 0 個になることはなく、
             // 万一なっても Step0 が要るときに作る。
             return c;
         }
 
         public override string ToString()
-            => $"ObjectGroup[{Name}] steps={StepCount} action={Action} "
+            => $"ModifierStack[{Name}] steps={StepCount} action={Action} "
              + $"src={SourceCount} out={OutputObjectIds.Count}";
     }
 }

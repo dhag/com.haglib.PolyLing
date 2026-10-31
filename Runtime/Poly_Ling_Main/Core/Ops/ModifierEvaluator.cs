@@ -1,14 +1,14 @@
 // ModifierEvaluator.cs
-// オブジェクトグループの項目（モディファイア）を、入力の変化に合わせて評価する共通の評価器。
+// モディファイアスタックの項目（モディファイア）を、入力の変化に合わせて評価する共通の評価器。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
-// 【正本は ObjectGroup】（PolyLing_作り直し整備計画.md 2.1）
+// 【正本は ModifierStack】（PolyLing_作り直し整備計画.md 2.1）
 //   項目 1 つ＝モディファイア 1 つ。入力（MeshRefIds のうち ModifierInventory.InputKeys のキー）・
-//   出力（OutputObjectIds）・引数はグループが持つ。ここが持つのは依存のグラフ・入力ごとの署名の控え・
+//   出力（OutputObjectIds）・引数はスタックが持つ。ここが持つのは依存のグラフ・入力ごとの署名の控え・
 //   要評価の印・最後の評価の結果だけで、保存しない。
 //
 // 【依存のグラフ】（同 2.2・段 4。ModifierGraph）
-//   全グループの項目から導き、依存の順に並べる。グループの増減・変更（構造キーの変化）のときだけ
+//   全スタックの項目から導き、依存の順に並べる。スタックの増減・変更（構造キーの変化）のときだけ
 //   作り直す。以下の処理はすべてこの順で回す。
 //
 // 【きっかけは 2 か所】（同 2.3）
@@ -20,7 +20,7 @@
 //                    もの（PLModifierAttribute.FollowsDrag）は処理器を呼び、それ以外は要評価の印だけ立てる。
 //
 // 【流す】（同 2.4・段 4）EvaluatePending
-//   処理器の無い項目（Player 層の作り直し RunObjectGroupStep）は、きっかけの中では流さない
+//   処理器の無い項目（Player 層の作り直し RunModifierStackStep）は、きっかけの中では流さない
 //   （書き戻しが GPU バッファの作り直しを呼ぶので再入になる）。呼び出し側（Player 層）が
 //   一番外側のコマンドの終わりと、頂点ドラッグを離したときに呼ぶ。作り直しの口は引数で受け取る。
 //   要評価の項目を依存の順に流し、出力が変わった下流に印を立てる。途中で失敗した項目の下流は流さない。
@@ -30,8 +30,8 @@
 //   複製で置き換える。ObjectId は保たれる）のあとも控えが効くようにするため。
 //   置き換わったあとの入力の署名が控えと違えば、出力も作り直される。
 //
-// 【作った直後の控え】グループ・項目を足したコマンドが、その場で PrimeGroup・PrimeStep を呼ぶ
-//   （CaptureObjectGroup・組立の ExecuteEmptyParentAssembly・デッキの後付け。段 9）。
+// 【作った直後の控え】スタック・項目を足したコマンドが、その場で PrimeGroup・PrimeStep を呼ぶ
+//   （CaptureModifierStack・組立の ExecuteEmptyParentAssembly・デッキの後付け。段 9）。
 //   控えを取らないと、画面の更新（RefreshModel）より前の入力・出力の編集が「初めて見た値」として
 //   控えられ、変化・未確定として扱われなかった。
 //
@@ -54,6 +54,80 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.Ops
 {
+    /// <summary>
+    /// 作り直し 1 項目の中の区間の時間（計測用。モディファイア高速化計画 段 10）。
+    /// 評価のパス（Player 層の RunModifierEvaluation）が項目ごとに Begin・End し、
+    /// 途中の処理が Mark で区切る。Begin していないとき（評価の外）の Mark は何もしない。
+    /// </summary>
+    public static class ModifierStepProfiler
+    {
+        private static bool _active;
+        private static long _last;
+        private static readonly List<string> _marks = new List<string>();
+
+        /// <summary>項目の作り直しの前に呼ぶ。診断スイッチ PLDiag.Timing が切なら何もしない（段 15）。</summary>
+        public static void Begin()
+        {
+            _active = Poly_Ling.Diagnostics.PLDiag.Timing;
+            if (!_active) return;
+            _marks.Clear();
+            _accum.Clear();
+            _accumOrder.Clear();
+            _last = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        /// <summary>前の印（または Begin）からここまでの時間を label で控える。</summary>
+        public static void Mark(string label)
+        {
+            if (!_active) return;
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            double ms = (now - _last) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            _marks.Add(label + " " + ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+            _last = now;
+        }
+
+        // ── 繰り返しの中の区間の合計（段 11）。Mark の区間の内訳として別に出す。
+        private static readonly List<string> _accumOrder = new List<string>();
+        private static readonly Dictionary<string, long> _accum = new Dictionary<string, long>();
+
+        /// <summary>計っているか。Begin していないときは false（呼び出し側は計時を省ける）。</summary>
+        public static bool Active => _active;
+
+        /// <summary>今の時刻（Add に渡す）。</summary>
+        public static long Now() => System.Diagnostics.Stopwatch.GetTimestamp();
+
+        /// <summary>start（Now の値）からここまでの時間を label の合計へ足す。</summary>
+        public static void Add(string label, long start)
+        {
+            if (!_active) return;
+            long d = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            if (_accum.TryGetValue(label, out long cur)) _accum[label] = cur + d;
+            else { _accum[label] = d; _accumOrder.Add(label); }
+        }
+
+        /// <summary>項目の作り直しの後に呼ぶ。控えた区間を「名前 ms / …」で返す。</summary>
+        public static string End()
+        {
+            if (!_active) return "";
+            Mark("残り");
+            _active = false;
+            string s = string.Join(" / ", _marks);
+            if (_accumOrder.Count > 0)
+            {
+                var parts = new List<string>(_accumOrder.Count);
+                foreach (var label in _accumOrder)
+                {
+                    double ms = _accum[label] * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                    parts.Add(label + " " + ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                }
+                s += "\n      内訳（合計）: " + string.Join(" / ", parts);
+            }
+            _accum.Clear();
+            _accumOrder.Clear();
+            return s;
+        }
+    }
+
     /// <summary>action 1 種類ぶんの評価のしかた。</summary>
     public interface IModifierHandler
     {
@@ -74,7 +148,7 @@ namespace Poly_Ling.Ops
                       Action<MeshContext> upload);
 
         /// <summary>
-        /// 項目をグループから外すとき（「適用」＝グループ解除）に呼ばれる。
+        /// 項目をスタックから外すとき（「適用」＝スタック解除）に呼ばれる。
         /// 出力を普通のメッシュとして使えるよう、処理器が立てた表示・ロックなどを戻す。
         /// 呼び出し側はオブジェクト一覧のスナップショットで Undo を積むので、ここでは記録しない。
         /// </summary>
@@ -102,14 +176,14 @@ namespace Poly_Ling.Ops
         // 項目
         // ================================================================
 
-        /// <summary>グループの項目 1 つを評価器から見たもの。</summary>
+        /// <summary>スタックの項目 1 つを評価器から見たもの。</summary>
         public sealed class Entry
         {
-            public ObjectGroup     Group;
-            public ObjectGroupStep Step;
-            /// <summary>モデルのグループ一覧での位置。</summary>
+            public ModifierStack     Group;
+            public ModifierStackStep Step;
+            /// <summary>モデルのスタック一覧での位置。</summary>
             public int             GroupIndex;
-            /// <summary>グループの中での項目番号。</summary>
+            /// <summary>スタックの中での項目番号。</summary>
             public int             StepIndex;
             /// <summary>action の型。引けなければ null。</summary>
             public Type            CommandType;
@@ -168,7 +242,7 @@ namespace Poly_Ling.Ops
             /// <summary>控えのキー（出力の先頭の ObjectId）。出力が無ければ 0（控えを持たない）。</summary>
             public ulong StateId => FirstOutput?.ObjectId ?? 0UL;
 
-            /// <summary>人に見せる名前「グループ名#項目番号」。</summary>
+            /// <summary>人に見せる名前「スタック名#項目番号」。</summary>
             public string Label => $"{Group?.Name}#{StepIndex}";
         }
 
@@ -233,7 +307,21 @@ namespace Poly_Ling.Ops
             public int    Failed;
             public int    Blocked;
             public readonly List<string> Lines = new List<string>();
+
+            // ── 計測（モディファイア高速化計画 段 0）。呼び出し側（Player 層）がパスの終わりに埋める。
+            /// <summary>パスの間に走った GPU バッファの作り直し（RebuildAdapter → RefreshModel）の回数。</summary>
+            public int    RebuildCount;
+            /// <summary>パス全体（画面の更新まで）の経過時間 [ms]。</summary>
+            public double ElapsedMs;
+            /// <summary>内訳 [ms]（項目ごと・見張り・画面の更新・コマンドの終わりの Settle。段 7）。1 件 1 行。</summary>
+            public readonly List<string> Timing = new List<string>();
         }
+
+        /// <summary>
+        /// RefreshModel が呼ばれた回数（＝ GPU バッファの作り直し RebuildAdapter の回数。呼び出し元はそこだけ）。
+        /// 計測用（モディファイア高速化計画 段 0）。差分で使う。
+        /// </summary>
+        public static int RefreshCount { get; private set; }
 
         private static readonly Dictionary<string, IModifierHandler> _handlers
             = new Dictionary<string, IModifierHandler>(StringComparer.Ordinal);
@@ -275,31 +363,31 @@ namespace Poly_Ling.Ops
         // 項目を集める
         // ================================================================
 
-        /// <summary>モデルの全グループから、実行する項目を全部集める（グループ順・項目順。グラフは埋めない）。</summary>
+        /// <summary>モデルの全スタックから、実行する項目を全部集める（スタック順・項目順。グラフは埋めない）。</summary>
         public static List<Entry> CollectEntries(ModelContext model) => CollectEntries(model, null);
 
         /// <summary>
-        /// モデルの全グループに加え、extra（モデルにまだ足していないグループ）の項目も集める。
+        /// モデルの全スタックに加え、extra（モデルにまだ足していないスタック）の項目も集める。
         /// 登録の前の循環の判定（ModifierGraph.CycleReason）が使う。
         /// </summary>
-        public static List<Entry> CollectEntries(ModelContext model, ObjectGroup extra)
+        public static List<Entry> CollectEntries(ModelContext model, ModifierStack extra)
         {
             var list = new List<Entry>();
-            if (model?.ObjectGroups == null || model.MeshContextList == null) return list;
+            if (model?.ModifierStacks == null || model.MeshContextList == null) return list;
 
             var map = BuildIdMap(model);
 
             int gi = 0;
-            foreach (var g in model.ObjectGroups)
+            foreach (var g in model.ModifierStacks)
             {
                 AddGroup(list, map, g, gi);
                 gi++;
             }
-            if (extra != null && !model.ObjectGroups.Contains(extra)) AddGroup(list, map, extra, gi);
+            if (extra != null && !model.ModifierStacks.Contains(extra)) AddGroup(list, map, extra, gi);
             return list;
         }
 
-        private static void AddGroup(List<Entry> list, Dictionary<ulong, MeshContext> map, ObjectGroup g, int gi)
+        private static void AddGroup(List<Entry> list, Dictionary<ulong, MeshContext> map, ModifierStack g, int gi)
         {
             if (g?.Steps == null) return;
             for (int si = 0; si < g.Steps.Count; si++)
@@ -362,7 +450,7 @@ namespace Poly_Ling.Ops
         /// 項目の、書き込みが有効な入力キーを畳んだ値（グラフの構造キーに混ぜる。段 D）。
         /// 引数を変えて書き込みの有無が変わったとき、グラフを作り直すため。
         /// </summary>
-        public static ulong WriteActiveSignature(ObjectGroupStep s)
+        public static ulong WriteActiveSignature(ModifierStackStep s)
         {
             if (s == null || string.IsNullOrEmpty(s.Action)) return 0UL;
             var t = PanelCommandFactory.ResolveType(s.Action);
@@ -475,7 +563,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 依存の順に並べた項目（循環は末尾）。グループの構成が前回と同じなら控えを返す。
+        /// 依存の順に並べた項目（循環は末尾）。スタックの構成が前回と同じなら控えを返す。
         /// </summary>
         public static List<Entry> GetGraph(ModelContext model)
         {
@@ -517,11 +605,11 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// グループを足した直後に呼ぶ。グループの全項目の入力の署名と、正方向の出力を今の値で控える（段 9）。
+        /// スタックを足した直後に呼ぶ。スタックの全項目の入力の署名と、正方向の出力を今の値で控える（段 9）。
         /// 控えないと、画面の更新（RefreshModel）より前の入力・出力の編集が「初めて見た値」として控えられ、
-        /// 要評価・未確定として扱われない。グループはモデルに足し終えていること。
+        /// 要評価・未確定として扱われない。スタックはモデルに足し終えていること。
         /// </summary>
-        public static void PrimeGroup(ModelContext model, ObjectGroup group)
+        public static void PrimeGroup(ModelContext model, ModifierStack group)
         {
             if (model == null || group == null) return;
             foreach (var e in GetGraph(model))
@@ -529,10 +617,10 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 既存のグループへ項目を 1 つ足した直後に呼ぶ（デッキの後付けなど）。その項目だけ控える。
-        /// 同じグループのほかの項目は控え直さない（未確定の出力の編集を正方向の結果として上書きしないため）。
+        /// 既存のスタックへ項目を 1 つ足した直後に呼ぶ（デッキの後付けなど）。その項目だけ控える。
+        /// 同じスタックのほかの項目は控え直さない（未確定の出力の編集を正方向の結果として上書きしないため）。
         /// </summary>
-        public static void PrimeStep(ModelContext model, ObjectGroupStep step)
+        public static void PrimeStep(ModelContext model, ModifierStackStep step)
         {
             if (model == null || step == null) return;
             foreach (var e in GetGraph(model))
@@ -541,7 +629,7 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 控えのキー（出力の先頭の描画オブジェクト）と入力を直接渡して控える。
-        /// 項目がまだグループに載っていない・集め直していないときに使う。
+        /// 項目がまだスタックに載っていない・集め直していないときに使う。
         /// モデルは描画オブジェクトの ParentModelContext から引く。
         /// </summary>
         public static void Prime(object stateKey, IEnumerable<MeshContext> inputs)
@@ -567,7 +655,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>この項目が要評価か（入力が変わったのにまだ流していない）。</summary>
-        public static bool IsDirty(ModelContext model, ObjectGroupStep step)
+        public static bool IsDirty(ModelContext model, ModifierStackStep step)
         {
             if (model == null || step == null) return false;
             var list = CachedGraph(model);
@@ -820,19 +908,48 @@ namespace Poly_Ling.Ops
             return MeshSignature.Matrix(ModifierSpace.OutputFrameBindToVertex(e.Outputs[0], poseOwned));
         }
 
-        private static bool InputsChanged(State st, Entry e)
+        /// <summary>RetakeInputs の作業用（入れ子で呼ばれない。評価器はメインスレッドだけで動く）。</summary>
+        private static readonly Dictionary<ulong, Sig> _retakeScratch = new Dictionary<ulong, Sig>();
+
+        /// <summary>
+        /// InputsChanged と TakeInputs を 1 回の署名取りで行う（モディファイア高速化計画 段 5。
+        /// 以前は比べるときと控えるときで、全頂点の署名を 2 回ずつ取っていた）。
+        /// 変わっていれば控えを今の値にして true。変わっていなければ alwaysStore のときだけ控え直す
+        /// （TakeInputs を無条件に呼んでいた箇所と同じ結果にするため）。判定は InputsChanged と同じ。
+        /// </summary>
+        private static bool RetakeInputs(State st, Entry e, bool alwaysStore)
         {
-            var seen = new HashSet<ulong>();
+            var now = _retakeScratch;
+            now.Clear();
             foreach (var kv in e.Inputs)
             {
                 ulong id = kv.Value.ObjectId;
-                if (id == 0UL || !seen.Add(id)) continue;
-                if (!st.Inputs.TryGetValue(id, out var prev)) return true;
-                var now = Take(e, kv.Value);
-                if (prev.Topology != now.Topology || prev.Positions != now.Positions || prev.Matrix != now.Matrix) return true;
+                if (id == 0UL || now.ContainsKey(id)) continue;
+                now[id] = Take(e, kv.Value);
             }
-            if (st.OutputFrame.HasValue && st.OutputFrame.Value != OutputFrameSig(e)) return true;
-            return seen.Count != st.Inputs.Count;
+            ulong frame = OutputFrameSig(e);
+
+            bool changed = now.Count != st.Inputs.Count
+                        || (st.OutputFrame.HasValue && st.OutputFrame.Value != frame);
+            if (!changed)
+            {
+                foreach (var kv in now)
+                {
+                    if (!st.Inputs.TryGetValue(kv.Key, out var prev)
+                        || prev.Topology != kv.Value.Topology || prev.Positions != kv.Value.Positions
+                        || prev.Matrix != kv.Value.Matrix)
+                    { changed = true; break; }
+                }
+            }
+
+            if (changed || alwaysStore)
+            {
+                st.Inputs.Clear();
+                foreach (var kv in now) st.Inputs[kv.Key] = kv.Value;
+                st.OutputFrame = frame;
+            }
+            now.Clear();
+            return changed;
         }
 
         /// <summary>入力の署名が控えと違えば印を立てる（控えも取り直す）。初めて見た項目も印を立てる。</summary>
@@ -847,8 +964,7 @@ namespace Poly_Ling.Ops
                 st.Dirty = true;
                 return;
             }
-            if (!InputsChanged(st, d)) return;
-            TakeInputs(st, d);
+            if (!RetakeInputs(st, d, alwaysStore: false)) return;
             st.Dirty = true;
         }
 
@@ -873,8 +989,7 @@ namespace Poly_Ling.Ops
                     TakeInputs(st, e);
                     continue;
                 }
-                if (!InputsChanged(st, e)) continue;
-                TakeInputs(st, e);
+                if (!RetakeInputs(st, e, alwaysStore: false)) continue;
                 st.Dirty = true;
             }
         }
@@ -889,6 +1004,7 @@ namespace Poly_Ling.Ops
         /// </summary>
         public static void RefreshModel(ModelContext model)
         {
+            unchecked { RefreshCount++; }
             if (model == null) return;
 
             var entries = GetGraph(model);
@@ -910,8 +1026,9 @@ namespace Poly_Ling.Ops
                 bool first = !states.TryGetValue(id, out var st);
                 if (first) { st = new State(); states[id] = st; }
 
-                bool changed = !first && InputsChanged(st, e);
-                TakeInputs(st, e);
+                bool changed;
+                if (first) { TakeInputs(st, e); changed = false; }
+                else changed = RetakeInputs(st, e, alwaysStore: true);
 
                 // 逆方向を持つ項目：記録の無い（0）出力は、今の中身を作り直しの結果として記録する
                 // （読み込み・作成の直後は出力と入力が揃っている。のちの手の編集を未確定と見分けるため）。
@@ -935,7 +1052,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 項目 1 つを作り直す口（Player 層の RunObjectGroupStep）。
+        /// 項目 1 つを作り直す口（Player 層の RunModifierStackStep）。
         /// error は失敗の理由、note は成功時の説明（梯子・断面をどう扱ったか）。
         /// </summary>
         public delegate bool StepRunner(Entry entry, out string error, out string note);
@@ -970,9 +1087,19 @@ namespace Poly_Ling.Ops
             try
             {
                 // 出力の編集が未確定の項目（逆方向を持つもの。段 6）。流さず、下流も止める。
-                var pending = new HashSet<Entry>();
-                foreach (var e in order)
-                    if (IsOutputEditPending(model, e)) pending.Add(e);
+                // 判定は要るときだけ（要評価の項目とその上流）。全項目の全出力の署名を毎回取らない
+                // （モディファイア高速化計画 段 5）。未確定の項目は流さないので出力は変わらず、
+                // 流した項目は作り直しの結果を記録するので、最初にまとめて判定したときと結果は同じ。
+                var pendingMemo = new Dictionary<Entry, bool>();
+                bool IsPending(Entry x)
+                {
+                    if (!pendingMemo.TryGetValue(x, out bool p))
+                    {
+                        p = IsOutputEditPending(model, x);
+                        pendingMemo[x] = p;
+                    }
+                    return p;
+                }
 
                 // 上流に失敗があるか（依存の順に回すので、見る時点で上流は流し終えている）。
                 var blockedBy = new Dictionary<Entry, string>();
@@ -982,7 +1109,7 @@ namespace Poly_Ling.Ops
                     r = null;
                     foreach (var u in e.Upstream)
                     {
-                        if (pending.Contains(u))
+                        if (IsPending(u))
                         { r = $"上流の項目 {u.Label} の出力の編集が未確定"; break; }
                         if (u.StateId != 0UL && states.TryGetValue(u.StateId, out var us)
                             && us.LastResult == ModifierResult.Failed)
@@ -999,11 +1126,11 @@ namespace Poly_Ling.Ops
                     if (e.Status != ModifierEntryStatus.Evaluate || e.StateId == 0UL) continue;
                     if (!states.TryGetValue(e.StateId, out var st) || !st.Dirty) continue;
 
-                    // グループが外された・差し替わったものは流さない（次の構造キーで作り直される）。
-                    if (!model.ObjectGroups.Contains(e.Group) || !ReferenceEquals(e.Group.GetStep(e.StepIndex), e.Step))
+                    // スタックが外された・差し替わったものは流さない（次の構造キーで作り直される）。
+                    if (!model.ModifierStacks.Contains(e.Group) || !ReferenceEquals(e.Group.GetStep(e.StepIndex), e.Step))
                         continue;
 
-                    if (pending.Contains(e))
+                    if (IsPending(e))
                     {
                         st.LastResult  = ModifierResult.Blocked;
                         st.LastMessage = "出力の編集が未確定なので流していない（確定か破棄をする）";
@@ -1066,7 +1193,7 @@ namespace Poly_Ling.Ops
         /// コマンドがこの項目を明示的に作り直したあとに呼ぶ（引数の書き換え・作り直し・配置元の差し替え）。
         /// 項目の入力の署名を控えて印を下ろし、出力が変わった下流に印を立てる（流すのは EvaluatePending）。
         /// </summary>
-        public static void MarkRebuilt(ModelContext model, ObjectGroupStep step)
+        public static void MarkRebuilt(ModelContext model, ModifierStackStep step)
         {
             if (model == null || step == null) return;
             var states = States(model);
@@ -1092,11 +1219,11 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// グループの全項目を解除する前に呼ぶ。処理器のある項目は Release を呼び、
+        /// スタックの全項目を解除する前に呼ぶ。処理器のある項目は Release を呼び、
         /// 全項目の控えを捨てる。処理器を 1 つでも呼んだら true（呼び出し側は一覧の Undo を積む）。
-        /// グループ自体はモデルから外さない（呼び出し側が外す）。
+        /// スタック自体はモデルから外さない（呼び出し側が外す）。
         /// </summary>
-        public static bool ReleaseGroup(ModelContext model, ObjectGroup group)
+        public static bool ReleaseGroup(ModelContext model, ModifierStack group)
         {
             if (model == null || group == null) return false;
 
@@ -1119,21 +1246,21 @@ namespace Poly_Ling.Ops
         /// <summary>出力を持つ項目 1 つの在りか。</summary>
         public struct OutputOwner
         {
-            public ObjectGroup     Group;
+            public ModifierStack     Group;
             public int             StepIndex;
-            public ObjectGroupStep Step;
+            public ModifierStackStep Step;
         }
 
         /// <summary>
-        /// この ObjectId をどれかのグループの実行項目の出力に持つか。
-        /// 先に見つかった 1 つを返す（グループの並び・項目の並び順）。
+        /// この ObjectId をどれかのスタックの実行項目の出力に持つか。
+        /// 先に見つかった 1 つを返す（スタックの並び・項目の並び順）。
         /// </summary>
         public static bool TryFindOutputOwner(ModelContext model, ulong objectId, out OutputOwner owner)
         {
             owner = default;
-            if (model?.ObjectGroups == null || objectId == 0UL) return false;
+            if (model?.ModifierStacks == null || objectId == 0UL) return false;
 
-            foreach (var g in model.ObjectGroups)
+            foreach (var g in model.ModifierStacks)
             {
                 if (g?.Steps == null) continue;
                 for (int si = 0; si < g.Steps.Count; si++)

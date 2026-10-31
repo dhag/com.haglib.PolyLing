@@ -100,7 +100,7 @@
 //   描画は per-vertex で欄を選ぶ（ウェイトを持つ頂点はボーンの欄、持たない頂点は
 //   メッシュ自身の欄）ため、MeshFilter のはしごを塗ると塗った頂点だけが
 //   ローカル座標のまま SkinningMatrix 経路へ移り、WorldMatrix が単位でなければ飛ぶ。
-//   塗り直しはオブジェクトグループの自動更新が行う。
+//   塗り直しはモディファイアスタックの自動更新が行う。
 //
 // 【ウェイト】
 //   塗る先は「取り込み元のメッシュ」＝はしご自身。はしごから作ったフリルや
@@ -317,7 +317,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
             //   SkinningMatrix 経路へ移り、WorldMatrix が単位でなければ飛ぶ。
             //
             //   ボーンは先に作ってよい。塗るのはスキンド化のあとで、
-            //   オブジェクトグループの評価器が依存の順に流し直す
+            //   モディファイアスタックの評価器が依存の順に流し直す
             //   （PlayerCommandDispatcher.ReevaluateAfterSkinning。作り直し整備計画 段 5）。
             bool canPaint = paintWeights && source.IsSkinned;
 
@@ -1283,6 +1283,11 @@ namespace Poly_Ling.Tools.SpringBoneRig
                     {
                         var kmc = model.GetMeshContext(k);
                         if (kmc == null || kmc.Type != MeshType.Bone) continue;
+                        // 別の鎖の根元から先はその鎖のもの（SpringBoneOps.CollectJointMembers・
+                        // Vrm10SceneAssembler.CollectJointPaths と同じ規則）。エプロンの縁の鎖のように
+                        // 根元をこの鎖の関節へ付け替えたものを分岐と数えると、流し込みに落ちて
+                        // 作り直しのたびに鎖を新しく作っていた（モディファイア高速化計画 段 7）。
+                        if (kmc.MeshObject?.SpringBoneChainRoot != null) continue;
                         kidsN++;
                         if (next < 0) next = k;
                     }

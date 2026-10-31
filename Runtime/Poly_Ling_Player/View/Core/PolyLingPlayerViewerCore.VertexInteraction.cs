@@ -101,6 +101,7 @@ namespace Poly_Ling.Player
 
                 OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin),
                 OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd),
+                IsTransformDragging      = () => _viewportManager.IsVerticesDragging,
                 // ドラッグ開始時に選択が変わったときだけ呼ばれる。EnterSelectionChanged は
                 // UpdateSelectedDrawableMesh → PresentAll まで同期実行するので、
                 // TransformDragging へ入る前に選択が GPU へ届く。

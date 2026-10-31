@@ -8,7 +8,7 @@
 //   前の項目の結果を指すので、途中だけ撃つと別の流れの値を黙って掴む。
 //
 // 【止まる所】
-//   指示・確認の項目と、失敗した項目（ObjectGroupStep.RequiresJudgment と実行結果）。
+//   指示・確認の項目と、失敗した項目（ModifierStackStep.RequiresJudgment と実行結果）。
 //   判定と実行は runScenario / continueScenario（PlayerCommandDispatcher.ScenarioRun.cs）が持つ。
 //   パネルは送って結果を表示するだけ。ここで組み立て直すと MCP と挙動が割れる。
 //
@@ -155,7 +155,7 @@ namespace Poly_Ling.Player
         {
             public int         Depth;
             public string      Folder;    // フォルダの行なら「a/b」、それ以外は null
-            public ObjectGroup Scenario;  // シナリオ本体・参照の行の中身。参照切れなら null
+            public ModifierStack Scenario;  // シナリオ本体・参照の行の中身。参照切れなら null
             public bool        IsRef;     // 親が呼ぶ子として出した行
             public bool        Broken;    // 参照切れ・循環
             public string      Text;
@@ -174,7 +174,7 @@ namespace Poly_Ling.Player
         private int  _selected = -1;
 
         // ── 引数の入力欄 ──
-        //   選んだシナリオが宣言する引数（ObjectGroup.Params）ごとに 1 つ。数がシナリオで変わるので
+        //   選んだシナリオが宣言する引数（ModifierStack.Params）ごとに 1 つ。数がシナリオで変わるので
         //   作り直す部品の置き場（UiDynamicControls）へ "param.<名前>" で載せる（MCP からも uiSetValue で書ける）。
         //   選んだシナリオか宣言が変わったときだけ作り直す。UpdateView は流している間も呼ばれるので、
         //   毎回作り直すと打った値が消える。
@@ -351,7 +351,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>選んでいる行のシナリオ（参照の行なら呼ばれる子）。フォルダの行・参照切れなら null。</summary>
-        private ObjectGroup Selected()
+        private ModifierStack Selected()
             => (_selected >= 0 && _selected < _rows.Count) ? _rows[_selected].Scenario : null;
 
         /// <summary>選んでいる行のフォルダ。フォルダの行ならそのフォルダ、シナリオの行なら置いているフォルダ。</summary>
@@ -453,7 +453,7 @@ namespace Poly_Ling.Player
 
             _rows.Clear();
             var all     = ScenarioLibrary.GetAll();
-            var byName  = new Dictionary<string, ObjectGroup>(StringComparer.Ordinal);
+            var byName  = new Dictionary<string, ModifierStack>(StringComparer.Ordinal);
             var called  = new HashSet<string>(StringComparer.Ordinal);
             foreach (var g in all)
             {
@@ -485,8 +485,8 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>folder 直下のフォルダ（再帰）とシナリオを行にする。</summary>
-        private void AddFolderRows(string folder, int depth, List<string> folders, List<ObjectGroup> all,
-                                   Dictionary<string, ObjectGroup> byName, HashSet<string> called)
+        private void AddFolderRows(string folder, int depth, List<string> folders, List<ModifierStack> all,
+                                   Dictionary<string, ModifierStack> byName, HashSet<string> called)
         {
             foreach (var f in folders)
             {
@@ -497,7 +497,7 @@ namespace Poly_Ling.Player
                 if (open) AddFolderRows(f, depth + 1, folders, all, byName, called);
             }
 
-            var here = new List<ObjectGroup>();
+            var here = new List<ModifierStack>();
             // どこかの親から呼ばれているシナリオは、親の下にだけ出す（二重に出さない）。
             foreach (var g in all)
                 if (g != null && !called.Contains(g.Name)
@@ -520,7 +520,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>親が呼んでいる子を、呼ぶ順に参照の行として出す。循環は打ち切る。</summary>
-        private void AddRefRows(ObjectGroup parent, int depth, Dictionary<string, ObjectGroup> byName, List<string> path)
+        private void AddRefRows(ModifierStack parent, int depth, Dictionary<string, ModifierStack> byName, List<string> path)
         {
             if (parent?.Steps == null) return;
             foreach (var s in parent.Steps)
@@ -574,7 +574,7 @@ namespace Poly_Ling.Player
             RebuildParamFieldsIfChanged(sel);
 
             // ── いま ──
-            ObjectGroup shown;
+            ModifierStack shown;
             if (run != null)
             {
                 shown = run.CurrentGroup;
@@ -688,7 +688,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>選んだシナリオか、その引数の宣言が変わったときだけ入力欄を作り直す。</summary>
-        private void RebuildParamFieldsIfChanged(ObjectGroup sel)
+        private void RebuildParamFieldsIfChanged(ModifierStack sel)
         {
             if (_paramBox == null) return;
 
@@ -1026,7 +1026,7 @@ namespace Poly_Ling.Player
             switch (run.Stop)
             {
                 case ScenarioRunStop.Judgment:
-                    return run.StopStepKind == ObjectGroupStepKind.Observe
+                    return run.StopStepKind == ModifierStackStepKind.Observe
                         ? $"確認の項目で止まっています。\n確かめること: {run.StopMessage}\n→ 画面で確かめてから「続きを流す」を押してください。おかしければ「やめる」を押してください。"
                         : $"指示の項目で止まっています。\n指示: {run.StopMessage}\n→ 指示の作業を済ませてから「続きを流す」を押してください。次の項目の値を変えるときは MCP の continueScenario を使います。";
                 case ScenarioRunStop.Failed:
@@ -1051,15 +1051,15 @@ namespace Poly_Ling.Player
             }
         }
 
-        private static string KindText(ObjectGroupStepKind k)
+        private static string KindText(ModifierStackStepKind k)
         {
             switch (k)
             {
-                case ObjectGroupStepKind.Command:     return "実行";
-                case ObjectGroupStepKind.Note:        return "注意";
-                case ObjectGroupStepKind.Instruction: return "指示・止まる";
-                case ObjectGroupStepKind.Observe:     return "確認・止まる";
-                case ObjectGroupStepKind.ScenarioRef: return "別のシナリオ";
+                case ModifierStackStepKind.Command:     return "実行";
+                case ModifierStackStepKind.Note:        return "注意";
+                case ModifierStackStepKind.Instruction: return "指示・止まる";
+                case ModifierStackStepKind.Observe:     return "確認・止まる";
+                case ModifierStackStepKind.ScenarioRef: return "別のシナリオ";
                 default:                              return k.ToString();
             }
         }

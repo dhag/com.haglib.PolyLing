@@ -25,8 +25,8 @@
 // ■ PLRM フォーマット（S→C ModelMeta）
 // [Header 8B+]
 //   Magic      : 4B "PLRM"
-//   Version    : 1B (現在 12。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
-//                4 で ObjectGroup の項目列、5 で ObjectGroup / Step の意味情報、
+//   Version    : 1B (現在 12。2 で MaterialData に拡張ブロック、3 で ModifierStack、
+//                4 で ModifierStack の項目列、5 で ModifierStack / Step の意味情報、
 //                6 で参照段（RefName / ExpansionPolicy）、7 で使う作業軸、8 で材質の拡張、
 //                9 でモデル単位の付帯、10 でグループモーフの子、11 でシナリオの引数、
 //                12 で末尾に表情の作成日時。読みは 3 以降を受ける)

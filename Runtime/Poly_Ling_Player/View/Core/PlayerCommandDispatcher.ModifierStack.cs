@@ -1,5 +1,5 @@
-// PlayerCommandDispatcher.ObjectGroup.cs
-// コマンドディスパッチャ：オブジェクトグループ（作り直し・まとめる・解除・自動更新）とその実行部。
+// PlayerCommandDispatcher.ModifierStack.cs
+// コマンドディスパッチャ：モディファイアスタック（作り直し・まとめる・解除・自動更新）とその実行部。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 
 using System;
@@ -24,75 +24,75 @@ namespace Poly_Ling.Player
     public partial class PlayerCommandDispatcher
     {
         /// <summary>
-        /// DispatchCore の分担：オブジェクトグループ（作り直し・まとめる・解除・自動更新）。
+        /// DispatchCore の分担：モディファイアスタック（作り直し・まとめる・解除・自動更新）。
         /// 該当するコマンドなら処理して true を返す。区画の本文は元の switch のままで、
         /// DispatchCore を抜けていた return; だけを return true; にしてある。
         /// </summary>
-        private bool DispatchObjectGroup(PanelCommand cmd, ProjectContext project, ModelContext model)
+        private bool DispatchModifierStack(PanelCommand cmd, ProjectContext project, ModelContext model)
         {
             switch (cmd)
             {
-                // ── オブジェクトグループ：まとめる（マクロを組む）
+                // ── モディファイアスタック：まとめる（マクロを組む）
                 //
-                //   ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。
+                //   ソースの全項目をターゲットの末尾へ移し、ソースのスタックを消す。
                 //   描画オブジェクトは 1 つも消さない。
-                case MergeObjectGroupCommand c:
+                case MergeModifierStackCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
 
-                    if (string.Equals(c.TargetGroupName, c.SourceGroupName, System.StringComparison.Ordinal))
-                    { Fail("同じグループはまとめられません"); return true; }
+                    if (string.Equals(c.TargetStackName, c.SourceStackName, System.StringComparison.Ordinal))
+                    { Fail("同じスタックはまとめられません"); return true; }
 
-                    var mgTarget = model.FindObjectGroupByName(c.TargetGroupName);
-                    if (mgTarget == null) { Fail($"グループが見つかりません: {c.TargetGroupName}"); return true; }
+                    var mgTarget = model.FindModifierStackByName(c.TargetStackName);
+                    if (mgTarget == null) { Fail($"スタックが見つかりません: {c.TargetStackName}"); return true; }
 
-                    var mgSource = model.FindObjectGroupByName(c.SourceGroupName);
-                    if (mgSource == null) { Fail($"グループが見つかりません: {c.SourceGroupName}"); return true; }
+                    var mgSource = model.FindModifierStackByName(c.SourceStackName);
+                    if (mgSource == null) { Fail($"スタックが見つかりません: {c.SourceStackName}"); return true; }
                     if (mgSource.StepCount == 0)
-                    { Fail($"足す項目がありません: {c.SourceGroupName}"); return true; }
+                    { Fail($"足す項目がありません: {c.SourceStackName}"); return true; }
 
-                    int mgSourceIndex = model.ObjectGroups.IndexOf(mgSource);
+                    int mgSourceIndex = model.ModifierStacks.IndexOf(mgSource);
                     var mgTargetBefore = mgTarget.Clone();
                     var mgSourceBefore = mgSource.Clone();
 
                     foreach (var mgStep in mgSource.Steps)
                         if (mgStep != null) mgTarget.AddStep(mgStep.Clone());
 
-                    model.RemoveObjectGroup(mgSource);
+                    model.RemoveModifierStack(mgSource);
 
                     // ターゲットの索引はソースを消したあとに取る。先に取ると、
                     // ソースがターゲットより前にあったときに 1 つずれる。
-                    int mgTargetIndex = model.ObjectGroups.IndexOf(mgTarget);
+                    int mgTargetIndex = model.ModifierStacks.IndexOf(mgTarget);
 
-                    mgTarget.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, mgTarget);
+                    mgTarget.SourceDigest = ModifierStackOps.ComputeSourceDigest(project, mgTarget);
 
                     // 記録は「消す → 差し替える」の順。Undo は後ろから戻すので、
                     // 差し替え（消したあとの索引で有効）→ 挿し戻し の順に効く。
                     if (_undoController != null)
                     {
-                        _undoController.MeshListStack.BeginGroup($"オブジェクトグループ結合: {mgTarget.Name}");
+                        _undoController.MeshListStack.BeginGroup($"モディファイアスタック結合: {mgTarget.Name}");
 
                         if (mgSourceIndex >= 0)
                         {
-                            RecordObjectGroupUndo(
-                                new ObjectGroupChangeRecord
+                            RecordModifierStackUndo(
+                                new ModifierStackChangeRecord
                                 {
                                     RemovedGroup = mgSourceBefore,
                                     RemovedIndex = mgSourceIndex,
                                 },
-                                $"オブジェクトグループ結合: {mgSource.Name} を畳む");
+                                $"モディファイアスタック結合: {mgSource.Name} を畳む");
                         }
 
                         if (mgTargetIndex >= 0)
                         {
-                            RecordObjectGroupUndo(
-                                new ObjectGroupChangeRecord
+                            RecordModifierStackUndo(
+                                new ModifierStackChangeRecord
                                 {
                                     ReplacedIndex = mgTargetIndex,
                                     OldGroup      = mgTargetBefore,
                                     NewGroup      = mgTarget.Clone(),
                                 },
-                                $"オブジェクトグループ結合: {mgTarget.Name}");
+                                $"モディファイアスタック結合: {mgTarget.Name}");
                         }
 
                         _undoController.MeshListStack.EndGroup();
@@ -103,31 +103,31 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                // ── オブジェクトグループ：解除（描画オブジェクトは消さない）
-                case PurgeObjectGroupsCommand:
+                // ── モディファイアスタック：解除（描画オブジェクトは消さない）
+                case PurgeModifierStacksCommand:
                 {
                     if (model == null) { Fail("no current model"); return true; }
                     // 従来パネルが直接呼んでいた処理をそのまま受け口へ移した（Undo 記録なしは従来どおり）。
-                    int purged = ObjectGroupOps.PurgeMissing(project, model);
+                    int purged = ModifierStackOps.PurgeMissing(project, model);
                     ReportData(CommandDataJson.New().Int("purged", purged).Build());
                     _notifyPanels?.Invoke(ChangeKind.ListStructure);
                     return true;
                 }
 
-                case DeleteObjectGroupCommand c:
+                case DeleteModifierStackCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
 
-                    var g = model.FindObjectGroupByName(c.GroupName);
-                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return true; }
+                    var g = model.FindModifierStackByName(c.StackName);
+                    if (g == null) { Fail($"スタックが見つかりません: {c.StackName}"); return true; }
 
-                    int gIndex = model.ObjectGroups.IndexOf(g);
-                    var removedRecord = new ObjectGroupChangeRecord
+                    int gIndex = model.ModifierStacks.IndexOf(g);
+                    var removedRecord = new ModifierStackChangeRecord
                     {
                         RemovedGroup = g.Clone(),
                         RemovedIndex = gIndex,
                     };
-                    string releaseDesc = $"オブジェクトグループ解除: {g.Name}";
+                    string releaseDesc = $"モディファイアスタック解除: {g.Name}";
 
                     // 「適用」：出力を普通のメッシュにする。処理器のある項目（サブディビジョン）は
                     // 処理器が立てたロック・表示を戻すので、一覧のスナップショットごと Undo 1 件にする。
@@ -135,46 +135,46 @@ namespace Poly_Ling.Player
                     var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
                     bool released  = ModifierEvaluator.ReleaseGroup(model, g);
 
-                    model.RemoveObjectGroup(g);
+                    model.RemoveModifierStack(g);
 
                     if (released)
                     {
-                        RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount,
-                            new List<ObjectGroupChangeRecord> { removedRecord }, releaseDesc);
+                        RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount,
+                            new List<ModifierStackChangeRecord> { removedRecord }, releaseDesc);
                         model.IsDirty = true;
                         _viewportManager.EnterTopologyChanged(project);
                     }
                     else
                     {
-                        RecordObjectGroupUndo(removedRecord, releaseDesc);
+                        RecordModifierStackUndo(removedRecord, releaseDesc);
                     }
 
                     _notifyPanels(ChangeKind.ListStructure);
                     return true;
                 }
 
-                // ── オブジェクトグループ：自動更新の切り替え
-                case SetObjectGroupAutoUpdateCommand c:
+                // ── モディファイアスタック：自動更新の切り替え
+                case SetModifierStackAutoUpdateCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
 
-                    var g = model.FindObjectGroupByName(c.GroupName);
-                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return true; }
+                    var g = model.FindModifierStackByName(c.StackName);
+                    if (g == null) { Fail($"スタックが見つかりません: {c.StackName}"); return true; }
 
-                    int gIndex = model.ObjectGroups.IndexOf(g);
+                    int gIndex = model.ModifierStacks.IndexOf(g);
                     var before = g.Clone();
                     g.AutoUpdate = c.AutoUpdate;
 
                     if (gIndex >= 0)
                     {
-                        RecordObjectGroupUndo(
-                            new ObjectGroupChangeRecord
+                        RecordModifierStackUndo(
+                            new ModifierStackChangeRecord
                             {
                                 ReplacedIndex = gIndex,
                                 OldGroup      = before,
                                 NewGroup      = g.Clone(),
                             },
-                            $"オブジェクトグループ自動更新: {g.Name}");
+                            $"モディファイアスタック自動更新: {g.Name}");
                     }
 
                     model.IsDirty = true;
@@ -182,8 +182,8 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                // ── オブジェクトグループ：項目の引数を書き換えて、その項目だけ作り直す（段 3）
-                case SetObjectGroupStepArgsCommand c:
+                // ── モディファイアスタック：項目の引数を書き換えて、その項目だけ作り直す（段 3）
+                case SetModifierStackStepArgsCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
                     string reason = ExecuteSetGroupStepArgs(project, model, c);
@@ -191,18 +191,18 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                // ── オブジェクトグループ：出力の編集の確定・破棄（段 6）
+                // ── モディファイアスタック：出力の編集の確定・破棄（段 6）
                 case CommitModifierOutputEditCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
-                    string reason = ExecuteModifierOutputEdit(project, model, c.GroupName, c.StepIndex, commit: true);
+                    string reason = ExecuteModifierOutputEdit(project, model, c.StackName, c.StepIndex, commit: true);
                     if (reason != null) Fail(reason);
                     return true;
                 }
                 case DiscardModifierOutputEditCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
-                    string reason = ExecuteModifierOutputEdit(project, model, c.GroupName, c.StepIndex, commit: false);
+                    string reason = ExecuteModifierOutputEdit(project, model, c.StackName, c.StepIndex, commit: false);
                     if (reason != null) Fail(reason);
                     return true;
                 }
@@ -261,7 +261,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // オブジェクトグループ
+        // モディファイアスタック
         // ================================================================
 
         /// <summary>
@@ -299,7 +299,7 @@ namespace Poly_Ling.Player
                 : -1;
 
         /// <summary>
-        /// 実行し終えたコマンドからオブジェクトグループを 1 件作り、モデルへ足す。
+        /// 実行し終えたコマンドからモディファイアスタックを 1 件作り、モデルへ足す。
         ///
         /// 出力先の決め方は 3 通り。
         ///   ・explicitOutputIds を渡されたらそれをそのまま使う。
@@ -309,10 +309,10 @@ namespace Poly_Ling.Player
         ///     （ObjectId は単調増加なので最大値が最後に作られたもの）
         ///   ・増えていなければ fallbackIndex のオブジェクト（既存へ追加・上書きブレンド）
         ///
-        /// 出力先が決まらなくてもグループは作る。値を書くだけのコマンドのように
+        /// 出力先が決まらなくてもスタックは作る。値を書くだけのコマンドのように
         /// 出力先を持たない項目があるため。作り直しはその項目で止まる。
         /// </summary>
-        private void CaptureObjectGroup(
+        private void CaptureModifierStack(
             PanelCommand cmd, HashSet<ulong> beforeIds, int fallbackIndex,
             IReadOnlyList<ulong> explicitOutputIds = null)
         {
@@ -355,35 +355,35 @@ namespace Poly_Ling.Player
             }
 
             var outCtx = outputIds.Count > 0
-                ? ObjectGroupOps.Resolve(project, outputIds[0])
+                ? ModifierStackOps.Resolve(project, outputIds[0])
                 : null;
             string baseName = !string.IsNullOrEmpty(outCtx?.Name) ? outCtx.Name : "Group";
 
-            var group = ObjectGroupOps.Capture(
+            var group = ModifierStackOps.Capture(
                 project, cmd.ModelIndex, cmd, outputIds,
-                model.GenerateUniqueObjectGroupName(baseName));
+                model.GenerateUniqueModifierStackName(baseName));
 
             if (group == null) return;
 
             // 依存の循環になる登録は拒否する（作り直し整備計画 段 4）。
             // 既存へ追加・置き換えで、出力先が上流の項目の入力になっているときに起きる。
-            // グループは足さない。生成物はそのまま残り、そのコマンドの Undo で消せる。
+            // スタックは足さない。生成物はそのまま残り、そのコマンドの Undo で消せる。
             string cycle = ModifierGraph.CycleReason(model, group, focusInModel: false);
             if (cycle != null)
             {
-                Fail($"グループとして残すと依存が循環するので、グループに登録しませんでした: {cycle}");
+                Fail($"モディファイアスタックとして残すと依存が循環するので、スタックに登録しませんでした: {cycle}");
                 return;
             }
 
-            RecordObjectGroupUndo(
-                new ObjectGroupChangeRecord
+            RecordModifierStackUndo(
+                new ModifierStackChangeRecord
                 {
                     AddedGroup = group.Clone(),
-                    AddedIndex = model.ObjectGroupCount,
+                    AddedIndex = model.ModifierStackCount,
                 },
-                $"オブジェクトグループ追加: {group.Name}");
+                $"モディファイアスタック追加: {group.Name}");
 
-            model.AddObjectGroup(group);
+            model.AddModifierStack(group);
 
             // 作った直後の入力・出力を控える（作り直し整備計画 段 9）。画面の更新の前に
             // 入力・出力を編集しても、要評価・未確定として扱われるようにする。
@@ -391,7 +391,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 作り直しの書き戻し（RunObjectGroupStep の入れ子の Dispatch）の深さ。
+        /// 作り直しの書き戻し（RunModifierStackStep の入れ子の Dispatch）の深さ。
         /// 0 より大きい間は出力の保護（ModifierOutputGuard）を掛けない。
         /// </summary>
         private int _modifierWriteBackDepth;
@@ -400,7 +400,7 @@ namespace Poly_Ling.Player
         // （PlayerCommandDispatcher.ModifierEval.cs の ReevaluateAfterSkinning。作り直し整備計画 段 5）。
 
         /// <summary>
-        /// オブジェクトグループの 1 項目を実行する。
+        /// モディファイアスタックの 1 項目を実行する。
         ///
         /// やること
         ///   1. その項目の出力先を、控えの ObjectId から今の索引へ引き直す
@@ -419,10 +419,10 @@ namespace Poly_Ling.Player
         /// 【Undo】
         ///   ここでは記録しない。呼び出し側がマクロ全体で 1 件だけ積む。
         /// </summary>
-        private bool RunObjectGroupStep(
+        private bool RunModifierStackStep(
             ProjectContext project, ModelContext model,
             int modelIndex, bool keepStash,
-            Poly_Ling.Data.ObjectGroup g, int stepIndex,
+            Poly_Ling.Data.ModifierStack g, int stepIndex,
             out string error)
         {
             error = null;
@@ -445,7 +445,7 @@ namespace Poly_Ling.Player
 
             foreach (ulong outId in step.OutputObjectIds)
             {
-                var mc = ObjectGroupOps.Resolve(project, outId);
+                var mc = ModifierStackOps.Resolve(project, outId);
                 if (mc == null)
                 { error = $"出力先の描画オブジェクトが見つかりません (ObjectId={outId})"; return false; }
 
@@ -468,7 +468,7 @@ namespace Poly_Ling.Player
 
             if (keepStash && stepIndex == 0 && singleMesh)
             {
-                var prevStash = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
+                var prevStash = g.HasStash ? ModifierStackOps.Resolve(project, g.StashObjectId) : null;
 
                 string stashName = model.GenerateUniqueMeshName(outCtx.Name + "_stash");
                 var stash = MeshContextCloneOps.Clone(
@@ -493,7 +493,7 @@ namespace Poly_Ling.Player
                 }
             }
 
-            var rebuilt = ObjectGroupOps.BuildCommand(
+            var rebuilt = ModifierStackOps.BuildCommand(
                 project, modelIndex, g, stepIndex, out string rbErr);
             if (rebuilt == null)
             { error = rbErr ?? "作り直すコマンドを組めませんでした"; return false; }
@@ -536,6 +536,7 @@ namespace Poly_Ling.Player
             { error = wbErr ?? "書き戻しコマンドを組めませんでした"; return false; }
 
             int vertsBefore = singleMesh ? outCtx.MeshObject.VertexCount : -1;
+            ModifierStepProfiler.Mark("組み直し");   // 計測（段 10）
 
             // スキンド化のあとの評価空間（段 5。ModifierSpace）。
             //   評価できない項目は流さない。梯子を読む項目は、生成物を梯子の格納空間から
@@ -545,12 +546,14 @@ namespace Poly_Ling.Player
 
             // Dispatch は _pendingResult を退避・復元するので、結果は
             // 戻り値で受け取ること（_pendingResult を見ても復元済みで分からない）。
-            // 書き戻し先はグループの出力なので、出力の保護（ModifierOutputGuard）を掛けない。
+            // 書き戻し先はスタックの出力なので、出力の保護（ModifierOutputGuard）を掛けない。
+            ModifierStepProfiler.Mark("評価空間");   // 計測（段 10）
             CommandResult stepResult;
             _modifierWriteBackDepth++;
             var spaceScope = ModifierSpace.Begin(spaceWb);
             try     { stepResult = Dispatch(writeBackCmd); }
             finally { spaceScope.Dispose(); _modifierWriteBackDepth--; }
+            ModifierStepProfiler.Mark("実行の残り");   // 計測（段 10）。中の印の後ろから書き戻しの終わりまで
             if (stepResult != null && !stepResult.Success)
             { error = stepResult.Reason ?? "作り直しに失敗しました"; return false; }
 
@@ -612,7 +615,7 @@ namespace Poly_Ling.Player
         /// 梯子を読む項目で M が要るときは wb に行列と出力を入れる。作り直しと逆方向（段 6）が同じ判定を使う。
         /// </summary>
         private static bool ComputeStepSpace(
-            ModelContext model, ObjectGroupStep step, MeshContext outCtx, bool singleMesh,
+            ModelContext model, ModifierStackStep step, MeshContext outCtx, bool singleMesh,
             out ModifierSpace.WriteBack wb, out string error)
         {
             wb = null; error = null;
@@ -638,28 +641,28 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>判定は ModifierSpace.IsPoseOwnedByOutput に 1 か所（評価器の署名と共有。段 E）。</summary>
-        private static bool IsPoseOwnedByOutput(System.Type t, ObjectGroupStep step)
+        private static bool IsPoseOwnedByOutput(System.Type t, ModifierStackStep step)
             => ModifierSpace.IsPoseOwnedByOutput(t, step);
 
         /// <summary>
         /// 項目 1 つの引数を書き換え、その項目だけを作り直す（PolyLing_作り直し整備計画.md 段 3）。
         ///
-        /// 検査（ObjectGroupOps.TryValidateStepArgs）で落ちたら何も書かない。
-        /// 作り直しに失敗したら引数を元へ戻す（ExecuteReplaceGroupSource と同じ）。
-        /// Undo はオブジェクト一覧のスナップショットとグループの差し替えを 1 件にまとめる。
+        /// 検査（ModifierStackOps.TryValidateStepArgs）で落ちたら何も書かない。
+        /// 作り直しに失敗したら引数を元へ戻す（ExecuteReplaceModifierStackSource と同じ）。
+        /// Undo はオブジェクト一覧のスナップショットとスタックの差し替えを 1 件にまとめる。
         /// 戻り値は失敗理由。成功時は null。
         /// </summary>
-        private string ExecuteSetGroupStepArgs(ProjectContext project, ModelContext model, SetObjectGroupStepArgsCommand c)
+        private string ExecuteSetGroupStepArgs(ProjectContext project, ModelContext model, SetModifierStackStepArgsCommand c)
         {
-            var g = model.FindObjectGroupByName(c.GroupName);
-            if (g == null) return $"グループが見つかりません: {c.GroupName}";
+            var g = model.FindModifierStackByName(c.StackName);
+            if (g == null) return $"スタックが見つかりません: {c.StackName}";
 
-            if (!ObjectGroupOps.TryValidateStepArgs(
+            if (!ModifierStackOps.TryValidateStepArgs(
                     project, c.ModelIndex, g, c.StepIndex, c.Keys, c.Values, c.AllowProfileKeys, out string vErr))
                 return vErr;
 
             var step = g.GetStep(c.StepIndex);
-            int gIndex = model.ObjectGroups.IndexOf(g);
+            int gIndex = model.ModifierStacks.IndexOf(g);
             var oldSnapshot = g.Clone();
 
             var oldArgs = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -674,7 +677,7 @@ namespace Poly_Ling.Player
             _undoController?.SuspendRecording();
             try
             {
-                if (!RunObjectGroupStep(project, model, c.ModelIndex, false, g, c.StepIndex, out string err))
+                if (!RunModifierStackStep(project, model, c.ModelIndex, false, g, c.StepIndex, out string err))
                     fail = err ?? "作り直しに失敗しました";
             }
             finally
@@ -682,7 +685,7 @@ namespace Poly_Ling.Player
                 _undoController?.ResumeRecording();
             }
 
-            // 作り直せなかったときは引数を元へ戻す（グループと出力の中身を食い違わせない）。
+            // 作り直せなかったときは引数を元へ戻す（スタックと出力の中身を食い違わせない）。
             if (fail != null)
             {
                 step.Args.Clear();
@@ -694,16 +697,16 @@ namespace Poly_Ling.Player
                 ModifierEvaluator.MarkRebuilt(model, step);
             }
 
-            g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+            g.SourceDigest = ModifierStackOps.ComputeSourceDigest(project, g);
 
-            RecordSubdivisionUndo(model, listBefore, model.ObjectGroupCount,
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount,
                 gIndex >= 0
-                    ? new List<ObjectGroupChangeRecord>
+                    ? new List<ModifierStackChangeRecord>
                       {
-                          new ObjectGroupChangeRecord { ReplacedIndex = gIndex, OldGroup = oldSnapshot, NewGroup = g.Clone() },
+                          new ModifierStackChangeRecord { ReplacedIndex = gIndex, OldGroup = oldSnapshot, NewGroup = g.Clone() },
                       }
                     : null,
-                $"グループの引数: {g.Name} 項目 {c.StepIndex}");
+                $"スタックの引数: {g.Name} 項目 {c.StepIndex}");
 
             FinishGroupEdit(project, model);
             if (fail != null) return $"作り直しに失敗したので引数を戻しました: {fail}";
@@ -712,7 +715,7 @@ namespace Poly_Ling.Player
             var outIds = new List<ulong>();
             foreach (ulong id in step.OutputObjectIds)
             {
-                var mc = ObjectGroupOps.Resolve(project, id);
+                var mc = ModifierStackOps.Resolve(project, id);
                 int idx = mc != null ? model.MeshContextList.IndexOf(mc) : -1;
                 if (idx < 0) continue;
                 outIdx.Add(idx);
@@ -722,8 +725,8 @@ namespace Poly_Ling.Player
             return null;
         }
 
-        /// <summary>グループ変更を MeshList スタックへ記録する。</summary>
-        private void RecordObjectGroupUndo(ObjectGroupChangeRecord record, string description)
+        /// <summary>スタック変更を MeshList スタックへ記録する。</summary>
+        private void RecordModifierStackUndo(ModifierStackChangeRecord record, string description)
         {
             if (_undoController == null || record == null) return;
             _undoController.MeshListStack.Record(record, description);

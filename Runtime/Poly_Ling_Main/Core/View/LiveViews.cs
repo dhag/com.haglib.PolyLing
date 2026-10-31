@@ -396,7 +396,7 @@ namespace Poly_Ling.View
         }
 
         /// <summary>プロジェクトを持たないので作れない（出力先の解決にプロジェクトが要る）。空。</summary>
-        public IReadOnlyList<ObjectGroupView> ObjectGroups => Array.Empty<ObjectGroupView>();
+        public IReadOnlyList<ModifierStackView> ModifierStacks => Array.Empty<ModifierStackView>();
 
         public int MaterialCount        => _model.MaterialCount;
         public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
@@ -626,13 +626,13 @@ namespace Poly_Ling.View
         }
 
         /// <summary>
-        /// オブジェクトグループの表示用の写しを作る（PlayerObjectGroupSubPanel にあった判定と文面をここへ移した）。
+        /// モディファイアスタックの表示用の写しを作る（PlayerModifierStackSubPanel にあった判定と文面をここへ移した）。
         /// </summary>
-        public static IReadOnlyList<ObjectGroupView> BuildObjectGroupViews(ProjectContext project, ModelContext model)
+        public static IReadOnlyList<ModifierStackView> BuildModifierStackViews(ProjectContext project, ModelContext model)
         {
-            var list = new List<ObjectGroupView>();
-            if (model?.ObjectGroups == null) return list;
-            foreach (var g in model.ObjectGroups)
+            var list = new List<ModifierStackView>();
+            if (model?.ModifierStacks == null) return list;
+            foreach (var g in model.ModifierStacks)
             {
                 if (g == null) continue;
 
@@ -641,15 +641,15 @@ namespace Poly_Ling.View
                 if (!outMissing)
                 {
                     foreach (ulong oid in g.OutputObjectIds)
-                        if (Poly_Ling.Ops.ObjectGroupOps.Resolve(project, oid) == null) { outMissing = true; break; }
+                        if (Poly_Ling.Ops.ModifierStackOps.Resolve(project, oid) == null) { outMissing = true; break; }
                 }
 
-                var stashCtx = g.HasStash ? Poly_Ling.Ops.ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
+                var stashCtx = g.HasStash ? Poly_Ling.Ops.ModifierStackOps.Resolve(project, g.StashObjectId) : null;
 
                 var srcNames = new List<string>();
                 foreach (ulong id in g.SourceObjectIds)
                 {
-                    var mc = Poly_Ling.Ops.ObjectGroupOps.Resolve(project, id);
+                    var mc = Poly_Ling.Ops.ModifierStackOps.Resolve(project, id);
                     srcNames.Add(mc != null ? mc.Name : $"(見つからない: {id})");
                 }
 
@@ -663,7 +663,7 @@ namespace Poly_Ling.View
                     var outNames = new List<string>();
                     foreach (ulong oid in st.OutputObjectIds)
                     {
-                        var mc = Poly_Ling.Ops.ObjectGroupOps.Resolve(project, oid);
+                        var mc = Poly_Ling.Ops.ModifierStackOps.Resolve(project, oid);
                         outNames.Add(mc != null ? mc.Name : $"(見つからない: {oid})");
                     }
 
@@ -674,13 +674,13 @@ namespace Poly_Ling.View
                     stepLines.Add($"  {i + 1}. {st.Action} → {outText}  (パラメータ {st.Args.Count} 件)");
                 }
 
-                // 項目ごとの引数と、書けるか（setObjectGroupStepArgs と同じ判定）。
-                var stepViews = new List<ObjectGroupStepView>();
+                // 項目ごとの引数と、書けるか（setModifierStackStepArgs と同じ判定）。
+                var stepViews = new List<ModifierStackStepView>();
                 var graph = Poly_Ling.Ops.ModifierEvaluator.GetGraph(model);
                 for (int i = 0; i < g.StepCount; i++)
                 {
                     var st = g.GetStep(i);
-                    var sv = new ObjectGroupStepView { Action = st?.Action ?? "", IsExecutable = st != null && st.IsExecutable };
+                    var sv = new ModifierStackStepView { Action = st?.Action ?? "", IsExecutable = st != null && st.IsExecutable };
                     if (st != null)
                     {
                         var stType = Poly_Ling.Data.PanelCommandFactory.ResolveType(st.Action);
@@ -705,20 +705,20 @@ namespace Poly_Ling.View
                             sv.Keys[k]     = sorted[k].Key;
                             sv.Values[k]   = sorted[k].Value ?? "";
                             sv.Writable[k] = sv.IsExecutable
-                                && Poly_Ling.Ops.ObjectGroupOps.ArgWriteBlockReason(stType, sorted[k].Key) == null;
+                                && Poly_Ling.Ops.ModifierStackOps.ArgWriteBlockReason(stType, sorted[k].Key) == null;
                         }
                     }
                     stepViews.Add(sv);
                 }
 
-                list.Add(new ObjectGroupView
+                list.Add(new ModifierStackView
                 {
                     Name          = g.Name,
                     Action        = g.Action,
                     StepCount     = g.StepCount,
                     AutoUpdate    = g.AutoUpdate,
                     OutputMissing = outMissing,
-                    Stale         = !outMissing && Poly_Ling.Ops.ObjectGroupOps.IsStale(project, g),
+                    Stale         = !outMissing && Poly_Ling.Ops.ModifierStackOps.IsStale(project, g),
                     Detail        =
                           $"項目: {g.StepCount} 件\n"
                         + string.Join("\n", stepLines) + "\n"

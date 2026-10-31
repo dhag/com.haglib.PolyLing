@@ -3,7 +3,7 @@
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【なぜ要るか】
-//   ObjectGroup は生成コマンドを ToArgs の文字列で保存する。その中には
+//   ModifierStack は生成コマンドを ToArgs の文字列で保存する。その中には
 //   「どの描画オブジェクトを対象にするか」を MeshContextList の索引で持つものがある。
 //     CreatePlaceObjectCommand.SourceMasterIndices   … 藤壺の配置元
 //     PrimitivePlacement.AddTargetIndex              … 「既存へ追加」の追加先
@@ -579,7 +579,7 @@ namespace Poly_Ling.Data
         /// プロパティ名から、そのパラメータが届くキーを引く。
         /// 対応するプロパティが無いときは空文字。
         ///
-        /// ObjectGroup がキーを直書きしないために公開する。
+        /// ModifierStack がキーを直書きしないために公開する。
         /// キーの規則（先頭小文字・別名表）はこのクラスにしか無いので、
         /// 外で組み立てると必ずずれる。
         /// </summary>
@@ -612,7 +612,7 @@ namespace Poly_Ling.Data
         ///   別の名前で索引を持つ引数は拾えない。
         ///
         /// 【ここは付け足さない】
-        ///   IsMeshRef を付けると ObjectGroup の作り直しで索引の引き直しが入る
+        ///   IsMeshRef を付けると ModifierStack の作り直しで索引の引き直しが入る
         ///   （PLParamAttribute.IsMeshRef の注記）。一覧を見て、コマンドごとに判断して付ける。
         /// </summary>
         public static List<string> UnmarkedMeshIndexKeys(Type t)
@@ -714,7 +714,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// Write 引数がこのコマンドの値で実際に書き込み先になるか。
-        /// args は ToArgs(cmd) の結果（オブジェクトグループの項目では控えた引数）。WriteWhen が空なら常に true。
+        /// args は ToArgs(cmd) の結果（モディファイアスタックの項目では控えた引数）。WriteWhen が空なら常に true。
         /// 条件は "&amp;" で並べた節のすべてを満たすとき書き込み先。
         /// 節のキーが args に無いとき（既定値のまま等）・形が崩れているときは、その節を満たすとみなす（安全側）。
         /// 担当者判定（RemoteOwnership）・出力の保護（ModifierOutputGuard）・依存グラフ（ModifierEvaluator）が

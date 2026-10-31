@@ -1,7 +1,7 @@
 // PlayerRevolutionTestSubPanel.cs
 // 回転体自動検証。ボタン 1 回で
 //   プロファイルを描画オブジェクト（2 頂点ライン）として置く → そこから取り込む
-//   → 回転体を生成（グループとして保持）→ プロファイルの線を編集
+//   → 回転体を生成（モディファイアスタックとして保持）→ プロファイルの線を編集
 //   → 要更新の検出 → 作り直す
 // までを流す。共通部は PlayerBeltGroupTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
@@ -58,7 +58,7 @@ namespace Poly_Ling.Player
         protected override string TitleText => "回転体自動検証";
 
         protected override string NoteText =>
-            "瓶のプロファイル（描画オブジェクト）→ 取り込み → 回転体を生成（グループとして保持）\n"
+            "瓶のプロファイル（描画オブジェクト）→ 取り込み → 回転体を生成（モディファイアスタックとして保持）\n"
           + "→ プロファイルの線を編集 → 要更新の検出 → 作り直し、までを通しで流します。\n"
           + "梯子は使いません。入力はプロファイルだけです。";
 
@@ -162,10 +162,10 @@ namespace Poly_Ling.Player
             stages.Add(("2. プロファイルの生成完了を待つ",             StageWaitProfileAsSource));
             stages.Add(("3. 描画オブジェクトから取り込む",             StageImportProfile));
             stages.Add(("4. 回転体を生成",                             StageCreateRevolution));
-            stages.Add(("5. グループが出来たか検査",                   StageVerifyGroup));
+            stages.Add(("5. スタックが出来たか検査",                   StageVerifyGroup));
             stages.Add(("6. プロファイルの線を編集",                   StageEditSource));
             stages.Add(("7. 要更新になったか検査",                     StageVerifyStale));
-            stages.Add(("8. グループを作り直す",                       StageRebuild));
+            stages.Add(("8. スタックを作り直す",                       StageRebuild));
             stages.Add(("9. 作り直しの結果を検査",                     StageVerifyRebuild));
         }
 
@@ -203,7 +203,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;   // ← ここがグループを残す指定
+            pl.KeepAsModifierStack = true;   // ← ここがスタックを残す指定
 
             SendCommand(new CreateRevolutionCommand(
                 ModelIndex, rp, pl,
@@ -214,7 +214,7 @@ namespace Poly_Ling.Player
               + $"円周分割 {rp.RadialSegments} / フタ={(_capEnds.value ? "あり" : "なし")}）。"
               + $"取り込み元は索引 {ProfileIndex}、読み方は開いた折れ線",
                 "図形生成パネル → 図形「回転体」→ 「取り込み(メッシュ→プロファイル)」"
-              + "→ 『オブジェクトグループとして残す』をオン → 生成",
+              + "→ 『モディファイアスタックとして残す』をオン → 生成",
                 "回転体の入力はプロファイルだけなので、梯子は要らない。"
               + "断面は x が半径方向・y が回転軸方向で、モデルのローカル座標をそのまま回す"
               + "（帯系の断面と違って正規化は掛けない）。"
@@ -277,7 +277,7 @@ namespace Poly_Ling.Player
                 $"プロファイルの点 {moved} 個を横へ最大 {widen:0.###} 膨らませた（胴が最も強い山型の重み）",
                 "ビューポートでプロファイルの線を選び、胴の点を外へ動かすのと同じ",
                 "動かしたのは入力（プロファイルの線オブジェクト）だけ。回転体の出力先はまだ古い形のまま。"
-              + "グループはこの食い違いを見つけられるはず、というのが次の段の検査。");
+              + "スタックはこの食い違いを見つけられるはず、というのが次の段の検査。");
         }
     }
 }

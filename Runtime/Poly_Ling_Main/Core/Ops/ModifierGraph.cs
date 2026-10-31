@@ -1,26 +1,26 @@
 // ModifierGraph.cs
-// オブジェクトグループの項目（モディファイア）の依存のグラフ。
+// モディファイアスタックの項目（モディファイア）の依存のグラフ。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【何を導くか】（PolyLing_作り直し整備計画.md 2.2・段 4）
-//   全グループの実行項目から「入力オブジェクト → 項目 → 出力オブジェクト」を導き、依存の順に並べる。
+//   全スタックの実行項目から「入力オブジェクト → 項目 → 出力オブジェクト」を導き、依存の順に並べる。
 //   辺は 2 種類。
 //     ・A の出力を B が入力に持つ                → A → B
 //     ・A が Write で持つ入力を B が読む          → A → B
 //       （揺れ鎖が梯子へウェイトを塗り、パイプ・フリルが生成時にそれを引き継ぐ。計画書 4 章 1）
 //       Write は宣言の書き込み条件（WriteWhen）を項目の引数で判定して有効なものだけ（段 D。
 //       ModifierEvaluator.IsWriteKeyActive → PanelCommandFactory.IsWriteActive）。
-//       A と B がどちらも同じものを Write で持つときは、グループ順・項目順で前のものから張る。
-//   同じ順位のものはグループ順・項目順に並べる（Kahn 法）。
+//       A と B がどちらも同じものを Write で持つときは、スタック順・項目順で前のものから張る。
+//   同じ順位のものはスタック順・項目順に並べる（Kahn 法）。
 //   並べられずに残ったもの（自分の出力を自分で読むものを含む）は「循環」にして評価から外す。
 //
-// 【いつ作り直すか】グループの増減・変更のときだけ。ModifierEvaluator が構造キー（StructureKey）を
-//   比べて決める。キーはグループ・項目・入出力の ObjectId と、引けた描画オブジェクトの同一性・
+// 【いつ作り直すか】スタックの増減・変更のときだけ。ModifierEvaluator が構造キー（StructureKey）を
+//   比べて決める。キーはスタック・項目・入出力の ObjectId と、引けた描画オブジェクトの同一性・
 //   スキンド化の有無だけから作り、頂点は見ない。
 //
 // 【状態】項目ごとに次のどれか（ModifierEntryStatus）。
 //   Handler  … 処理器のある項目（サブディビジョン）。評価器のきっかけで処理器が流す（段 1 のまま）
-//   Evaluate … 処理器の無い項目。作り直し（RunObjectGroupStep）で流す
+//   Evaluate … 処理器の無い項目。作り直し（RunModifierStackStep）で流す
 //   Excluded … 流さない（理由は StatusReason）。スキンド化のあとに評価できない項目もここ（ModifierSpace）
 //   Cycle    … 循環。流さない
 
@@ -106,7 +106,7 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            // ── Kahn 法。同順位はグループ順・項目順。
+            // ── Kahn 法。同順位はスタック順・項目順。
             var indeg = new Dictionary<ModifierEvaluator.Entry, int>();
             foreach (var e in entries) indeg[e] = selfLoop.Contains(e) ? 1 : e.Upstream.Count;
 
@@ -197,7 +197,7 @@ namespace Poly_Ling.Ops
             if (!b.Upstream.Contains(a))   b.Upstream.Add(a);
         }
 
-        /// <summary>グループ順・項目順で比べる。</summary>
+        /// <summary>スタック順・項目順で比べる。</summary>
         public static int ComparePosition(ModifierEvaluator.Entry a, ModifierEvaluator.Entry b)
         {
             int c = a.GroupIndex.CompareTo(b.GroupIndex);
@@ -225,11 +225,11 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// focus のグループの項目が循環に入るなら理由を返す。入らなければ null。
-        /// focusInModel が false のときは、まだモデルに足していないグループとして末尾に加えて判定する。
-        /// 判定だけで、モデルもグループも変えない。
+        /// focus のスタックの項目が循環に入るなら理由を返す。入らなければ null。
+        /// focusInModel が false のときは、まだモデルに足していないスタックとして末尾に加えて判定する。
+        /// 判定だけで、モデルもスタックも変えない。
         /// </summary>
-        public static string CycleReason(ModelContext model, ObjectGroup focus, bool focusInModel)
+        public static string CycleReason(ModelContext model, ModifierStack focus, bool focusInModel)
         {
             if (model == null || focus == null) return null;
 
@@ -239,7 +239,7 @@ namespace Poly_Ling.Ops
             foreach (var e in entries)
             {
                 if (!ReferenceEquals(e.Group, focus) || e.Status != ModifierEntryStatus.Cycle) continue;
-                return $"グループ「{focus.Name}」の項目 {e.StepIndex}（{e.Step.Action}）が依存の循環になる"
+                return $"スタック「{focus.Name}」の項目 {e.StepIndex}（{e.Step.Action}）が依存の循環になる"
                      + $"（{e.StatusReason}）";
             }
             return null;
@@ -250,7 +250,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// グラフを作り直すかを決めるキー。グループ・項目の同一性、action、参照の ObjectId と
+        /// グラフを作り直すかを決めるキー。スタック・項目の同一性、action、参照の ObjectId と
         /// それが引く描画オブジェクトの同一性・スキンド化の有無、描画オブジェクトの数を混ぜる。
         /// 頂点は見ない。
         /// </summary>
@@ -270,7 +270,7 @@ namespace Poly_Ling.Ops
                 Mix((ulong)s.Length);
             }
 
-            if (model?.ObjectGroups == null || model.MeshContextList == null) return 0UL;
+            if (model?.ModifierStacks == null || model.MeshContextList == null) return 0UL;
 
             var map = ModifierEvaluator.BuildIdMap(model);
             void MixId(ulong id)
@@ -286,7 +286,7 @@ namespace Poly_Ling.Ops
             }
 
             Mix((ulong)model.MeshContextList.Count);
-            foreach (var g in model.ObjectGroups)
+            foreach (var g in model.ModifierStacks)
             {
                 if (g == null) { Mix(4UL); continue; }
                 Mix((ulong)(uint)RuntimeHelpers.GetHashCode(g));

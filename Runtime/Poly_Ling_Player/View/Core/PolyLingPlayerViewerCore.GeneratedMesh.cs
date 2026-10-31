@@ -434,14 +434,14 @@ namespace Poly_Ling.Player
         /// モード4: 既存の描画オブジェクトの中身を捨てて、生成物で置き換える。
         ///
         /// 【なぜ新規オブジェクトを作らないか】
-        ///   オブジェクトグループの作り直しで使う。新しく作ると
+        ///   モディファイアスタックの作り直しで使う。新しく作ると
         ///   ObjectId が変わり、名前・階層・姿勢・材質割当も引き継げない。
-        ///   出力先を指している参照（グループ自身・階層の子・ミラー元）が
+        ///   出力先を指している参照（スタック自身・階層の子・ミラー元）が
         ///   そのたびに切れることになる。中身だけ入れ替えれば全部そのまま残る。
         ///
         /// 【頂点IDは残らない】
         ///   中身を総入れ替えするので、出力先へ手で振った頂点IDは失われる。
-        ///   出力先にIDを振るなら、先にグループを解除すること。
+        ///   出力先にIDを振るなら、先にスタックを解除すること。
         ///
         /// 【姿勢の扱い】
         ///   AddToExisting と同じく、対象の姿勢はそのまま使い、渡ってきた
@@ -509,7 +509,7 @@ namespace Poly_Ling.Player
             //   書き込み先が先頭の選択メッシュになるため、選択中の別オブジェクトの
             //   MeshContext へ targetMc の MeshObject を入れてしまい、2 つの描画
             //   オブジェクトが同じ MeshObject を共有する。明示は記録の後で解除する。
-            //   記録を止めているとき（オブジェクトグループの作り直し・依存の評価）は書き込み先も設定しない。
+            //   記録を止めているとき（モディファイアスタックの作り直し・依存の評価）は書き込み先も設定しない。
             //   SetMeshObjectFor は頂点編集の履歴を消す（MeshUndoController.SetMeshObjectFor）ので、
             //   入力の編集の直後に評価が下流を書き戻すと、その編集の Undo が消える（段 4）。
             MeshObjectSnapshot before = null;
@@ -524,6 +524,7 @@ namespace Poly_Ling.Player
             // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
             // スロットを作る可能性のあるこの処理は必ず before 捕獲の後に行う。
             ApplyGeneratedMaterialIndex(model, srcObject, materialIndex, imageMaterial);
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("入れ替え:複製・空間の変換・材質");   // 計測（段 13）
 
             // ── 中身の入れ替え
             //    MeshObject の実体は差し替えず、頂点と面だけを入れ替える。
@@ -545,9 +546,11 @@ namespace Poly_Ling.Player
                 };
                 dst.Faces.Add(nf);
             }
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("入れ替え:頂点・面の写し");   // 計測（段 13）
             // 線分群も生成物のものへ入れ替える（面と連携しているため、古いものを残さない）。
             dst.LineGroups = Poly_Ling.Ops.LineGroupOps.CloneList(srcObject);
             dst.RebuildIdSets();
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("入れ替え:線分・ID");   // 計測（段 10・段 13）
 
             // サブIDは振り直さない。中身を総入れ替えするので、生成物の値（図形ごとの決まりで
             // PrimitiveMeshFactory.AssignPartsIds が振った値。藤壺・まつげは配置元のサブIDのまま）を
@@ -559,6 +562,7 @@ namespace Poly_Ling.Player
             newUnityMesh.name      = targetMc.Name;
             newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
             targetMc.ReplaceUnityMesh(newUnityMesh);
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("UnityMesh");   // 計測（段 10）
 
             // UNDO: 変更後スナップショット記録
             if (recordReplace && before != null)
@@ -571,9 +575,20 @@ namespace Poly_Ling.Player
 
             // 置き換え先がミラー対の実体側なら、ミラー側も実体側から作り直す。
             ReplaceMirrorSideContents(model, targetMc);
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("ミラー側");   // 計測（段 10）
 
             model.ComputeWorldMatrices();
-            PrimitiveMeshFinalize(model);
+            Poly_Ling.Ops.ModifierStepProfiler.Mark("行列");   // 計測（段 10）
+
+            // 表示の更新（モディファイア高速化計画 段 2）。
+            //   中身の入れ替えは描画オブジェクトの追加でも一覧の変更でもないので、新規生成用の
+            //   PrimitiveMeshFinalize（EnterSceneReset・一覧の通知＝どちらも全バッファの作り直し）は通さない。
+            //   位置・ウェイト・法線は書き込みのあるコマンドの終わりの SettleWorldPositions が送る：
+            //     面の構成が同じ … 位置の転送＋予約したウェイト・法線の部分転送（作り直さない）
+            //     面の構成が違う … バッファが合わなくなるので、そこで 1 回だけ作り直す
+            //   この入口はコマンド（生成コマンドの書き戻し）からしか呼ばれない。
+            EnsureDefaultMaterialSlot(model);
+            _viewportManager.QueueVertexAttributesUpload(targetMc);
 
             // 置き換え先の位置。呼び出し側が CommandResult へ載せる。
             masterIndex = model.IndexOf(targetMc);
@@ -584,7 +599,7 @@ namespace Poly_Ling.Player
         /// 中身を入れ替えた実体側に合わせて、ミラー側の中身を作り直す。
         ///
         /// 【なぜ要るか】
-        ///   ReplaceExisting（オブジェクトグループの作り直し）は実体側の頂点・面を
+        ///   ReplaceExisting（モディファイアスタックの作り直し）は実体側の頂点・面を
         ///   丸ごと入れ替えるが、ミラー側は自分の頂点を持つ別の描画オブジェクトで、
         ///   放っておくと古い形と古いウェイトのまま残る。スキンド化の後は
         ///   ミラー側が MirrorGeometryDerived = false になるので、
@@ -653,6 +668,8 @@ namespace Poly_Ling.Player
             newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
             mirrorCtx.ReplaceUnityMesh(newUnityMesh);
             mirrorCtx.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
+            // 実体側と同じく、ウェイト・法線はコマンドの終わりの SettleWorldPositions で送る（段 2）。
+            _viewportManager.QueueVertexAttributesUpload(mirrorCtx);
 
             if (undo != null && before != null)
             {

@@ -174,7 +174,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 読んだ断面をパネルへ入れる（パネルの Undo に desc で記録する）。
-        /// srcMasterIndex は取り込み元の索引（オブジェクトグループの作り直し用の控え）。
+        /// srcMasterIndex は取り込み元の索引（モディファイアスタックの作り直し用の控え）。
         /// </summary>
         private void StoreProfile(ProfileEditKind k, ProfileReadResult r, int srcMasterIndex, string desc)
         {

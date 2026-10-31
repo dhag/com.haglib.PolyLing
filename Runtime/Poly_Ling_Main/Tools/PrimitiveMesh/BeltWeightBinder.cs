@@ -19,8 +19,8 @@
 //
 // 【丸め】
 //   位置は 1e-5 単位へ丸めてから引く。丸めないと、同じ値でも浮動小数の
-//   下位ビットの揺れで引けなくなる。刻みは ObjectGroupOps.ComputeSourceDigest
-//   （ObjectGroupOps.cs:221-223）と同じにそろえてある。
+//   下位ビットの揺れで引けなくなる。刻みは ModifierStackOps.ComputeSourceDigest
+//   （ModifierStackOps.cs:221-223）と同じにそろえてある。
 //
 // 【引けなくてもよい】
 //   引けない点は null のままにする。ウェイトの無い頂点が出来るだけで、

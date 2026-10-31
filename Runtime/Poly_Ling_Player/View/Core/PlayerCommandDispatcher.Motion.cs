@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
                 case QueryMotionClipJsonCommand _: RunQueryMotionClipJson();  return true;
                 case SaveMotionClipJsonCommand c:  RunSaveMotionClipJson(c);  return true;
                 case CreateLipSyncFromVoicevoxCommand c: RunCreateLipSyncFromVoicevox(c); return true;
-                default: return false;
+                default: return DispatchMotionEdit(cmd);   // edit の照会・編集（PlayerCommandDispatcher.MotionEdit.cs）
             }
         }
 
@@ -159,6 +159,7 @@ namespace Poly_Ling.Player
                 .Text("phonemes",   VoicevoxLipSync.FormatSegments(segs))
                 .Text("tracks",     written == null ? "" : string.Join(",", written))
                 .Text("unresolved", string.Join(",", unresolved))
+                .Int ("droppedKeys", h.LastDroppedKeys)
                 .Build());
         }
 
@@ -246,6 +247,8 @@ namespace Poly_Ling.Player
             if (!string.IsNullOrEmpty(cmd.AbsentMuscles))
                 dto.absentMuscles = cmd.AbsentMuscles;   // 値の検査は Save の Validate が行う
 
+            int reflattened = cmd.ReflattenEdit ? MotionEditFlattener.Apply(dto) : 0;
+
             var saved = MotionClipSerializer.Save(dto, outPath);
             if (saved.Dto == null)
             {
@@ -263,6 +266,7 @@ namespace Poly_Ling.Player
                 .Int ("expressions", dto.expressions?.Count ?? 0)
                 .Num ("durationSec", MotionClipSerializer.Length(dto))
                 .Text("issues",      issues ?? "")
+                .Int ("reflattened", reflattened)
                 .Build());
         }
 

@@ -322,6 +322,64 @@ namespace Poly_Ling.Player
                 model.SelectedDrawableMeshIndices.ToArray()));
         }
 
+        // ================================================================
+        // 選択部分のコピー・カット・貼り付け・その場で複製
+        //   どれも InteractionMode を変えない即時実行（その場で複製だけは、成功したら
+        //   Blender の Shift+D に合わせて頂点移動ツールへ切り替える）。実処理はコマンドへ流す。
+        // ================================================================
+
+        /// <summary>選択部分をクリップボードへ写す（Ctrl+C / 左ペイン「コピー」）。</summary>
+        private void ExecuteCopySelection()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
+            WarnIfFailed("コピー", DispatchFromPanel(new Poly_Ling.Data.CopySelectionCommand(
+                PanelModelIndex(), model.SelectedDrawableMeshIndices.ToArray())));
+        }
+
+        /// <summary>選択部分を写してから削除する（Ctrl+X / 左ペイン「カット」）。</summary>
+        private void ExecuteCutSelection()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
+            WarnIfFailed("カット", DispatchFromPanel(new Poly_Ling.Data.CutSelectionCommand(
+                PanelModelIndex(), model.SelectedDrawableMeshIndices.ToArray())));
+        }
+
+        /// <summary>クリップボードを貼る（Ctrl+V / Ctrl+Shift+V / 左ペイン「貼り付け」）。</summary>
+        private void ExecutePasteSelection(Poly_Ling.Ops.SelectionPasteDestination destination)
+        {
+            if (ActiveProject?.CurrentModel == null) return;
+            WarnIfFailed("貼り付け", DispatchFromPanel(new Poly_Ling.Data.PasteSelectionCommand(
+                PanelModelIndex(), destination)));
+        }
+
+        /// <summary>左ペインの「貼り付け」。貼り付け先はドロップダウンの値。</summary>
+        private void ExecutePasteSelectionFromLeftPane()
+        {
+            var dd = _layoutRoot?.PasteDestinationDropdown;
+            var destination = dd != null && dd.index == 1
+                ? Poly_Ling.Ops.SelectionPasteDestination.NewObject
+                : Poly_Ling.Ops.SelectionPasteDestination.ActiveObject;
+            ExecutePasteSelection(destination);
+        }
+
+        /// <summary>選択部分を同じオブジェクトへその場で複製し、頂点移動ツールへ切り替える（Shift+D）。</summary>
+        private void ExecuteDuplicateInPlace()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
+            string reason = DispatchFromPanel(new Poly_Ling.Data.DuplicateInPlaceCommand(
+                PanelModelIndex(), model.SelectedDrawableMeshIndices.ToArray()));
+            if (reason != null) { WarnIfFailed("その場で複製", reason); return; }
+            ShowCategory1Panel(InteractionMode.VertexMove);
+        }
+
+        private static void WarnIfFailed(string what, string reason)
+        {
+            if (reason != null) Debug.LogWarning($"[Clipboard] {what}できませんでした: {reason}");
+        }
+
         /// <summary>
         /// 面追加モードでの「直前の点の取り消し」。Delete / Backspace の共通処理。
         ///

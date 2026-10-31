@@ -1,6 +1,6 @@
 // ModifierInventory.cs
 // 生成コマンドを全件、モディファイアとしての型（A 単発・B 入力あり・C 組立）に分け、
-// グループに記録されるか・書き戻せるか・読む入力・逆方向を一覧にする。
+// スタックに記録されるか・書き戻せるか・読む入力・逆方向を一覧にする。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【何のために要るか】
@@ -35,7 +35,7 @@ namespace Poly_Ling.Data
             public string Category    = "";
             /// <summary>"A" / "B" / "C"。</summary>
             public string Kind        = "";
-            public PLGroupCapture Capture;
+            public PLStackCapture Capture;
             /// <summary>書き戻せるか（RebuildKeys.IsSupported）。</summary>
             public bool   Rebuild;
             /// <summary>書き戻し先のキー。書き戻せないときは空。</summary>
@@ -75,7 +75,7 @@ namespace Poly_Ling.Data
                     Action    = PanelCommandFactory.ActionOf(t),
                     TypeName  = t.Name,
                     Category  = cat,
-                    Capture   = modAttr?.Capture ?? PLGroupCapture.None,
+                    Capture   = modAttr?.Capture ?? PLStackCapture.None,
                     Inverse   = modAttr?.Inverse ?? "",
                     InverseOf = modAttr?.InverseOf ?? "",
                     InverseKeeps = modAttr?.InverseKeeps ?? "",
@@ -93,7 +93,7 @@ namespace Poly_Ling.Data
                 foreach (var mr in InputKeys(t))
                     e.Inputs.Add($"{mr.Key}({mr.Access})");
 
-                if (e.Capture == PLGroupCapture.Assembly) e.Kind = "C";
+                if (e.Capture == PLStackCapture.Assembly) e.Kind = "C";
                 else if (e.Inputs.Count > 0 || e.Profiles.Count > 0) e.Kind = "B";
                 else e.Kind = "A";
 
@@ -148,7 +148,7 @@ namespace Poly_Ling.Data
             foreach (var e in list)
             {
                 if (e.Kind == "A") a++; else if (e.Kind == "B") b++; else c++;
-                if (e.Capture != PLGroupCapture.None) captured++;
+                if (e.Capture != PLStackCapture.None) captured++;
                 if (e.Rebuild) rebuild++;
                 if (!string.IsNullOrEmpty(e.Inverse) || !string.IsNullOrEmpty(e.InverseOf)) inverse++;
             }

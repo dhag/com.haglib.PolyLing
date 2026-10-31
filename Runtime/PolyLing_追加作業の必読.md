@@ -85,6 +85,8 @@
 
 - **ボタンの `[UiControl]` には `Safety` が要る。** 無いと監査の「安全度未指定のボタン」に出る
   - `ReadOnly` 表示のみ / `SafeWrite` 戻せる / `Destructive` モデルを変える / `UserOnly` ダイアログ
+  - 左ペインにボタンを足すときも同じ。`PlayerLayoutRoot` のプロパティに `[UiControl(Safety = …)]` を付ける（ID はプロパティ名から作る）
+  - 左ペインで配列に入れて作るボタンやチェック（画面分割・表示のチェック）はプロパティの走査に掛からない。`RegisterLeftPaneUiAutomation` で個別に登録する
 - **`Refresh` は開くたびに呼ばれる。** 外部で変わるデータはここで読み直す
 
 ---
@@ -114,7 +116,7 @@
 | 元 | 手 |
 |---|---|
 | 検証パネル・手で撃った一連の操作 | `startScenarioRecording` → パネルを流す／撃つ（入れたくない操作は `pauseScenarioRecording` 〜 `resumeScenarioRecording` で挟む）→ `stopScenarioRecording` → `saveScenarioRecording(name)`（やめるなら `discardScenarioRecording`）。状態は `queryScenarioRecording`。シナリオパネルの「シナリオを記録する」でも同じことができる |
-| 生成系 1 本 | パネルを 1 回流してから `saveScenarioFromGroup` |
+| 生成系 1 本 | パネルを 1 回流してから `saveScenarioFromModifierStack` |
 
 記録は `Dispatch` の一番外側を通ったコマンドを、計算済みの引数ごと控える。
 **パネルの C# を読んで何を送ったか組み立て直す必要は無い。**
@@ -204,7 +206,7 @@ Instruction、「なぜ」が Note として入る。
 
 注意（Note）の項目は止まらずに読み飛ばす。別のシナリオを呼ぶ項目（ScenarioRef）では、
 呼ばれたシナリオをその場で流し、終わったら元のシナリオへ戻る。
-止める条件は `ObjectGroupStep.RequiresJudgment` の 1 か所だけにある。
+止める条件は `ModifierStackStep.RequiresJudgment` の 1 か所だけにある。
 
 いまの状態は `queryScenarioRun`、やめるのは `stopScenarioRun`。
 流す前に `queryScenarioAudit` を 0 にしておくこと。索引の直書きは、

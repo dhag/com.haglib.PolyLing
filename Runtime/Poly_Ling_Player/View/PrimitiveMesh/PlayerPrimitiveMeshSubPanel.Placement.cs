@@ -1,6 +1,6 @@
 // PlayerPrimitiveMeshSubPanel.Placement.cs
 // 図形生成サブパネル：生成物の置き方（位置・回転・拡大・焼き込み・追加先・材質・
-// 頂点結合・グループ保持）と、配置ギズモ・姿勢仮表示のチェック。
+// 頂点結合・モディファイアスタック保持）と、配置ギズモ・姿勢仮表示のチェック。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
 using System;
@@ -235,11 +235,11 @@ namespace Poly_Ling.Player
         private bool            _mergeDuplicateVertices = true;
 
         /// <summary>
-        /// 生成に使った入力とパラメータをオブジェクトグループとして残すか。既定 false。
+        /// 生成に使った入力とパラメータをモディファイアスタックとして残すか。既定 false。
         /// false（＝これまでのやり方）では生成後に何も残らないので、
         /// 作り直したいときは同じ操作をやり直すことになる。
         /// </summary>
-        private bool            _keepAsGroup = false;
+        private bool            _keepAsModifierStack = false;
 
         // 生成時の回転(度) / スケール（平行移動は従来どおり呼出し側が扱う）。
         // ベイク ON = 頂点へ焼き込む / OFF = 描画オブジェクトの姿勢(BoneTransform)へ入れる。
@@ -326,23 +326,23 @@ namespace Poly_Ling.Player
                 _poseFold.style.display  = usePose ? DisplayStyle.Flex : DisplayStyle.None;
             if (_materialDd != null)
                 _materialDd.style.display = useMaterial ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_keepAsGroupRow != null)
-                _keepAsGroupRow.style.display = UsesCommonKeepAsGroup ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_keepAsModifierStackRow != null)
+                _keepAsModifierStackRow.style.display = UsesCommonKeepAsModifierStack ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /// <summary>
-        /// 共通の「オブジェクトグループとして残す」（PrimitivePlacement.KeepAsGroup）を
+        /// 共通の「モディファイアスタックとして残す」（PrimitivePlacement.KeepAsModifierStack）を
         /// 今の図形が使うか。使わない図形では欄を隠す。
         ///
         /// 使う … 図形生成コマンドを通る図形（ディスパッチャ MeshAttributes の CreatePrimitiveMeshCommand）、
         ///         辺から帯面（EditTools の EdgeRibbonFaceCommand）、頂点へ藤壺（VertexBillboard）。
         /// 使わない …
         ///   歪み複製・穴つなぎ・点指定図形 … 図形生成コマンドを通らない。
-        ///   辺から帯面のパイプ … ディスパッチャが常にグループを作る（EdgePipe で true に差し替え）。
-        ///   揺れもの用ボーン鎖（単体・円筒・回転体）… PlaceSpringBoneChainsCommand はグループを作らない。
-        ///   はしごから作る揺れものボーン … 専用の項目（_sbLadderKeepAsGroup）を使う。
+        ///   辺から帯面のパイプ … ディスパッチャが常にスタックを作る（EdgePipe で true に差し替え）。
+        ///   揺れもの用ボーン鎖（単体・円筒・回転体）… PlaceSpringBoneChainsCommand はスタックを作らない。
+        ///   はしごから作る揺れものボーン … 専用の項目（_sbLadderKeepAsModifierStack）を使う。
         /// </summary>
-        private bool UsesCommonKeepAsGroup
+        private bool UsesCommonKeepAsModifierStack
         {
             get
             {
@@ -355,9 +355,9 @@ namespace Poly_Ling.Player
                     case ShapeKind.SpringBoneCylinder:
                     case ShapeKind.SpringBoneRevolution:
                     case ShapeKind.SpringBoneLadder:
-                    // 魔法陣は常に部品の並びを 1 件のグループとして残す。
+                    // 魔法陣は常に部品の並びを 1 件のモディファイアスタックとして残す。
                     case ShapeKind.MagicCircle:
-                    // 鉄塔も塔体とデッキの並びを 1 件のグループとして残す。
+                    // 鉄塔も塔体とデッキの並びを 1 件のモディファイアスタックとして残す。
                     case ShapeKind.LatticeTower:
                         return false;
                     case ShapeKind.EdgeRibbonFace:
@@ -382,9 +382,9 @@ namespace Poly_Ling.Player
         [UiControl(Ignore = true)]
         private Foldout _poseFold;
 
-        /// <summary>「オブジェクトグループとして残す」と警告の行。図形別に表示を切り替えるため保持する。</summary>
+        /// <summary>「モディファイアスタックとして残す」と警告の行。図形別に表示を切り替えるため保持する。</summary>
         [UiControl(Ignore = true)]
-        private VisualElement _keepAsGroupRow;
+        private VisualElement _keepAsModifierStackRow;
 
         // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
         // 姿勢欄そのものは V3FRef が _uiDynamic へ登録する。ここはプリセットからの書き戻し用の控え。

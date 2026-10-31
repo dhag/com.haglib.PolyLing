@@ -27,7 +27,7 @@ namespace Poly_Ling.UI
         /// Undo は 2 系統に分かれる。頂点変更は RecordTopologyChangeCommand
         /// （vertex/topology スタック）、メッシュ追加は RecordMeshContextsAdd
         /// （MeshList スタック）。追加を記録しないと Undo しても増えたメッシュが残る。
-        /// 記録を止めているとき（オブジェクトグループの作り直し）はどちらも積まない。
+        /// 記録を止めているとき（モディファイアスタックの作り直し）はどちらも積まない。
         ///
         /// 【基準（baseCtx）】作り直し整備計画 段 13
         ///   baseCtx を渡すと、ブレンド前の形（base）を宛先の今の形ではなく baseCtx の

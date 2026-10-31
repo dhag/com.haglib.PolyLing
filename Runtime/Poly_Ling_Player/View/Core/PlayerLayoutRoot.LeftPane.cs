@@ -18,7 +18,9 @@ namespace Poly_Ling.Player
         public ScrollView    LeftPaneScroll     { get; private set; }
 
         public Label         StatusLabel        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]   // 1 段戻すだけで、やり直しで戻せる
         public Button        UndoBtn            { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]   // 1 段やり直すだけで、取り消しで戻せる
         public Button        RedoBtn            { get; private set; }
         public VisualElement ModelListContainer  { get; private set; }
         public DropdownField ModelSelectDropdown { get; private set; }
@@ -71,6 +73,38 @@ namespace Poly_Ling.Player
         public const int VD_UNDERLAY     = 17;
         public const int VD_COUNT        = 18;
 
+        /// <summary>表示トグルの行の見出し（VD_* の順）。</summary>
+        public static readonly string[] ViewportDisplayItemLabels =
+        {
+            "カリング",
+            "選択Mesh",  "非選Mesh", "ミラー",
+            "ミラー面",  "ミラー辺", "ミラー頂点",
+            "選択辺",    "非選辺",
+            "選択頂点",  "非選頂点",
+            "選択Bone",  "非選Bone",
+            "選択M原点", "非選M原点", "ミラーM原点",
+            "法線",
+            "下絵",
+        };
+
+        /// <summary>表示トグルの UI 自動操作の項目名（VD_* の順。ID は leftPane.display.&lt;画面&gt;.&lt;これ&gt;）。</summary>
+        public static readonly string[] ViewportDisplayItemIds =
+        {
+            "culling",
+            "selMesh", "unselMesh", "unselMirror",
+            "unselMirrorMesh", "unselMirrorWire", "unselMirrorVert",
+            "selWire", "unselWire",
+            "selVert", "unselVert",
+            "selBone", "unselBone",
+            "selMeshOrigin", "unselMeshOrigin", "mirrorMeshOrigin",
+            "normal",
+            "underlay",
+        };
+
+        /// <summary>表示トグルの列（viewportSlot の順）の見出しと UI 自動操作の画面名。</summary>
+        public static readonly string[] ViewportDisplaySlotLabels = { "P", "T", "F", "S" };
+        public static readonly string[] ViewportDisplaySlotIds    = { "p", "t", "f", "s" };
+
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
 
@@ -117,6 +151,7 @@ namespace Poly_Ling.Player
         /// 要素（頂点/辺/面/線分）が未選択のときはローカル原点（ピボット）へ
         /// フォールバックする。押しても視点は動かない。
         /// </summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button OrbitCenterToSelectionBtn { get; private set; }
 
         // 選択モード切替（頂点/辺/面/線分・非排他）。SelectionState.Mode を設定する。
@@ -133,6 +168,7 @@ namespace Poly_Ling.Player
         public Toggle SelExpandLineToVertexToggle { get; private set; }
 
         /// <summary>左ペイン：現在のタブの全オブジェクトを選択する。処理はメッシュリスト側と同じ。</summary>
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        SelectAllObjectsBtn      { get; private set; }
 
         // ================================================================
@@ -317,19 +353,8 @@ namespace Poly_Ling.Player
             // 4ビューポート × VD_COUNT 項目のグリッド
             // 列: P=Perspective(slot0), T=Top(slot1), F=Front(slot2), S=Side(slot3)
             // 行: VD_* 定数の順序と一致させること。
-            var vpHeaders  = new string[] { "P", "T", "F", "S" };
-            var itemLabels = new string[]
-            {
-                "カリング",
-                "選択Mesh",  "非選Mesh", "ミラー",
-                "ミラー面",  "ミラー辺", "ミラー頂点",
-                "選択辺",    "非選辺",
-                "選択頂点",  "非選頂点",
-                "選択Bone",  "非選Bone",
-                "選択M原点", "非選M原点", "ミラーM原点",
-                "法線",
-                "下絵",
-            };
+            var vpHeaders  = ViewportDisplaySlotLabels;
+            var itemLabels = ViewportDisplayItemLabels;
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
             {

@@ -3,7 +3,7 @@
 // モデルへの追加と Undo は呼び出し側（PlayerCommandDispatcher の duplicateSelection）が持つ。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
-// 【何を写すか】
+// 【何を写すか】（Extract が正典。選択部分のコピー（SelectionClipboardOps）も同じ範囲を使う）
 //   ・選択された面（Selection.Faces）と線分（Selection.Lines）… 面そのものと、面が使う頂点。
 //     頂点 2 未満の面は写さない。
 //   ・選択された辺（Selection.Edges）
@@ -48,6 +48,30 @@ namespace Poly_Ling.Ops
         public int LinesFromEdges;
     }
 
+    /// <summary>
+    /// 選択部分を写し取った頂点と面（元と同じ格納空間）。元のメッシュは書き換えない。
+    /// </summary>
+    public sealed class SelectionExtract
+    {
+        /// <summary>写した頂点（元の複製。元の番号の小さい順）。</summary>
+        public List<Vertex> Vertices;
+
+        /// <summary>写した面（元の複製。頂点番号は写し先の番号）。辺から作った線分は末尾。</summary>
+        public List<Face> Faces;
+
+        /// <summary>元の頂点番号 → 写し先の頂点番号。</summary>
+        public Dictionary<int, int> VertexMap;
+
+        /// <summary>元の面番号 → 写し先の面番号（写した面と線分だけ。辺から作った線分は含まない）。</summary>
+        public Dictionary<int, int> FaceMap;
+
+        /// <summary>辺から新しく作った線分の数。</summary>
+        public int LinesFromEdges;
+
+        /// <summary>元のメッシュの頂点数。</summary>
+        public int SourceVertexCount;
+    }
+
     /// <summary>選択部分だけを別オブジェクトへ複製する。</summary>
     public static class SelectionDuplicateOps
     {
@@ -56,20 +80,16 @@ namespace Poly_Ling.Ops
             => src?.Selection != null && src.Selection.HasAnySelection;
 
         /// <summary>
-        /// 選択部分だけを持つ新しい MeshContext を作る。ObjectId は持たない（model.Add が振る）。
-        /// 写すものが無いときは null を返し、result.Reason に理由を入れる。
+        /// 選択部分の頂点と面を写し取る。写すものが無いときは null を返し、reason に理由を入れる。
+        /// 写す範囲は冒頭の【何を写すか】のとおり。
         /// </summary>
-        public static MeshContext Duplicate(
-            MeshContext src, bool edgesAsLines, string newName, out SelectionDuplicateResult result)
+        public static SelectionExtract Extract(
+            MeshObject mo, SelectionState sel, bool edgesAsLines, out string reason)
         {
-            result = new SelectionDuplicateResult { Success = false, Reason = "" };
-
-            var mo  = src?.MeshObject;
-            var sel = src?.Selection;
-            if (mo == null || sel == null) { result.Reason = "メッシュがありません"; return null; }
+            reason = "";
+            if (mo == null || sel == null) { reason = "メッシュがありません"; return null; }
 
             int n = mo.Vertices.Count;
-            int faceCount = mo.Faces.Count;
 
             // ── 写す面（面と線分）
             var faceSet = new SortedSet<int>();
@@ -107,7 +127,7 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            if (keep.Count == 0) { result.Reason = "写すものが選択されていません"; return null; }
+            if (keep.Count == 0) { reason = "写すものが選択されていません"; return null; }
 
             // ── 元番号 → 新番号
             var map = new Dictionary<int, int>(keep.Count);
@@ -118,16 +138,50 @@ namespace Poly_Ling.Ops
                 newVertices.Add(mo.Vertices[v].Clone());
             }
 
+            var faceMap  = new Dictionary<int, int>(faceSet.Count);
             var newFaces = new List<Face>(faceSet.Count + newLines.Count);
             foreach (int f in faceSet)
             {
                 var nf = mo.Faces[f].Clone();
                 for (int k = 0; k < nf.VertexIndices.Count; k++)
                     nf.VertexIndices[k] = map[nf.VertexIndices[k]];
+                faceMap[f] = newFaces.Count;
                 newFaces.Add(nf);
             }
             foreach (var e in newLines)
                 newFaces.Add(NewLineFace(map[e.V1], map[e.V2]));
+
+            return new SelectionExtract
+            {
+                Vertices          = newVertices,
+                Faces             = newFaces,
+                VertexMap         = map,
+                FaceMap           = faceMap,
+                LinesFromEdges    = newLines.Count,
+                SourceVertexCount = n,
+            };
+        }
+
+        /// <summary>
+        /// 選択部分だけを持つ新しい MeshContext を作る。ObjectId は持たない（model.Add が振る）。
+        /// 写すものが無いときは null を返し、result.Reason に理由を入れる。
+        /// assignMissingIds が false のときは頂点 ID・面 ID の欠けを埋めない。
+        /// </summary>
+        public static MeshContext Duplicate(
+            MeshContext src, bool edgesAsLines, string newName, out SelectionDuplicateResult result,
+            bool assignMissingIds = true)
+        {
+            result = new SelectionDuplicateResult { Success = false, Reason = "" };
+
+            var mo  = src?.MeshObject;
+            var sel = src?.Selection;
+            var ex  = Extract(mo, sel, edgesAsLines, out string reason);
+            if (ex == null) { result.Reason = reason; return null; }
+
+            int n = ex.SourceVertexCount;
+            var map = ex.VertexMap;
+            var newVertices = ex.Vertices;
+            var newFaces    = ex.Faces;
 
             // ── 丸ごと複製してから頂点と面を差し替える
             var dup = MeshContextCloneOps.Clone(src, MeshContextCloneKind.NewObject, newName);
@@ -140,7 +194,7 @@ namespace Poly_Ling.Ops
             dmo.NormalRecalcExcludeList = new List<PartsSelectionSet>();
             dmo.LineGroups              = new List<LineGroup>();
             dmo.RebuildIdSets();
-            dmo.AssignMissingIds();
+            if (assignMissingIds) dmo.AssignMissingIds();
 
             // 頂点番号に結びついた配列を、残した頂点に合わせて間引く。
             var removed = new HashSet<int>();
@@ -153,7 +207,7 @@ namespace Poly_Ling.Ops
             {
                 if (dup.OriginalPositions.Length == n)
                 {
-                    var op = new Vector3[keep.Count];
+                    var op = new Vector3[map.Count];
                     foreach (var kv in map) op[kv.Value] = dup.OriginalPositions[kv.Key];
                     dup.OriginalPositions = op;
                 }
@@ -169,7 +223,7 @@ namespace Poly_Ling.Ops
                 Reason         = "",
                 Vertices       = newVertices.Count,
                 Faces          = newFaces.Count,
-                LinesFromEdges = newLines.Count,
+                LinesFromEdges = ex.LinesFromEdges,
             };
             return dup;
         }

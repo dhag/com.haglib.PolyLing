@@ -1,5 +1,5 @@
 // ModelContext.Data.cs
-// ModelContext：モデル単位の付帯データ（モーフ式・選択辞書・オブジェクトグループ・データストア・
+// ModelContext：モデル単位の付帯データ（モーフ式・選択辞書・モディファイアスタック・データストア・
 // マテリアル・対称・ミラーペア・揺れもの・VRM・リターゲット・座標規約）。
 // Runtime/Poly_Ling_Main/Core/Context/ に配置
 
@@ -121,74 +121,74 @@ namespace Poly_Ling.Context
         }
 
         // ================================================================
-        // ObjectGroups（入力ソース＋生成パラメータ＋出力先のまとまり）
+        // ModifierStacks（入力ソース＋生成パラメータ＋出力先のまとまり）
         //
         // 【索引の付け替えが要らない理由】
-        //   ObjectGroup は参照を MeshContext.ObjectId で持つ。挿入・削除・並べ替えで
+        //   ModifierStack は参照を MeshContext.ObjectId で持つ。挿入・削除・並べ替えで
         //   値が変わらないので RemapIndexReferences の対象に入れない。
         //   MorphExpressions が索引参照ゆえに AdjustIndicesOnInsert/OnRemove という
         //   別経路を持っているのに対し、こちらはその経路自体が不要になる。
         //
         // 【削除時に勝手に消さない】
-        //   参照先の描画オブジェクトが消えてもグループはここへ残す。
-        //   RemoveAt の中で消すと、その削除は ObjectGroup の Undo レコードに
+        //   参照先の描画オブジェクトが消えてもスタックはここへ残す。
+        //   RemoveAt の中で消すと、その削除は ModifierStack の Undo レコードに
         //   載らないため Undo で戻せなくなる。参照切れは
         //   ModelInvariantChecker が報告し、後始末は明示操作
-        //   （ObjectGroupOps.PurgeMissing）で行う。
+        //   （ModifierStackOps.PurgeMissing）で行う。
         // ================================================================
 
-        /// <summary>オブジェクトグループのリスト。</summary>
-        public List<Poly_Ling.Data.ObjectGroup> ObjectGroups { get; set; }
-            = new List<Poly_Ling.Data.ObjectGroup>();
+        /// <summary>モディファイアスタックのリスト。</summary>
+        public List<Poly_Ling.Data.ModifierStack> ModifierStacks { get; set; }
+            = new List<Poly_Ling.Data.ModifierStack>();
 
-        /// <summary>オブジェクトグループ数</summary>
-        public int ObjectGroupCount => ObjectGroups?.Count ?? 0;
+        /// <summary>モディファイアスタック数</summary>
+        public int ModifierStackCount => ModifierStacks?.Count ?? 0;
 
-        /// <summary>オブジェクトグループがあるか</summary>
-        public bool HasObjectGroups => ObjectGroupCount > 0;
+        /// <summary>モディファイアスタックがあるか</summary>
+        public bool HasModifierStacks => ModifierStackCount > 0;
 
-        /// <summary>オブジェクトグループを追加する。</summary>
-        public void AddObjectGroup(Poly_Ling.Data.ObjectGroup group)
+        /// <summary>モディファイアスタックを追加する。</summary>
+        public void AddModifierStack(Poly_Ling.Data.ModifierStack group)
         {
             if (group == null) return;
-            if (ObjectGroups == null) ObjectGroups = new List<Poly_Ling.Data.ObjectGroup>();
-            ObjectGroups.Add(group);
+            if (ModifierStacks == null) ModifierStacks = new List<Poly_Ling.Data.ModifierStack>();
+            ModifierStacks.Add(group);
             IsDirty = true;
         }
 
-        /// <summary>オブジェクトグループを削除する。</summary>
-        public bool RemoveObjectGroup(Poly_Ling.Data.ObjectGroup group)
+        /// <summary>モディファイアスタックを削除する。</summary>
+        public bool RemoveModifierStack(Poly_Ling.Data.ModifierStack group)
         {
-            if (group == null || ObjectGroups == null) return false;
-            bool ok = ObjectGroups.Remove(group);
+            if (group == null || ModifierStacks == null) return false;
+            bool ok = ModifierStacks.Remove(group);
             if (ok) IsDirty = true;
             return ok;
         }
 
-        /// <summary>名前でオブジェクトグループを検索。見つからなければ null。</summary>
-        public Poly_Ling.Data.ObjectGroup FindObjectGroupByName(string name)
+        /// <summary>名前でモディファイアスタックを検索。見つからなければ null。</summary>
+        public Poly_Ling.Data.ModifierStack FindModifierStackByName(string name)
         {
-            if (ObjectGroups == null || string.IsNullOrEmpty(name)) return null;
-            return ObjectGroups.Find(g => g != null && g.Name == name);
+            if (ModifierStacks == null || string.IsNullOrEmpty(name)) return null;
+            return ModifierStacks.Find(g => g != null && g.Name == name);
         }
 
         /// <summary>
-        /// 出力先の ObjectId でオブジェクトグループを検索。見つからなければ null。
+        /// 出力先の ObjectId でモディファイアスタックを検索。見つからなければ null。
         /// どの項目の出力でも当たる（項目 0 に限らない）。
         /// </summary>
-        public Poly_Ling.Data.ObjectGroup FindObjectGroupByOutput(ulong objectId)
+        public Poly_Ling.Data.ModifierStack FindModifierStackByOutput(ulong objectId)
         {
-            if (ObjectGroups == null || objectId == 0UL) return null;
-            return ObjectGroups.Find(g => g != null && g.ContainsOutput(objectId));
+            if (ModifierStacks == null || objectId == 0UL) return null;
+            return ModifierStacks.Find(g => g != null && g.ContainsOutput(objectId));
         }
 
-        /// <summary>一意なオブジェクトグループ名を生成する（規則は選択セット名と同じ）。</summary>
-        public string GenerateUniqueObjectGroupName(string baseName = "Group")
+        /// <summary>一意なモディファイアスタック名を生成する（規則は選択セット名と同じ）。</summary>
+        public string GenerateUniqueModifierStackName(string baseName = "Group")
         {
             if (string.IsNullOrEmpty(baseName)) baseName = "Group";
             string name = baseName;
             int counter = 1;
-            while (FindObjectGroupByName(name) != null)
+            while (FindModifierStackByName(name) != null)
             {
                 name = $"{baseName}_{counter}";
                 counter++;
@@ -206,7 +206,7 @@ namespace Poly_Ling.Context
         //
         // 【索引の付け替えが要らない理由】
         //   項目は対象を MasterIndex と ObjectId の両方で持つ。並べ替えの後は
-        //   ObjectId で引き直せるので、ObjectGroups と同じく
+        //   ObjectId で引き直せるので、ModifierStacks と同じく
         //   RemapIndexReferences の対象に入れない。
         //
         // 【差し替えない】

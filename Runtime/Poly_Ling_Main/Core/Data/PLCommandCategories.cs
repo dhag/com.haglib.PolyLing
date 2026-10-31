@@ -46,7 +46,7 @@ namespace Poly_Ling.Data
             Pair("mirror",                     "ミラーの設定・焼き込み・対称化"),
             Pair("object.list",                "オブジェクトの追加・削除・複製・並べ替え・親子・統合"),
             Pair("object.attribute",           "オブジェクト単位の属性（表示・ロック・名前・原点など）"),
-            Pair("object.group",               "オブジェクトグループの管理"),
+            Pair("object.modifier",               "モディファイアスタックの管理"),
             Pair("object.model",               "モデルの切替・削除・初期化"),
             Pair("rig.skeleton",               "ボーンの階層操作"),
             Pair("rig.skeleton.pose",          "ポーズ・バインドポーズ・T ポーズ"),

@@ -1,12 +1,12 @@
 // ScenarioLibrary.cs
-// シナリオのオブジェクトグループ（手順の知識）の置き場。
+// シナリオのモディファイアスタック（手順の知識）の置き場。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【なぜモデルの外に置くか】
-//   ModelContext.ObjectGroups に入れたものは、モデルと一緒に保存され、
+//   ModelContext.ModifierStacks に入れたものは、モデルと一緒に保存され、
 //   Undo で差し替えられ（MeshListRecords）、参照の生存を検査され
-//   （ModelInvariantChecker.CheckObjectGroupReferences）、参照先を全て失うと
-//   消される（ObjectGroupOps.PurgeMissing）。
+//   （ModelInvariantChecker.CheckModifierStackReferences）、参照先を全て失うと
+//   消される（ModifierStackOps.PurgeMissing）。
 //   シナリオは実体を持たないので、同じリストへ入れるとこの 3 か所すべてに
 //   「シナリオは除く」という例外が要る。置き場を分ければ例外は 1 つも要らない。
 //
@@ -16,9 +16,9 @@
 //   DisplaySettings / ParameterLimits と同じく persistentDataPath へ置く。
 //
 // 【型は分けない】
-//   中身は ObjectGroup そのもの。実体付きとの違いは置き場と、
+//   中身は ModifierStack そのもの。実体付きとの違いは置き場と、
 //   参照（MeshRefIds / OutputObjectIds）が埋まっているかどうかだけ。
-//   型を分けると項目列の器が 2 つになり、ObjectGroupOps.CaptureStep の
+//   型を分けると項目列の器が 2 つになり、ModifierStackOps.CaptureStep の
 //   出力先も 2 つになる。
 //
 // 【原本を渡さない】
@@ -28,9 +28,9 @@
 // 【保存先】
 //   <persistentDataPath>/PolyLing/scenarios/<フォルダ>/<名前>.csv
 //   1 シナリオ 1 ファイル。フォルダは何階層でもよく、置き場所（整理）だけを表す。
-//   どのフォルダにあるかは、読んだファイルの場所で決まる（ObjectGroup には持たせない）。
+//   どのフォルダにあるかは、読んだファイルの場所で決まる（ModifierStack には持たせない）。
 //   名前は全フォルダを通して一意。親は名前で子を引くので、フォルダを移しても参照は切れない。
-//   形式は objectgroups.csv と同じ（ObjectGroupCsv が正典）。
+//   形式は modifierstacks.csv と同じ（ModifierStackCsv が正典）。
 //
 // 【フォルダと親子】
 //   フォルダ＝置き場所（1 本は 1 か所。順番を持たない）。
@@ -51,7 +51,7 @@ using Poly_Ling.Serialization;
 
 namespace Poly_Ling.Data
 {
-    /// <summary>シナリオのオブジェクトグループの置き場。</summary>
+    /// <summary>シナリオのモディファイアスタックの置き場。</summary>
     public static class ScenarioLibrary
     {
         private const string LogTag  = "[ScenarioLibrary]";
@@ -59,7 +59,7 @@ namespace Poly_Ling.Data
 
         private const string Ext     = ".csv";
 
-        private static List<ObjectGroup> _items;
+        private static List<ModifierStack> _items;
         /// <summary>シナリオの名前 → 置いているファイル（scenarios からの相対パス。区切りは '/'）。</summary>
         private static Dictionary<string, string> _fileOf;
         /// <summary>ディスク上のフォルダ（空のものも含む。scenarios からの相対。区切りは '/'）。</summary>
@@ -111,7 +111,7 @@ namespace Poly_Ling.Data
         /// <summary>_items・_fileOf・_folders をディスクから作り直す。旧形式なら先に移す。</summary>
         private static void ReadAll()
         {
-            _items   = new List<ObjectGroup>();
+            _items   = new List<ModifierStack>();
             _fileOf  = new Dictionary<string, string>(StringComparer.Ordinal);
             _folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -132,8 +132,8 @@ namespace Poly_Ling.Data
 
                 foreach (var path in files)
                 {
-                    List<ObjectGroup> list;
-                    try { list = ObjectGroupCsv.Parse(File.ReadAllLines(path, Encoding.UTF8)); }
+                    List<ModifierStack> list;
+                    try { list = ModifierStackCsv.Parse(File.ReadAllLines(path, Encoding.UTF8)); }
                     catch (Exception e)
                     {
                         Debug.LogError($"{LogTag} 読み込みに失敗しました: {path}: {e.Message}");
@@ -154,7 +154,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>読んだシナリオを足す。名前が重なると Find がどちらを返すか決まらない。後から来た方を落とす。</summary>
-        private static bool AddLoaded(ObjectGroup g, string file, string source)
+        private static bool AddLoaded(ModifierStack g, string file, string source)
         {
             if (g == null || string.IsNullOrEmpty(g.Name) || _fileOf.ContainsKey(g.Name))
             {
@@ -168,7 +168,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>旧形式の「複数入りのファイル」を、拡張子を除いた名前のフォルダへ 1 本ずつ分ける。元は .bak にする。</summary>
-        private static void SplitBundleFile(string path, List<ObjectGroup> list)
+        private static void SplitBundleFile(string path, List<ModifierStack> list)
         {
             string fileRel = ToRel(path);
             string parent  = FolderOfFile(fileRel);
@@ -203,7 +203,7 @@ namespace Poly_Ling.Data
         /// <summary>旧 scenarios.csv をシナリオごとのファイルへ分け、旧ファイルは .bak へ名前を変える。</summary>
         private static void MigrateLegacy()
         {
-            var list = ObjectGroupCsv.Parse(File.ReadAllLines(LegacyFile, Encoding.UTF8));
+            var list = ModifierStackCsv.Parse(File.ReadAllLines(LegacyFile, Encoding.UTF8));
             bool ok = true;
             Directory.CreateDirectory(FolderName);
             foreach (var g in list)
@@ -226,14 +226,14 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>1 本を自分のファイルへ書く。</summary>
-        private static bool WriteOne(ObjectGroup g)
+        private static bool WriteOne(ModifierStack g)
         {
             if (g == null || !_fileOf.TryGetValue(g.Name, out var file)) return false;
             try
             {
                 string path = ToAbs(file);
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, ObjectGroupCsv.Build(new List<ObjectGroup> { g }, Header), Encoding.UTF8);
+                File.WriteAllText(path, ModifierStackCsv.Build(new List<ModifierStack> { g }, Header), Encoding.UTF8);
                 return true;
             }
             catch (Exception e)
@@ -550,7 +550,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>名前で引いて複製を返す。無ければ null。</summary>
-        public static ObjectGroup Get(string name)
+        public static ModifierStack Get(string name)
         {
             var found = FindInternal(name);
             return found?.Clone();
@@ -560,15 +560,15 @@ namespace Poly_Ling.Data
         public static bool Contains(string name) => FindInternal(name) != null;
 
         /// <summary>全件の複製を返す。</summary>
-        public static List<ObjectGroup> GetAll()
+        public static List<ModifierStack> GetAll()
         {
             EnsureLoaded();
-            var list = new List<ObjectGroup>(_items.Count);
+            var list = new List<ModifierStack>(_items.Count);
             foreach (var g in _items) list.Add(g.Clone());
             return list;
         }
 
-        private static ObjectGroup FindInternal(string name)
+        private static ModifierStack FindInternal(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             EnsureLoaded();
@@ -651,7 +651,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>シナリオの検索で照合する本文。目的・札・満たすべきこと・引数の名前と説明・項目の目的とコマンド名。</summary>
-        public static string SearchText(ObjectGroup g)
+        public static string SearchText(ModifierStack g)
         {
             if (g == null) return "";
             var sb = new StringBuilder();
@@ -723,10 +723,10 @@ namespace Poly_Ling.Data
             public int Depth;
 
             /// <summary>項目そのもの（複製）。</summary>
-            public ObjectGroupStep Step;
+            public ModifierStackStep Step;
         }
 
-        private static ObjectGroup FindIn(List<ObjectGroup> items, string name)
+        private static ModifierStack FindIn(List<ModifierStack> items, string name)
         {
             if (items == null || string.IsNullOrEmpty(name)) return null;
             for (int i = 0; i < items.Count; i++)
@@ -770,7 +770,7 @@ namespace Poly_Ling.Data
         /// 子の ${名前} は結ばれた値（親の ${名前} のこともある）に置き換わる。
         /// </param>
         private static bool Walk(
-            List<ObjectGroup> items, string name, int depth,
+            List<ModifierStack> items, string name, int depth,
             List<string> path, List<FlatStep> into, out string error,
             bool bindParams = false, IReadOnlyDictionary<string, string> bound = null)
         {
@@ -835,14 +835,14 @@ namespace Poly_Ling.Data
         /// </summary>
         /// <param name="overwrite">同名があるとき差し替えるか。false なら失敗。</param>
         /// <param name="folder">置くフォルダ。null なら、既存のシナリオは今の場所のまま、新しいシナリオは直下。空文字は直下。</param>
-        public static bool Register(ObjectGroup group, bool overwrite, out string error, string folder = null)
+        public static bool Register(ModifierStack group, bool overwrite, out string error, string folder = null)
         {
             error = null;
 
             if (group == null)                     { error = "シナリオがありません";       return false; }
             if (string.IsNullOrEmpty(group.Name))  { error = "シナリオの名前が空です";     return false; }
 
-            // ObjectGroup.IsValid は「項目が 1 つ以上ある」ことも要求するが、
+            // ModifierStack.IsValid は「項目が 1 つ以上ある」ことも要求するが、
             // シナリオは項目 0 個から組み始める。ここでは各項目の中身だけを見る。
             if (group.Steps != null)
             {
@@ -869,7 +869,7 @@ namespace Poly_Ling.Data
 
                 // 参照先の不在と循環は、入れる前に見る。入れてしまうと
                 // TryFlatten が回らなくなり、直す口も参照で詰まる。
-                var probe = new List<ObjectGroup>(_items);
+                var probe = new List<ModifierStack>(_items);
                 if (at >= 0) probe[at] = copy;
                 else         probe.Add(copy);
 
@@ -954,7 +954,7 @@ namespace Poly_Ling.Data
         // 書き出し・取り込み（別ファイルとの出し入れ）
         // ================================================================
         //
-        // 形式は置き場のファイルと同じ（ObjectGroupCsv が正典）。
+        // 形式は置き場のファイルと同じ（ModifierStackCsv が正典）。
         // 書き出しは参照先のシナリオも一緒に入れる。そのファイルだけで参照が切れずに取り込めるように。
         // 取り込みはファイルのシナリオをまとめて検査し、1 本でも問題があれば何も登録しない。
 
@@ -998,7 +998,7 @@ namespace Poly_Ling.Data
                     }
                 }
 
-                var list = new List<ObjectGroup>();
+                var list = new List<ModifierStack>();
                 foreach (var g in _items)
                 {
                     if (!want.Contains(g.Name)) continue;
@@ -1007,7 +1007,7 @@ namespace Poly_Ling.Data
                 }
                 if (list.Count == 0) { error = "書き出すシナリオがありません"; return false; }
 
-                csv = ObjectGroupCsv.Build(list, Header);
+                csv = ModifierStackCsv.Build(list, Header);
             }
             return true;
         }
@@ -1026,10 +1026,10 @@ namespace Poly_Ling.Data
             error = null;
 
             var lineList = lines as IList<string> ?? new List<string>(lines ?? Array.Empty<string>());
-            if (!ObjectGroupCsv.TryValidate(lineList, out error)) return false;
+            if (!ModifierStackCsv.TryValidate(lineList, out error)) return false;
 
-            List<ObjectGroup> incoming;
-            try { incoming = ObjectGroupCsv.Parse(lineList); }
+            List<ModifierStack> incoming;
+            try { incoming = ModifierStackCsv.Parse(lineList); }
             catch (Exception e) { error = $"シナリオとして読めません: {e.Message}"; return false; }
             if (incoming == null || incoming.Count == 0) { error = "シナリオが入っていません"; return false; }
 
@@ -1064,8 +1064,8 @@ namespace Poly_Ling.Data
                 }
 
                 // 取り込んだ後の姿を作って、全部の参照が辿れるかを見る。
-                var probe = new List<ObjectGroup>(_items);
-                var copies = new List<ObjectGroup>();
+                var probe = new List<ModifierStack>(_items);
+                var copies = new List<ModifierStack>();
                 foreach (var g in incoming)
                 {
                     var copy = g.Clone();

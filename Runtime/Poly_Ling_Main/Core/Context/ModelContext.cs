@@ -4,7 +4,7 @@
 // v1.3: MeshListUndoContext統合（複数選択、Undoコールバック対応）
 //
 // 【分割先】このファイルから次へ分けてある。
-//   ModelContext.Data.cs       ModelContext：モデル単位の付帯データ（モーフ式・選択辞書・オブジェクトグループ・データストア・
+//   ModelContext.Data.cs       ModelContext：モデル単位の付帯データ（モーフ式・選択辞書・モディファイアスタック・データストア・
 //   ModelContext.Highlight.cs  ModelContext：揺れもの編集の強調表示と Humanoid ボーンマッピング。
 //   ModelContext.MeshList.cs   ModelContext：メッシュリスト操作・全体操作・複製・バウンディングボックス・ワールド変換行列。
 //   ModelContext.Selection.cs  ModelContext：選択操作（カテゴリ対応）と、リスト構造変更に伴う索引参照の付け替え。

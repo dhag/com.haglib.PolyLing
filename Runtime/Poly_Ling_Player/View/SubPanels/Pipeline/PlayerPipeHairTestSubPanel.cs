@@ -3,7 +3,7 @@
 //   球を生成 → 下半分と後ろ半分を削除して四分球にする
 //   → 頭頂に開始タグ三角形、各房の最下段に終了三角形を足す
 //   → 断面プロファイル（正八角形を Y 方向 0.25 倍）を描画オブジェクトとして作る
-//   → 梯子を自動検出（20 本）→ パイプを生成（グループとして残す）
+//   → 梯子を自動検出（20 本）→ パイプを生成（モディファイアスタックとして残す）
 //   → 毛先を前へ垂らす → 要更新の検出 → 作り直す
 // までを流す。共通部は PlayerBeltGroupTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
@@ -83,7 +83,7 @@ namespace Poly_Ling.Player
 
         protected override string NoteText =>
             "球 → 四分球（下半分・後ろ半分を削除）→ 開始タグ／終了三角形を追加\n"
-          + "→ 断面プロファイル（描画オブジェクト）→ 梯子を自動検出 → パイプ生成（グループとして保持）\n"
+          + "→ 断面プロファイル（描画オブジェクト）→ 梯子を自動検出 → パイプ生成（モディファイアスタックとして保持）\n"
           + "→ 毛先を動かす → 要更新の検出 → 作り直し、までを通しで流します。";
 
         protected override string SourceObjectName  => HeadName;
@@ -148,10 +148,10 @@ namespace Poly_Ling.Player
             stages.Add(("8. 描画オブジェクトから断面を取り込む",           StageImportProfile));
             stages.Add(("9. 梯子を自動検出して本数を検査",    StageDetectLadders));
             stages.Add(("10. 四分球を梯子にしてパイプを生成", StageCreatePipe));
-            stages.Add(("11. グループが出来たか検査",         StageVerifyGroup));
+            stages.Add(("11. スタックが出来たか検査",         StageVerifyGroup));
             stages.Add(("12. ソース（四分球）を編集",         StageEditSource));
             stages.Add(("13. 要更新になったか検査",           StageVerifyStale));
-            stages.Add(("14. グループを作り直す",             StageRebuild));
+            stages.Add(("14. スタックを作り直す",             StageRebuild));
             stages.Add(("15. 作り直しの結果を検査",           StageVerifyRebuild));
         }
 
@@ -176,7 +176,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode                = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup            = false;
+            pl.KeepAsModifierStack            = false;
             pl.MergeDuplicateVertices = true;   // 極の四角形を三角形へ畳むために要る
 
             SendCommand(new CreateSphereCommand(ModelIndex, prms, pl));
@@ -509,7 +509,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = true;   // ← ここがグループを残す指定
+            pl.KeepAsModifierStack = true;   // ← ここがスタックを残す指定
 
             SendCommand(new CreatePipeCommand(
                 ModelIndex, pp,
@@ -531,7 +531,7 @@ namespace Poly_Ling.Player
               + $"CreatePipeCommand を送った。スプライン分割 {spline.Segments}（rung {rungBefore} → 約 {rungAfter}）、"
               + $"蓋={(capEnds ? "張る" : "張らない")}、取り込み方=はしごの自動検索、取り込み元は索引 {SourceIndex}",
                 "図形生成パネル → パイプ → 「はしごを自動検索」→ 断面を取り込む "
-              + "→ スプライン分割をオンにする → 『オブジェクトグループとして残す』をオン → 生成",
+              + "→ スプライン分割をオンにする → 『モディファイアスタックとして残す』をオン → 生成",
                 "rung 数は (点数-1)×(段間の補間数+1)+1 で増える。起点と終了点を制御点に含めるので"
               + "点数は梯子の rung 数＋2 になる。"
               + "断面座標は rung 長で正規化された系。x が rung 方向、y が帯の法線方向で、"
@@ -545,7 +545,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 毛先を前へ垂らす。位置はここで計算し、書き込みは SetVertexPositionsCommand に通す。
-        /// 確かめたいのは「ソースが変わったことをグループが気づけるか」。
+        /// 確かめたいのは「ソースが変わったことをスタックが気づけるか」。
         /// </summary>
         protected override StageResult StageEditSource()
         {
@@ -588,7 +588,7 @@ namespace Poly_Ling.Player
               + $"（{(frontIsMinusZ ? "−Z" : "+Z")} 方向 / 下ほど強く）",
                 "ビューポートで四分球を選び、移動や曲げのツールで毛先を前へ倒すのと同じ",
                 "ここで動かしたのは入力（四分球）だけ。パイプの出力先はまだ古い形のまま。"
-              + "グループはこの食い違いを見つけられるはず、というのが次の段の検査。");
+              + "スタックはこの食い違いを見つけられるはず、というのが次の段の検査。");
         }
     }
 }

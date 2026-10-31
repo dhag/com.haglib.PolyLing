@@ -87,12 +87,12 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// オブジェクトグループの項目の断面で作業空間を開く（作り直し整備計画 段 6「断面の線分 → 断面」）。
+    /// モディファイアスタックの項目の断面で作業空間を開く（作り直し整備計画 段 6「断面の線分 → 断面」）。
     /// 項目の断面から線分の代理を作り、反映で代理の線分を断面として読み（逆方向）、項目の引数へ書いて
     /// 作り直す（下流も流れる。Undo 1 回）。取消しは項目の断面から代理を作り直す。閉じると代理を消す。
     /// </summary>
     [PLCommand(Category = "geometry.create.profile", Writes = PLWriteScope.AddOnly,
-        Description = "オブジェクトグループの項目が控えた断面（回転体・2D押し出し・フリル A/B・パイプ）で作業空間を開く。項目の断面から線分の代理を作って正対させ、applyEditSpace で代理の線分を断面として読み直して項目の引数へ書き、その項目と下流を作り直す（Undo 1 回）。cancelEditSpace は項目の断面から代理を作り直す。closeEditSpace で代理を消す。断面を線分オブジェクトから取り込んでいる項目は対象外（その線分を編集すれば追随する）。")]
+        Description = "モディファイアスタックの項目が控えた断面（回転体・2D押し出し・フリル A/B・パイプ）で作業空間を開く。項目の断面から線分の代理を作って正対させ、applyEditSpace で代理の線分を断面として読み直して項目の引数へ書き、その項目と下流を作り直す（Undo 1 回）。cancelEditSpace は項目の断面から代理を作り直す。closeEditSpace で代理を消す。断面を線分オブジェクトから取り込んでいる項目は対象外（その線分を編集すれば追随する）。")]
     [PLResult("isOpen",            PLResultKind.Flag,    Description = "作業空間が開いているか")]
     [PLResult("kind",              PLResultKind.Text,    Description = "作業空間の種類（revolution / profile2d / frillA / frillB / pipe）")]
     [PLResult("sourceMasterIndex", PLResultKind.Integer, Description = "-1（元データは項目の引数）")]
@@ -100,21 +100,21 @@ namespace Poly_Ling.Data
     [PLResult("locked",            PLResultKind.Flag,    Description = "ビルボードをロック中か")]
     [PLResult("hasChanges",        PLResultKind.Flag,    Description = "未反映の変更があるか")]
     [PLResult("faces",             PLResultKind.Integer, Description = "代理の線分の数")]
-    public sealed class OpenGroupProfileEditSpaceCommand : PanelCommand
+    public sealed class OpenModifierStackProfileEditSpaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
         [PLParam(Description = "断面の種類。revolution / profile2d / frillA / frillB / pipe", Required = true)]
         public string Kind { get; }
 
-        public OpenGroupProfileEditSpaceCommand(int modelIndex, string groupName, int stepIndex, string kind)
+        public OpenModifierStackProfileEditSpaceCommand(int modelIndex, string stackName, int stepIndex, string kind)
             : base(modelIndex)
         {
-            GroupName = groupName;
+            StackName = stackName;
             StepIndex = stepIndex;
             Kind      = kind ?? "";
         }

@@ -8,7 +8,7 @@
 // 【分割先】このファイルから次へ分けてある。
 //   CsvModelSerializer.EditorCsv.cs  CSV モデル入出力：editorstate・workplane・workaxis・メッシュエントリの読み込み・TPoseBackup。
 //   CsvModelSerializer.ModelCsv.cs   CSV モデル入出力：model.csv・materials.csv・materialprops.csv・humanoid.export.csv・morphgroups.csv。
-//   CsvModelSerializer.StoreCsv.cs   CSV モデル入出力：meshselsets.csv・datastore.csv・objectgroups.csv・mirrorpairs.csv。
+//   CsvModelSerializer.StoreCsv.cs   CSV モデル入出力：meshselsets.csv・datastore.csv・modifierstacks.csv・mirrorpairs.csv。
 //   CsvModelSerializer.Texture.cs    CSV モデル入出力：テクスチャの保存・読み込みとユーティリティ。
 //   CsvModelSerializer.VrmCsv.cs     CSV モデル入出力：springbonegroups・vrmmeta・vrmlookat・coordinate・avatarsettings・previewsettings。
 //   ModelEntry.cs                    モデルフォルダ内のメッシュエントリ（CsvModelSerializer から分離）。
@@ -165,11 +165,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             else
                 DeleteIfExists(modelFolderPath, "meshselsets.csv");
 
-            // objectgroups.csv
-            if (model.ObjectGroups != null && model.ObjectGroups.Count > 0)
-                WriteObjectGroupsCsv(modelFolderPath, model);
+            // modifierstacks.csv
+            if (model.ModifierStacks != null && model.ModifierStacks.Count > 0)
+                WriteModifierStacksCsv(modelFolderPath, model);
             else
-                DeleteIfExists(modelFolderPath, "objectgroups.csv");
+                DeleteIfExists(modelFolderPath, "modifierstacks.csv");
 
             // datastore.csv（コマンドが返した実データの辞書）
             //   空のときはファイルを消す。残しておくと、前回の保存で作られた
@@ -261,7 +261,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // model.csv が無いフォルダはモデルのフォルダではない。
             // entry 行が 0 件なのはメッシュ 0 個のモデル（createEmptyModel で作れる正しい状態）なので、
-            // 落とさずに読み進める。ここで null を返すと、材質・オブジェクトグループなど
+            // 落とさずに読み進める。ここで null を返すと、材質・モディファイアスタックなど
             // メッシュ以外のファイルごとモデルがプロジェクトから消える。
             if (!File.Exists(modelCsvPath)) return null;
 
@@ -405,8 +405,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // meshselsets.csv
             ReadMeshSelSetsCsv(modelFolderPath, model);
 
-            // objectgroups.csv
-            ReadObjectGroupsCsv(modelFolderPath, model);
+            // modifierstacks.csv
+            ReadModifierStacksCsv(modelFolderPath, model);
 
             // datastore.csv
             ReadDataStoreCsv(modelFolderPath, model);

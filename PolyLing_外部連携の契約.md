@@ -4,7 +4,7 @@ Python・ブラウザ・mocopi アプリなど、PolyLing の外のプログラ�
 ここに書いた形が正本で、外側の実装はこれに合わせる。C# 側の型名・ファイル名は各節に書いた。
 PLR 系バイナリ（`project_header`・`mesh_data` など）・CSV・ProjectDTO の形そのものはこの文書の範囲外（モデル丸ごとの受け渡し〔ModelDTO の JSON＋embeddedTextures〕は 3.6、Blender アドオンでの `.mfproj`・CSV フォルダの読み書きの決まりは 7）。
 
-最終更新：2026-10-26（§2 Binary フレームの封筒、§3.2 照会 model_bundle・project_bundle、§3.6 をモデルの受け渡しに書き直し、§7b のデータの受け渡し）／2026-10-20（§3.7 に saveMotionClipJson、元ファイルの持ち主）／2026-10-20（§5.2 Blender とモーションを行き来させる 2 つの道筋）／2026-10-20（§3.7 モーションの受け渡し〔loadMotionClipJson・queryMotionClipJson、Blender ブリッジの送信・取得〕）／2026-10-20（Blender アドオン PolyLing IO：§5 に rotationSource、§5.1 Blender との対応、§7 プロジェクトの読み書き。旧 §7 は §8）／2026-10-11（モーション version 4：bakedBones を正準に固定、lookAt を追加、sourceRest を廃止）／2026-10-06（Root を body トラックに統一、sourceRest を基準姿勢の正本に、detectImage を要求応答に、コマンド応答の共通化とエラーコード、クライアントへの要求）
+最終更新：2026-10-31（§5 モーション version 5：編集の構造 edit）／2026-10-26（§2 Binary フレームの封筒、§3.2 照会 model_bundle・project_bundle、§3.6 をモデルの受け渡しに書き直し、§7b のデータの受け渡し）／2026-10-20（§3.7 に saveMotionClipJson、元ファイルの持ち主）／2026-10-20（§5.2 Blender とモーションを行き来させる 2 つの道筋）／2026-10-20（§3.7 モーションの受け渡し〔loadMotionClipJson・queryMotionClipJson、Blender ブリッジの送信・取得〕）／2026-10-20（Blender アドオン PolyLing IO：§5 に rotationSource、§5.1 Blender との対応、§7 プロジェクトの読み書き。旧 §7 は §8）／2026-10-11（モーション version 4：bakedBones を正準に固定、lookAt を追加、sourceRest を廃止）／2026-10-06（Root を body トラックに統一、sourceRest を基準姿勢の正本に、detectImage を要求応答に、コマンド応答の共通化とエラーコード、クライアントへの要求）
 
 ---
 
@@ -237,13 +237,14 @@ Blender ブリッジ（`polyling_io/blender/bridge.py`）の決まり：
 保存・受け渡しの形式はこれ 1 つ（旧 UnityMotionSamples と MotionDTO の JSON は廃止）。
 
 ```
-{"format":"PolyLingMotion","version":4,"name":"…","frameRate":30,"duration":秒,"space":"local","loop":false,
+{"format":"PolyLingMotion","version":5,"name":"…","frameRate":30,"duration":秒,"space":"local","loop":false,
  "bones":[トラック…], "bakedBones":[トラック…], "body":トラック|null,
  "lookAt":トラック|null, "lookAtOffsetFromHeadBone":[x,y,z]|null, "absentMuscles":"zero"|"rest"|null,
  "rotationSource":"muscles"|"bakedBones"|null,
  "muscles":[{"name":"<HumanTrait.MuscleName>","keys":[{"t":秒,"v":値,"tan":…?}], "preWrapMode":…, "postWrapMode":…}],
  "expressions":[{"name":"…","category":…,"provider":…,"path":…?,"keys":[…]}],
- "metadata":{"author":…,"description":…,"createdWith":…}}
+ "metadata":{"author":…,"description":…,"createdWith":…},
+ "edit":編集の構造|null}
 ```
 トラック：`{"id":"…","targetKind":"…","keys":[{"t":秒,"pos":[3]?,"rot":[4]?,"scl":[3]?,"posTan":…,"rotTan":…,"sclTan":…}],"preWrapMode":…,"postWrapMode":…}`
 
@@ -266,9 +267,39 @@ Blender ブリッジ（`polyling_io/blender/bridge.py`）の決まり：
 - `sourceRest`（基準姿勢）と UnityBone CSV は version 4 で廃止。読込時に `sourceRest` があれば捨てて警告する。
 - version 1〜3 の `bakedBones` は意味が正準と限らないため、読込時に捨てて警告する。
 - 接線（tan）の無いキーは線形（回転は Slerp）。評価規則の正本は `Motion/MotionCurveMath.cs`。
-- 読み込みは version 1〜3 を 4 へ引き上げる。書き出しは常に version 4。
+- 読み込みは version 1〜4 を 5 へ引き上げる。書き出しは常に version 5。version 4 以前のファイルに `edit` があれば捨てて警告する。
 - 検査規則の正本は `Motion/MotionClipSerializer.cs`（Validate）。
 - モーションスタジオ（`データとツール/VRMビュワー/polyling_motion_studio/timeline.html`）も同じ規則に従う（PolyLing_VRMA整備計画.md 段 ⑦ で対応）。
+
+**編集の構造 `edit`（version 5。`MotionEditDTO`。PolyLing_モーション編集構造計画.md）**
+
+```
+"edit":{"tracks":[{"id":"…","role":"…","targetKind":"…"?,"target":"…","name":"…","uname":…?,"category":…?,"provider":…?,
+                   "preWrapMode":…?,"postWrapMode":…?,
+                   "clips":[{"id":"…","name":"…","start":フレーム,"len":フレーム,"loop":bool,"weight":0〜1,
+                             "rot":[{"f":フレーム,"v":[x,y,z,w],"tan":[4]?,"t0":秒?}]?,"pos":[{"f","v":[3],"tan":[3]?,"t0"?}]?,
+                             "scl":[同じ]?,"w":[{"f","v":値,"tan":接線?,"t0"?}]?}]}],
+        "bundles":[{"id":"…","name":"…","clipIds":[…],"childIds":[…],"parentId":"…"?,
+                    "layer":{"mode":"override"|"additive","weight":0〜1,"mute":bool,"solo":bool}?}]}
+```
+
+- Motion Studio のトラック・クリップ・バンドル・レイヤーの保存する欄。時刻はフレーム（`frameRate`）。`f` はクリップの先頭からのフレーム、`t0` は読み込んだときの元の秒。表示だけの欄（色・展開・表示の種類・グループ・畳み）は持たない。
+- 平らなトラック（`bones` など）は `edit` を評価した結果で、再生はこれを使う。`edit` は任意（無ければ今までと同じ）。
+- 対応：`edit` のトラック 1 本は `(role, targetKind, target)` で平らなトラック 1 本に当たる。`role` が `bones` は `bones` の id と targetKind、`bakedBones` は `bakedBones` の id、`body`・`lookAt` は `body`・`lookAt`（target は `"body"`・`"lookAt"`）、`expressions` は `expressions` の name（path の無いもの）、`muscles` は `muscles` の name。平らなトラックに `edit` の当たらないものがあってもよい。
+- チャンネル：`role` が `bones`・`bakedBones`・`body`・`lookAt` のクリップは `rot`・`pos`・`scl`、`expressions`・`muscles` は `w`。キーがクリップの長さを越えてもよい（Studio は長さを縮めてもキーを消さない）。
+- `bundles` の並びは上位のレイヤーの重ねる順、`childIds` の並びは子の重ねる順。`parentId` と親の `childIds` は一致させる。
+- 検査（エラー）：`INVALID_EDIT`（role・mode の値、役割に無いチャンネル、値の個数・数でない値・回転の長さ 0、start ≥ 0、len ≥ 1、クリップとレイヤーの weight が 0〜1、f ≥ 0、t0 ≥ 0、接線）、`EDIT_DUPLICATE_ID`（トラック・クリップ・バンドルの id、当たる平らなトラックの重複）、`EDIT_UNMATCHED_TRACK`（当たる平らなトラックが無い）、`EDIT_DUPLICATE_KEY`（1 チャンネルに同じ f）、`EDIT_BUNDLE_LINK`（無い id の参照、クリップが 2 つのバンドルに直接属する、parentId と childIds の食い違い）、`EDIT_BUNDLE_CYCLE`（parentId の循環）。キーの順の乱れは並べ替えて警告（`KEY_ORDER`）。
+- 平らにする規則（クロスフェード・レイヤー合成・標本化の条件と範囲・キー時刻・ラップ・回転の混ぜ方・役割ごとの書き分け・duration）の正本は `Motion/MotionEditFlattener.cs`。Motion Studio の `timeline.html`（`KIND`・`sampleContinuous`・`sampleClips`・`sampleCh`・`layerInfo`・`plNeedsBake`・`plBakeKeys`・`plKeyMap`・`plMakeTrack`）はその写し。`exportMotionJson` の `reflattenEdit` が edit から平らなトラックを作り直して書く。
+- 書き手の決まり：
+  - Motion Studio は常に `edit` を書く。平らなトラックを書かなかったトラック（`muscles`・`body` を書かなかったとき、キーの無い `bakedBones` など）は `edit` にも入れず、そのクリップの id はバンドルの `clipIds` から除く。読込は `edit` からトラック・バンドルを作り、`edit` の当たらない平らなトラックはトラックごとにクリップ 1 本で作る。
+  - PolyLing は `edit` を読み書きし、モーションの試し再生の窓口の口・コマンド（`motionEdit*`）・パネルの編集の節で変える。変えるたびに平らなトラックを `edit` から作り直す（`MotionEditFlattener.Reflatten`）。`edit` の無いファイルは最初の書き込みで、トラックごとにクリップ 1 本の `edit` を作る（`MotionEditOps.EnsureEdit`。Studio の読込と同じ形）。平らなトラックだけを書き換える処理（`createLipSyncFromVoicevox`）は、中身の変わったトラックの `edit` をクリップ 1 本の形で作り直してから平らにし直す（同じフレームに丸まって捨てたキーの数を `droppedKeys` で返す）。
+  - Blender アドオン（§5.1）は、書き出しでトラックを 1 本でも作り直したら `edit` を書かない（警告）。
+- **派生のトラック**（`MotionEditOps.IsDerivedRole`）：`rotationSource` が `"bakedBones"` で `bakedBones` を 1 本以上持つ（`MotionClipDTO.BakedBonesArePrimary`）なら `muscles`・`body` は `bakedBones` から作ったもの、そうでなく `muscles` を持つなら `bakedBones` は `muscles` から作ったもの。PolyLing は派生のトラックを `edit` に足さず（`EnsureEdit`）、`edit` にあっても書き込みはエラーにする。Motion Studio は `rotationSource` が `"bakedBones"` のファイルの `muscles`・`body` を読まない（保存は `bakedBones` だけになり、PolyLing が読むときに作り直す）。Studio は `rotationSource` を書かないので、派生の `muscles` を書き戻すと PolyLing はそれを正本として読み、`bakedBones` が派生になる（2026-10-31 の検証で見つけて直した）。
+- **一致の範囲（2026-10-31 の検証。PolyLing_モーション編集構造計画.md 段 6）**
+  - `edit` の評価（PolyLing の `sampleMotionEdit` と Studio の `Track.sample`）と、平らなトラックの評価は、整数フレームで一致する（差は float の表し方の 1e-6 未満）。標本化したトラックのフレームの間は、標本の間の補間になる。
+  - 往復（PolyLing の保存 → Studio の保存、その逆）で `edit` は同一、平らなトラックの値の差は 2e-7 未満。
+  - 平らなトラックのキーを `edit` に取り込むとき、同じフレームに丸まるキーは 1 つになる（チャンネルごと・フレームごとに 1 キー）。PolyLing が作る派生の `muscles`・`body` は全トラックのキー時刻の和なので、整数でないフレームのキーを持つことがある（上の派生の扱いで `edit` には入らない）。
+  - VRMA 書き出し（PolyLing の `convertMotionToVrma` と Studio の「VRMA保存」）は、どちらも平らなトラックから書き、同じ中身になる（ノード・チャンネル・フレーム数・時刻・表情と視線の割り当てが同一、値の差 1e-6 未満）。視線は `lookAt` トラックと、目の `bakedBones`（PolyLing は目のマッスル）のどちらからでも一致する。正準骨格の表は `CanonSkeleton.cs` が正本で、`plmotion_vrma.js` はその写し。
 
 可動域（UnityLimit CSV v1）は別ファイルのまま（`UnityClipApplier.LoadMuscleLimitCsv`）。
 
@@ -333,7 +364,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - 書く `bakedBones` の並び：元のファイルの順。その後ろに、元に無く割り当てのあるボーンのうちキーのあるもの（Hips は常に）を正準骨格の順で足す。元にあって割り当ての無いトラックはそのまま書く。
 - `bakedBones` を 1 本でも作り直したら、元の `muscles`・`body` は回転と合わないので書かず（`muscles` は空、`body` は無し。元にあれば警告）、`rotationSource` を `"bakedBones"` にする。PolyLing は読込で `bakedBones` からマッスル＋body を焼く。
 - `duration` は元の値。元の無いとき・`bakedBones` を作り直したときは max(元の値, 格子の終わり)。
-- 元の無いアクション（`polyling_motion` を持たない）は、空のクリップ（`format`・`version` 4・`name`＝アクション名（アクションが無ければアーマチュア名）・`frameRate`＝fps・`duration` 0・`space` "local"・`loop` false・空の `bones`・`expressions`・`muscles`・`bakedBones`）に `metadata` `{"createdWith":"PolyLing IO (Blender)"}`・`rotationSource` "bakedBones" を付けて書く。
+- 元の無いアクション（`polyling_motion` を持たない）は、空のクリップ（`format`・`version` 5・`name`＝アクション名（アクションが無ければアーマチュア名）・`frameRate`＝fps・`duration` 0・`space` "local"・`loop` false・空の `bones`・`expressions`・`muscles`・`bakedBones`）に `metadata` `{"createdWith":"PolyLing IO (Blender)"}`・`rotationSource` "bakedBones" を付けて書く。
 
 **表情・視線の表し方**
 
@@ -344,13 +375,13 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - 視線の空：位置 = Head のレスト位置 + `lookAtOffsetFromHeadBone`（無ければ 0）、回転 = C·R(q)·C·Rx(−90°)（空の矢印＝ローカル +Z が視線の向き）。目のボーンは視線で動かさない（目は `bakedBones` の LeftEye・RightEye）。
 - 書き出し：視線の空に F カーブがあるときだけ書く。q = C·(R_空·Rx(+90°))·C。`lookAtOffsetFromHeadBone` = 空の位置（PolyLing 空間）− Head のレスト位置。元に無く 1e-5 以内なら書かず、元と 1e-5 以内なら元のまま。`lookAt` が無いファイルを読むと前の視線のアクションを外す（空は残る）。
 
-**読めないもの**：検査（`format/plmotion.py` の `validate`）でエラーのファイル。`bakedBones` が無く `muscles` だけのファイル（マッスルから回転は作れないので、PolyLing で保存し直してから読む。C# が書くファイルには `bakedBones` が付く）。version 1〜3 は C# と同じく 4 へ引き上げる（`bakedBones` は捨てる）。
+**読めないもの**：検査（`format/plmotion.py` の `validate`）でエラーのファイル。`bakedBones` が無く `muscles` だけのファイル（マッスルから回転は作れないので、PolyLing で保存し直してから読む。C# が書くファイルには `bakedBones` が付く）。version 1〜4 は C# と同じく 5 へ引き上げる（version 1〜3 の `bakedBones`、version 1〜4 の `edit` は捨てる）。
 
 **書式**（`format/plmotion.py`。`MotionClipSerializer.ToJson` と同じ形）
 
 - Newtonsoft の Indented（2 字下げ、`": "`）、null の欄は書かない（配列の要素の null は残す）、BOM なし UTF-8、改行 CRLF。書く前に検査し、エラーがあれば書かない。
-- 欄の順は DTO の宣言順（クリップは format・version・name・frameRate・duration・space・loop・bones・expressions・muscles・body・bakedBones・lookAt・lookAtOffsetFromHeadBone・absentMuscles・rotationSource・metadata）。表情トラックは category・provider・path が先（path は provider "blendShape" のときのレンダラーの Transform パス。省略可。同じ name でも path が違えば別のトラック。PolyLing のモデルへの適用は name だけで引き、同じ name は先の 1 本だけを当てる）。知らない欄は既知の欄の後ろに元の順で書く（C# は読まないので捨てる）。
-- DTO が初期値を持つ欄（format・version・frameRate・duration・space・loop・bones・expressions・muscles・bakedBones、トラックの targetKind・keys、キーの t・v）は無くても書く。version は常に 4。
+- 欄の順は DTO の宣言順（クリップは format・version・name・frameRate・duration・space・loop・bones・expressions・muscles・body・bakedBones・lookAt・lookAtOffsetFromHeadBone・absentMuscles・rotationSource・metadata・edit。edit の中も `MotionEditDTO` ほかの宣言順で、DTO が初期値を持つ欄〔tracks・bundles・clips・start・len・loop・weight・f・v・clipIds・childIds・mode・weight・mute・solo〕は無くても書く）。表情トラックは category・provider・path が先（path は provider "blendShape" のときのレンダラーの Transform パス。省略可。同じ name でも path が違えば別のトラック。PolyLing のモデルへの適用は name だけで引き、同じ name は先の 1 本だけを当てる）。知らない欄は既知の欄の後ろに元の順で書く（C# は読まないので捨てる）。
+- DTO が初期値を持つ欄（format・version・frameRate・duration・space・loop・bones・expressions・muscles・bakedBones、トラックの targetKind・keys、キーの t・v）は無くても書く。version は常に 5。
 - float の欄：float32 に丸め、G7 で戻ればその 10 進、だめなら G9（ちょうど半分は 0 から遠い側へ）。整数値には `.0` を付ける。0 と −0 は `0.0`。知らない欄の数は最短往復の 10 進。
 
 ### 5.2 Blender とモーションを行き来させる 2 つの道筋
@@ -433,7 +464,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - 面：3 頂点以上の面はポリゴン（頂点の並びは逆）。2 頂点の面は辺（`pl_line_face_index` に元の面番号）。作れない面は `polyling_unbuilt_faces`。面の属性 `pl_face_index`（元の面番号）・`pl_face_id`・`pl_face_flags`。
 - UV・法線：面の角ごと（頂点の複数の UV・法線を面の `uvi`・`ni` で選ぶ）。UV はレイヤー「UVMap」、法線はカスタム法線。元の `uvi`・`ni` は角の属性 `pl_uvi`・`pl_ni`、元の法線は `pl_normal`（PolyLing 座標）。
 - その他の控え：制御点 `polyling_control_points`、2 頂点の面 `polyling_line_faces`。取り込みの直後に書き出しと同じ読み方で読み直し、戻らない頂点の欄・面だけを `polyling_vertex_extra`・`polyling_face_extra` に残す。頂点数・面のつながりの指紋 `polyling_topology`（頂点数、面の頂点の並びと元の面番号、線分の辺）。
-- Blender で表さないもの（IK・剛体・揺れもの・VRM 設定・表情の定義・選択セット・オブジェクトグループ・T ポーズの控えなど）は `polyling_model`・`polyling_mesh` の JSON のまま。
+- Blender で表さないもの（IK・剛体・揺れもの・VRM 設定・表情の定義・選択セット・モディファイアスタック・T ポーズの控えなど）は `polyling_model`・`polyling_mesh` の JSON のまま。
 
 ### 7.3 空間と姿勢
 
@@ -495,7 +526,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 正本は C#（`FolderSerializer/CsvModelSerializer*.cs`・`CsvMeshSerializer*.cs`）。Python（`format/csv_project.py`・`format/csv_mesh.py`）は同じ規則で読み書きする。決定の経緯は `PolyLing_Blender不具合修正計画.md`。
 
 - **欄の分け方**：行末が `,` の行は、最後に空の欄が 1 つある（C# の `Split`）。`materialprops.csv` のテクスチャのパスが空の行も 10 欄で読む。Python の `split_line` は行末の空欄を作らないので、9 欄以上を読む（結果は同じ）。
-- **中身が無いファイルは消す**：`humanoid.export.csv`・`morphgroups.csv`・`meshselsets.csv`・`objectgroups.csv`・`mirrorpairs.csv`・`editorstate.csv`・`workplane.csv`・`tposebackup.csv`・`springbonegroups.csv` の 9 ファイルは、書く中身が無ければ古いファイルを消す（読込はファイルがあれば読むので、残すと同じフォルダへ保存し直したときに古い中身が戻る）。C# の `editorstate.csv`・`workplane.csv` は、呼び出し元が渡さないときも消す。
+- **中身が無いファイルは消す**：`humanoid.export.csv`・`morphgroups.csv`・`meshselsets.csv`・`modifierstacks.csv`・`mirrorpairs.csv`・`editorstate.csv`・`workplane.csv`・`tposebackup.csv`・`springbonegroups.csv` の 9 ファイルは、書く中身が無ければ古いファイルを消す（読込はファイルがあれば読むので、残すと同じフォルダへ保存し直したときに古い中身が戻る）。C# の `editorstate.csv`・`workplane.csv` は、呼び出し元が渡さないときも消す。
 - **`tposebackup.csv`**：「ファイルがある ⇔ T ポーズの控え（TPoseBackup）がある」（`.mfproj` の `tPoseBackup` と同じ）。書きは控えが無ければ消し、あれば中身が空でも書く（見出し行だけになる）。読みはファイルがあれば中身によらず控えにする（空でも null にしない）。
 - **`springbonegroups.csv`**：1 行に 1 つのコライダーグループ名。並びが番号（ボーンの `grp` はこの番号）。空の名前は `""`（引用した空文字）と書く（空行は読込で飛ばされ、後ろの番号がずれるため）。`""` は空の欄 1 つとして読む。
 - **`morphgroups.csv`**：行は `名前,英語名,panel,type,エントリの数,<メッシュ>:<重み>…`。グループの子（`MorphExpression.GroupChildren`）があれば、エントリの後ろに `,<子の数>,<名前>:<重み>…` を足す（子 1 つが 1 欄。`名前:重み` を 1 つの値として CSV の引用の決まりで書く。名前と重みは最後の `:` で分ける）。子が無ければ何も足さない（以前と同じ行）。子の欄の無い行は子 0 件として読む。

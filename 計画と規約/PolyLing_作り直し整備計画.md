@@ -1,6 +1,6 @@
-# PolyLing 作り直し整備計画（オブジェクトグループのモディファイア化）
+# PolyLing 作り直し整備計画（モディファイアスタックのモディファイア化）
 
-オブジェクトグループを拡張し、Blender のモディファイアに相当する仕組みに格上げする。途中の条件（入力の形・パラメータ）を変えても、完成形まで自動で作り直せるようにする。この文書を正本にする。
+モディファイアスタックを拡張し、Blender のモディファイアに相当する仕組みに格上げする。途中の条件（入力の形・パラメータ）を変えても、完成形まで自動で作り直せるようにする。この文書を正本にする。
 
 進め方：1 段＝1 会話。各段の始めにコードを読み直して file:line 付きの変更計画を出し、承認を得てから実装する。終えたら「状態」を更新する。
 
@@ -10,44 +10,44 @@
 
 - 生成物（パイプ・フリル・藤壺・揺れ鎖・魔法陣など）は、入力と引数から自動で導かれる「出力」になる
 - 入力を編集すると、依存の順に下流の出力まで作り直される（梯子 → 揺れ鎖 → パイプのような鎖も）
-- 引数をグループ上で直接変えられる
+- 引数をスタック上で直接変えられる
 - 逆方向を持つ生成は、出力を編集すると入力へ書き戻せる（パイプ → 梯子、藤壺 → 梯子など）
 - シナリオは「手順の知識」として今のまま残し、モディファイアとは役割を分ける
 
 ## 2. 基本の仕組み
 
-### 2.1 正本：オブジェクトグループのまま
+### 2.1 正本：モディファイアスタックのまま
 
-保存・転送・Undo はグループの既存の仕組みに乗っている。項目 1 つ＝モディファイア 1 つとみなす（Action・Args・入力 MeshRefIds・出力 OutputObjectIds）。項目に足すのは「何を読むか（形・ウェイト・姿勢）」「ドラッグ中にも追随するか」「逆方向の action と引数」。入力の署名などの計算の控えは保存しない（SubdivisionSync がステンシルを保存しないのと同じ）。
+保存・転送・Undo はスタックの既存の仕組みに乗っている。項目 1 つ＝モディファイア 1 つとみなす（Action・Args・入力 MeshRefIds・出力 OutputObjectIds）。項目に足すのは「何を読むか（形・ウェイト・姿勢）」「ドラッグ中にも追随するか」「逆方向の action と引数」。入力の署名などの計算の控えは保存しない（SubdivisionSync がステンシルを保存しないのと同じ）。
 
-### 2.2 依存：グループから毎回導く
+### 2.2 依存：スタックから毎回導く
 
-全グループの項目から「入力オブジェクト → 項目 → 出力オブジェクト」を導く。グループの増減・変更のときだけ作り直す（毎フレームではない）。依存の順に並べ、循環は登録を拒否する。組立（魔法陣・鉄塔）の部品も項目なので同じグラフに入る。
+全スタックの項目から「入力オブジェクト → 項目 → 出力オブジェクト」を導く。スタックの増減・変更のときだけ作り直す（毎フレームではない）。依存の順に並べ、循環は登録を拒否する。組立（魔法陣・鉄塔）の部品も項目なので同じグラフに入る。
 
 ### 2.3 きっかけ：サブディビジョンと同じ 2 か所
 
-手本は `SubdivisionSync.cs`（つながりの正本がグループ、実行時に追随）。
+手本は `SubdivisionSync.cs`（つながりの正本がスタック、実行時に追随）。
 - GPU バッファを作り直す入口（`MeshSceneRenderer.RebuildAdapter` の先頭）。面の追加・削除・Undo・読み込みはここを通る（`SubdivisionSync.cs` 冒頭の注記）
 - 頂点ドラッグ中の位置の同期（`PlayerViewportManager.SyncMeshPositionsAndTransform`）
 どちらでも、グラフに入力として載っているオブジェクトだけ署名を取り直し、違う項目を要評価にする。
 
 ### 2.4 評価：今の作り直しをそのまま使う
 
-要評価の項目と下流を依存の順に流す。1 項目は今の `RunObjectGroupStep`（出力先へ中身だけ書き戻す）。重い項目はドラッグを離したときだけ流す。評価結果は Undo に積まない（入力の Undo で入力が戻れば、署名の変化で出力も作り直される）。
+要評価の項目と下流を依存の順に流す。1 項目は今の `RunModifierStackStep`（出力先へ中身だけ書き戻す）。重い項目はドラッグを離したときだけ流す。評価結果は Undo に積まない（入力の Undo で入力が戻れば、署名の変化で出力も作り直される）。
 
 ### 2.5 保護：出力は書けない（逆方向があれば書き戻す）
 
 - 出力を書き換えるコマンドは受け口で拒否する（コマンドの書き込み宣言 `PLMeshRefAccess.Write`・`PLWriteScope` を使う）
 - 逆方向を持つ項目は出力の編集を許し、確定時に「逆方向で入力を書き直す → 正方向で出力を作り直す → 下流を評価」を 1 つの処理で流す。逆方向は確定時だけ動く取り込みで、依存グラフには入れない（循環させない）
 - 逆方向ごとに「保つもの・失うもの」を宣言し、確定の前に知らせる
-- 「適用」＝グループ解除（出力が普通のメッシュになる）
+- 「適用」＝スタック解除（出力が普通のメッシュになる）
 
 ## 3. 棚卸し（2026-10-29 確定。照会コマンド `queryModifierInventory` の結果）
 
 照会は `ModifierInventory.cs`（型と属性だけを見る）。モデルを開かずに流せる。コマンドを足したら流し直す。
 - 対象：Category が `geometry.create` で始まるもの、または `[PLModifier]` を持つもの（抽象は除く）。計 66 件
 - 記録・逆方向：`PLModifierAttribute`（受け口のコードを根拠に型へ宣言。型からは導けない）
-  - OnKeepAsGroup：「グループとして残す」が立っているときだけ自身を項目にする
+  - OnKeepAsModifierStack：「モディファイアスタックとして残す」が立っているときだけ自身を項目にする
   - Always：常に自身を項目にする
   - ViaSteps：自身は残らず、中で流した別のコマンドを項目にする
   - Assembly：組立
@@ -62,7 +62,7 @@
 
 | 型 | 中身 | コマンド |
 | --- | --- | --- |
-| A. 単発 | 入力を持たず引数だけで作る | 図形生成 40（基本図形・歯車・機械部品・文字・紋章・星座・リング・能面・画像の板・髪の房・スプライン・リボン・鉄塔の塔体 `createLatticeTower`）。記録は OnKeepAsGroup、書き戻しは `placement.addTargetIndex`。ほかに `addGeneratedMesh`（記録 None・書き戻し可）、`addMeshFromArrays`・`createHoleBridge`（記録 None・書き戻し不可） |
+| A. 単発 | 入力を持たず引数だけで作る | 図形生成 40（基本図形・歯車・機械部品・文字・紋章・星座・リング・能面・画像の板・髪の房・スプライン・リボン・鉄塔の塔体 `createLatticeTower`）。記録は OnKeepAsModifierStack、書き戻しは `placement.addTargetIndex`。ほかに `addGeneratedMesh`（記録 None・書き戻し可）、`addMeshFromArrays`・`createHoleBridge`（記録 None・書き戻し不可） |
 | B. 入力あり | 他のオブジェクトを読んで作る。鎖の辺になる | 下の 3.2 |
 | C. 組立 | 空の親の下に部品を項目として並べる | `createMagicCircle`・`createTowerAssembly`。どちらも `ExecuteEmptyParentAssembly`。自身は書き戻し不可（部品の項目が書き戻す） |
 
@@ -72,22 +72,22 @@
 
 | 生成 | action | 読む入力（照会の出力） | 記録 | 書き戻し | 逆方向 |
 | --- | --- | --- | --- | --- | --- |
-| フリル | `createFrill` | `beltSourceIndex`・`profileSourceIndex`（Read）、プロファイル `profileA` | OnKeepAsGroup | 可 | なし |
-| パイプ | `createPipe` | `beltSourceIndex`・`profileSourceIndex`（Read）、プロファイル `profile` | OnKeepAsGroup | 可 | → `extractPipeBelt` |
-| パイプの梯子化 | `extractPipeBelt` | `sourceMasterIndices`（Read） | OnKeepAsGroup | 可 | ← `createPipe`（パイプの逆方向そのもの） |
-| 藤壺 | `createPlaceObject` | `sourceMasterIndices`・`beltSourceIndex`（Read） | OnKeepAsGroup | 可 | なし（段 6 で配置系の共通の核として作る。3.4） |
-| 頂点藤壺 | `createVertexBillboardPlace` | `masterIndices`（Write）、`sourceMasterIndices`（Read） | OnKeepAsGroup | 可 | なし（同上） |
-| 円周配置 | `createRadialPlace` | `sourceMasterIndices`（Read） | OnKeepAsGroup | 可 | なし（同上） |
-| ネジ配置 | `createBoltPattern` | `sourceMasterIndices`（Read） | OnKeepAsGroup | 可 | なし（同上） |
-| 鉄塔のデッキ | `createTowerDeck` | `sourceMasterIndices`（Read） | OnKeepAsGroup | 可 | なし（同上。部品の区別は別の方法が要る。パーツ ID 0 で置く） |
-| デッキの後付け | `addTowerDeck` | `towerIndex`・`sourceMasterIndices`（Read） | ViaSteps（`createTowerDeck` を鉄塔のグループへ足す） | 不可 | なし |
-| 辺の帯 | `edgeRibbonFace` | `masterIndices`（Write。辺を読む） | OnKeepAsGroup | 可 | なし |
-| 辺パイプ | `createEdgePipe` | `masterIndices`（Write。辺を読む） | ViaSteps（`edgeRibbonFace`＋`createPipe` を 1 グループ） | 可（自身は項目にならない） | なし（項目の `createPipe` は → `extractPipeBelt`） |
-| 回転体 | `createRevolution` | `profileSourceIndex`（Read）、プロファイル `params.profile` | OnKeepAsGroup | 可 | なし（作業空間の反映・取消しは入力側の線分 ↔ 断面で、出力からの逆方向ではない） |
-| 2D押し出し | `createProfile2D` | `profileSourceIndex`（Read）、プロファイル `params.loopPointValues` | OnKeepAsGroup | 可 | なし（同上） |
+| フリル | `createFrill` | `beltSourceIndex`・`profileSourceIndex`（Read）、プロファイル `profileA` | OnKeepAsModifierStack | 可 | なし |
+| パイプ | `createPipe` | `beltSourceIndex`・`profileSourceIndex`（Read）、プロファイル `profile` | OnKeepAsModifierStack | 可 | → `extractPipeBelt` |
+| パイプの梯子化 | `extractPipeBelt` | `sourceMasterIndices`（Read） | OnKeepAsModifierStack | 可 | ← `createPipe`（パイプの逆方向そのもの） |
+| 藤壺 | `createPlaceObject` | `sourceMasterIndices`・`beltSourceIndex`（Read） | OnKeepAsModifierStack | 可 | なし（段 6 で配置系の共通の核として作る。3.4） |
+| 頂点藤壺 | `createVertexBillboardPlace` | `masterIndices`（Write）、`sourceMasterIndices`（Read） | OnKeepAsModifierStack | 可 | なし（同上） |
+| 円周配置 | `createRadialPlace` | `sourceMasterIndices`（Read） | OnKeepAsModifierStack | 可 | なし（同上） |
+| ネジ配置 | `createBoltPattern` | `sourceMasterIndices`（Read） | OnKeepAsModifierStack | 可 | なし（同上） |
+| 鉄塔のデッキ | `createTowerDeck` | `sourceMasterIndices`（Read） | OnKeepAsModifierStack | 可 | なし（同上。部品の区別は別の方法が要る。パーツ ID 0 で置く） |
+| デッキの後付け | `addTowerDeck` | `towerIndex`・`sourceMasterIndices`（Read） | ViaSteps（`createTowerDeck` を鉄塔のスタックへ足す） | 不可 | なし |
+| 辺の帯 | `edgeRibbonFace` | `masterIndices`（Write。辺を読む） | OnKeepAsModifierStack | 可 | なし |
+| 辺パイプ | `createEdgePipe` | `masterIndices`（Write。辺を読む） | ViaSteps（`edgeRibbonFace`＋`createPipe` を 1 スタック） | 可（自身は項目にならない） | なし（項目の `createPipe` は → `extractPipeBelt`） |
+| 回転体 | `createRevolution` | `profileSourceIndex`（Read）、プロファイル `params.profile` | OnKeepAsModifierStack | 可 | なし（作業空間の反映・取消しは入力側の線分 ↔ 断面で、出力からの逆方向ではない） |
+| 2D押し出し | `createProfile2D` | `profileSourceIndex`（Read）、プロファイル `params.loopPointValues` | OnKeepAsModifierStack | 可 | なし（同上） |
 | サブディビジョン | `subdivideMesh` | `cageMasterIndex`（Read） | Always | 可（`targetMasterIndex`） | なし |
-| ブレンド | `applyBlend` | `sourceMasterIndices`（Read）、`destMasterIndex`（Write） | OnKeepAsGroup | **不可**（`RebuildRole` が無い。出力を持つ項目は作り直しで「対応していません」で止まる） | なし |
-| 揺れ鎖 | `placeSpringBoneLadderChains` | `sourceMasterIndex`（Write。梯子へウェイトを塗る）、`attachMasterIndex`（Read） | OnKeepAsGroup | 可（`chainRootMasterIndices`） | なし |
+| ブレンド | `applyBlend` | `sourceMasterIndices`（Read）、`destMasterIndex`（Write） | OnKeepAsModifierStack | **不可**（`RebuildRole` が無い。出力を持つ項目は作り直しで「対応していません」で止まる） | なし |
+| 揺れ鎖 | `placeSpringBoneLadderChains` | `sourceMasterIndex`（Write。梯子へウェイトを塗る）、`attachMasterIndex`（Read） | OnKeepAsModifierStack | 可（`chainRootMasterIndices`） | なし |
 | 歪み複製 | `createObjectArray` | `sourceMasterIndices`（Read）、`params.targetMasterIndex`（Write） | **None** | 不可 | なし |
 | 点指定図形 | `createPointDefinedPrimitive` | `masterIndices`（Write。既存の頂点を読む） | **None** | 不可 | なし |
 | 辺の橋 | `createEdgeBridge` | `meshIndex`（Write） | None | 不可 | なし |
@@ -128,32 +128,32 @@
 ## 4. 難所
 
 1. 段の順序：パイプ・フリルは生成時に梯子のウェイトを位置で引き継ぐので、揺れ鎖（梯子へ塗る）→ パイプ・フリルの順が要る
-2. スキンド化後の評価空間：出力をスキンド化した後に作り直すと MeshFilter 前提の空間で作り頂点を壊す（`ObjectGroup.cs` の AutoUpdate の注記）。揺れものの鎖は必ずスキンド化を通る
-3. 入力の持ち方：梯子と断面は作り直し時に元から取り直し、元が無ければ控えた点列を使う（`ObjectGroupOps.LastBeltMessage`・`LastProfileMessage`）。常に「つながり」を正本にする
+2. スキンド化後の評価空間：出力をスキンド化した後に作り直すと MeshFilter 前提の空間で作り頂点を壊す（`ModifierStack.cs` の AutoUpdate の注記）。揺れものの鎖は必ずスキンド化を通る
+3. 入力の持ち方：梯子と断面は作り直し時に元から取り直し、元が無ければ控えた点列を使う（`ModifierStackOps.LastBeltMessage`・`LastProfileMessage`）。常に「つながり」を正本にする
 4. 記録の漏れ・書き戻しの漏れ（照会で確定）
-   - 歪み複製・点指定図形はグループに記録されない（None）
+   - 歪み複製・点指定図形はスタックに記録されない（None）
    - ブレンドは記録されるが、書き戻しの印（`RebuildRole`）が無いので作り直せない
    - `createHoleBridge` は索引に `IsMeshRef` が無い
-5. 変更検知：今のダイジェストは頂点 ID・数・位置だけ（`ObjectGroupOps.ComputeSourceDigest`）
+5. 変更検知：今のダイジェストは頂点 ID・数・位置だけ（`ModifierStackOps.ComputeSourceDigest`）
 6. 下流への伝播が無い：自動更新はスキンド化の 2 経路からだけ（`PlayerCommandDispatcher.DeformSkin.cs`）
 
 ## 5. 段
 
 ### 段 0：棚卸しの確定 — 状態：済（2026-10-29。`queryModifierInventory` の結果で 3 章を確定）
 
-- 生成コマンドを全件、A・B・C に分類し、B は入力と逆方向の有無を一覧にする照会コマンドを作る（グループに記録されるか・書き戻せるか・読む入力・逆方向）
+- 生成コマンドを全件、A・B・C に分類し、B は入力と逆方向の有無を一覧にする照会コマンドを作る（スタックに記録されるか・書き戻せるか・読む入力・逆方向）
 - 3 章の「未確認」を埋める
 
 ### 段 1：評価器の一般化 — 状態：済（2026-10-29）
 
-- `SubdivisionSync` をグループ共通の評価器にする（きっかけ 2 か所・署名・ドラッグ中に追随するかの印）
+- `SubdivisionSync` をスタック共通の評価器にする（きっかけ 2 か所・署名・ドラッグ中に追随するかの印）
 - サブディビジョンを載せ替え、挙動が変わらないことを確かめる
 - 確かめること：数値移動などドラッグ以外の位置変更が 2 か所のどちらかを通るか
 
 #### 実装
 
-- `Core/Ops/ModifierEvaluator.cs`（新規）：グループ共通の評価器
-  - `CollectEntries`：全グループの実行項目から、型・`FollowsDrag`・入力（`ModifierInventory.InputKeys` のキーの ObjectId を引いたもの）・出力を集める
+- `Core/Ops/ModifierEvaluator.cs`（新規）：スタック共通の評価器
+  - `CollectEntries`：全スタックの実行項目から、型・`FollowsDrag`・入力（`ModifierInventory.InputKeys` のキーの ObjectId を引いたもの）・出力を集める
   - 入力ごとの署名（`MeshSignature.Topology`・`Positions`）の控え。キーは出力の先頭の描画オブジェクト、出力が無い項目は項目そのもの。保存しない
   - `RefreshModel`（きっかけ 1、`MeshSceneRenderer.RebuildAdapter` の先頭）：署名が違う項目を要評価にする。処理器のある項目は毎回呼ぶ。処理器の無い項目は要評価の印を立てるだけで流さない
   - `SyncFromInput`（きっかけ 2、`PlayerViewportManager.SyncMeshPositionsAndTransform`）：動かした描画オブジェクトを入力に持つ項目のうち、`FollowsDrag` のものは処理器の `SyncDrag` を呼び、それ以外は要評価の印だけ立てる
@@ -162,7 +162,7 @@
 - `SubdivisionSync.cs`：subdivideMesh の処理器にした。外部 API（`Link`・`CollectLinks`・`FindByCage`・`FindByChild`・`Prime`・`Forget`）は名前と引数を変えていない。作り直すかの判断は従来どおり `SubdivisionOps.TopologySignature`（線分を混ぜない）で行う
 - `PLModifierAttribute.FollowsDrag`（新規）。`SubdivideMeshCommand` だけ true
 - `ModifierInventory.InputKeys`（読む入力の規則を切り出し、棚卸しと評価器で共有）。一覧に「ドラッグ追随」の列を足した
-- 触っていないもの：`ComputeSourceDigest`・`RunObjectGroupStep`・`RunAutoUpdateGroups`。Player 層の作り直しは段 4 で処理器として登録して流す
+- 触っていないもの：`ComputeSourceDigest`・`RunModifierStackStep`・`RunAutoUpdateGroups`。Player 層の作り直しは段 4 で処理器として登録して流す
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage1/`）
 
@@ -193,7 +193,7 @@
 
 #### 決めた扱い（`Core/Ops/ModifierOutputGuard.cs`）
 
-- 判定の場所：`PlayerCommandDispatcher.Dispatch` の担当者判定の直後で、各深さで判定する。拒否したら `OnOwnershipDenied` を呼び、`CommandErrorCodes.ModifierOutput` で失敗を返す。理由には「オブジェクト名・グループ名・項目番号・action」を出す
+- 判定の場所：`PlayerCommandDispatcher.Dispatch` の担当者判定の直後で、各深さで判定する。拒否したら `OnOwnershipDenied` を呼び、`CommandErrorCodes.ModifierOutput` で失敗を返す。理由には「オブジェクト名・スタック名・項目番号・action」を出す
 - 判定しないもの
   - `Writes` が None・AddOnly のもの
   - 分類がメッシュの中身を書かない族のもの：`undo`・`object.*`・`selection(.*)`・`material`・`vrm`・`ui`・`workaxis`・`morph`・`dynamics.spring`・`rig.skeleton(.*)`・`camera`・`query`・`mcp`・`scenario(.*)`・`io.project`・`io.export`・`remote`・`animation`・`tool`・`underlay`・`external.*`
@@ -202,15 +202,15 @@
 - 書き込み先の決め方
   - Targets：Write 引数（WriteWhen が成り立つもの）の値で 0 以上のものを書き込み先にする。値が -1 または空のときは、実行時の選択中の描画オブジェクト（無ければ編集対象）を書き込み先にする。成り立つ Write 引数が 1 つも無いもの（新規に作るモードの生成など）は判定しない。担当者判定と同じ扱い
   - ModelWide・Unspecified：Write 引数で 0 以上の値が決まればそれだけを見る（`setRawData` の masterIndex など）。決まらなければ、実行時の選択中の描画オブジェクト（無ければ編集対象）を見る
-- 拒否する条件：書き込み先が、どれかのグループの実行項目の出力（`ModifierEvaluator.TryFindOutputOwner`）であるとき。逆方向を持つ項目（パイプ）も拒否する。書き戻しは段 6
+- 拒否する条件：書き込み先が、どれかのスタックの実行項目の出力（`ModifierEvaluator.TryFindOutputOwner`）であるとき。逆方向を持つ項目（パイプ）も拒否する。書き戻しは段 6
 - 拒否しないもの
-  - 作り直しの書き戻し：`RunObjectGroupStep` の入れ子の `Dispatch` を `_modifierWriteBackDepth` で挟み、その間は判定しない。作り直し・自動更新・鉄塔のデッキ差し替えが通る
+  - 作り直しの書き戻し：`RunModifierStackStep` の入れ子の `Dispatch` を `_modifierWriteBackDepth` で挟み、その間は判定しない。作り直し・自動更新・鉄塔のデッキ差し替えが通る
   - 評価器（処理器）：Dispatch を通らないので掛からない
   - Undo：分類 `undo` なので判定しない
-- 「適用」＝`deleteObjectGroup`
+- 「適用」＝`deleteModifierStack`
   - 処理器に `IModifierHandler.Release` を足した。`ModifierEvaluator.ReleaseGroup` が項目ごとに Release を呼び、控えを捨てる
   - サブディビジョンの Release は `releaseSubdivision`（子を残す）と同じ後始末をする：控えを捨てる・ケージの面の塗りを戻す・子のロックを外す
-  - 処理器を呼んだときは、Undo を一覧のスナップショットとグループ削除の 1 件で積む。Undo するとグループ・ロック・保護が戻る
+  - 処理器を呼んだときは、Undo を一覧のスナップショットとスタック削除の 1 件で積む。Undo するとスタック・ロック・保護が戻る
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage2/`）
 
@@ -220,10 +220,10 @@
   - `deleteFaces`
   - `setRawData`（scope=Object、および子を選んで scope=SelectedObjects）
 - ケージへの `setVertexPositions` は通り、子が追随した（01→02、04）
-- パイプ（`createPipe`、グループとして残す）の出力への `setVertexPositions`・`deleteFaces`・`setRawData` は拒否された
-- `rebuildObjectGroup`（サブディビジョン・パイプ）と `undo` は通った。パイプの作り直しは出力へ ReplaceExisting で書き戻す経路
+- パイプ（`createPipe`、モディファイアスタックとして残す）の出力への `setVertexPositions`・`deleteFaces`・`setRawData` は拒否された
+- `rebuildModifierStack`（サブディビジョン・パイプ）と `undo` は通った。パイプの作り直しは出力へ ReplaceExisting で書き戻す経路
 - 適用
-  - サブディビジョンのグループに `deleteObjectGroup` を掛けると、子への `deleteFaces` が通った
+  - サブディビジョンのスタックに `deleteModifierStack` を掛けると、子への `deleteFaces` が通った
   - ケージの面が塗られ、ケージを動かしても子は追随しなくなった（05・06）
   - パイプも適用後は `setVertexPositions` が通った（08）
 - 適用の Undo
@@ -238,37 +238,37 @@
 
 #### 実装
 
-- `setObjectGroupStepArgs`（`SetObjectGroupStepArgsCommand`、`PanelCommand.MeshList.cs`）：グループ名・項目番号・キーの並び・値の並びで書く
-  - 受け口は `PlayerCommandDispatcher.ObjectGroup.cs` の `ExecuteSetGroupStepArgs`。手本は `ExecuteReplaceGroupSource`（鉄塔のデッキ差し替え）
-  - 流れ：検査 → 書く → `SuspendRecording` 中に `RunObjectGroupStep`（その項目だけ）→ `SourceDigest` を取り直す → `RecordSubdivisionUndo`
-  - Undo は一覧のスナップショットとグループの差し替え（`ObjectGroupChangeRecord.ReplacedIndex`）の 1 件
+- `setModifierStackStepArgs`（`SetModifierStackStepArgsCommand`、`PanelCommand.MeshList.cs`）：スタック名・項目番号・キーの並び・値の並びで書く
+  - 受け口は `PlayerCommandDispatcher.ModifierStack.cs` の `ExecuteSetGroupStepArgs`。手本は `ExecuteReplaceModifierStackSource`（鉄塔のデッキ差し替え）
+  - 流れ：検査 → 書く → `SuspendRecording` 中に `RunModifierStackStep`（その項目だけ）→ `SourceDigest` を取り直す → `RecordSubdivisionUndo`
+  - Undo は一覧のスナップショットとスタックの差し替え（`ModifierStackChangeRecord.ReplacedIndex`）の 1 件
   - 作り直しに失敗したら引数を元へ戻して失敗を返す
-- `queryObjectGroupStepArgs`（`QueryObjectGroupStepArgsCommand`、`PanelCommand.Query.cs`）
+- `queryModifierStackStepArgs`（`QueryModifierStackStepArgsCommand`、`PanelCommand.Query.cs`）
   - 返すもの：項目のキー（キー順）・今の値・書けるか（1/0）・書けない理由・出力の ObjectId
-- `ObjectGroupOps.cs`（`BuildCommand` の後ろ）
+- `ModifierStackOps.cs`（`BuildCommand` の後ろ）
   - `ArgWriteBlockReason(Type, key)`：書けないキーなら理由
   - `StepArgKeys`：項目が受け付けるキー（組み直したコマンドの `ToArgs` のキー ∪ 今の Args のキー）
-  - `TryValidateStepArgs`：書く前の検査。グループの写しに書き、`BuildCommand`（中で `PanelCommandFactory.Create`）が通るかを見る
+  - `TryValidateStepArgs`：書く前の検査。スタックの写しに書き、`BuildCommand`（中で `PanelCommandFactory.Create`）が通るかを見る
   - コマンド・照会・パネルが同じ判定を使う
-- パネル：既存の `PlayerObjectGroupSubPanel` に「項目の引数」欄を足した
+- パネル：既存の `PlayerModifierStackSubPanel` に「項目の引数」欄を足した
   - 部品：項目・キー・値・「書いて作り直す」ボタン
-  - UI 自動操作の ID：`objectGroup.argStep` / `argKey` / `argValue` / `argWrite`
+  - UI 自動操作の ID：`modifierStack.argStep` / `argKey` / `argValue` / `argWrite`
   - キーの選択肢は書けるものだけ。選ぶと今の値が入る
-  - 表示用に `ObjectGroupStepView`（`ViewInterfaces.cs`）を足し、`ObjectGroupView.Steps` に詰めた（`LiveViews.BuildObjectGroupViews`）
+  - 表示用に `ModifierStackStepView`（`ViewInterfaces.cs`）を足し、`ModifierStackView.Steps` に詰めた（`LiveViews.BuildModifierStackViews`）
 - 触っていないもの
   - `ModifierEvaluator`（要評価の印）
   - 依存の順・下流への伝播（段 4）
 
 #### 決めた扱い
 
-- 書けないキー（`ObjectGroupOps.ArgWriteBlockReason`）
+- 書けないキー（`ModifierStackOps.ArgWriteBlockReason`）
   - 入力と出力先：`MeshRefKeys` のキーとその `ModelKey`、`RebuildKeys.TargetIndexKey`
-  - 作り直しが上書きするもの：`RebuildKeys.ModeKey`（`placement.addMode` など）、末尾が `keepAsGroup` のキー
+  - 作り直しが上書きするもの：`RebuildKeys.ModeKey`（`placement.addMode` など）、末尾が `keepAsModifierStack` のキー
   - 入力の中身と取り方（入力の差し替えは段 3 の範囲外）
     - 梯子の点列・先端：`beltLeftPoints`・`beltRightPoints`・`beltStarts`・`beltClosed`・`beltFlipWinding`・`beltHeightScale`・`beltStartPoints`・`beltHasStartPoint`・`beltEndPoints`・`beltHasEndPoint`
     - 取り込み方：`acquireMethod`・`acquireCrossRows`・`acquireSetName`・`profileAcquire`
     - プロファイル：`ProfileKeys` のキーとループ開始・穴のキー
-- 拒否するもの（どれもグループに何も書かない）
+- 拒否するもの（どれもスタックに何も書かない）
   - 項目に無いキー
   - 同じキーの重複
   - キーと値の数の不一致
@@ -278,7 +278,7 @@
   - 範囲外の値（サブディビジョンの回数など）は受け口の側で丸める
 - `string[]` で受けるので、カンマを含む値（配列など）は二重引用符で包む
 - 書いた直後に作り直すので、要評価の印は立てない
-- 分類は `object.group`。出力の保護（段 2）の判定外で、書き戻しは `_modifierWriteBackDepth` の中を通る
+- 分類は `object.modifier`。出力の保護（段 2）の判定外で、書き戻しは `_modifierWriteBackDepth` の中を通る
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage3/`）
 
@@ -289,8 +289,8 @@
   - `cageMasterIndex`：MeshRef として拒否
   - `levl`：項目に無いキーとして拒否
   - `level`=abc：型で読み直せないとして拒否
-  - どれもグループの値・modelRevision は変わらない
-- パイプ（`createPipe`、Baked、グループとして残す）
+  - どれもスタックの値・modelRevision は変わらない
+- パイプ（`createPipe`、Baked、モディファイアスタックとして残す）
   - `params.thickness`=0.1 と `params.segmentsFront`=2 をまとめて書くと、16 → 32 頂点に作り直された。ObjectId は変わらない（04→07）
   - Undo で 16 頂点に戻った（06）
   - 書けるキーと書けないキーを混ぜた書き込み（`params.thickness`＋`placement.addTargetIndex`）は全体を拒否した
@@ -317,10 +317,10 @@
 
 - `Core/Ops/ModifierGraph.cs`（新規）：依存のグラフ
   - 辺：A の出力を B が入力に持つ／A が Write で持つ入力を B が読む（両方 Write なら前の項目から）
-  - Kahn 法で並べる。同順位はグループ順・項目順。並べられずに残ったものは循環
+  - Kahn 法で並べる。同順位はスタック順・項目順。並べられずに残ったものは循環
   - 状態：Handler（処理器）・Evaluate（評価器が流す）・Excluded（理由付き）・Cycle
   - `CycleReason`：登録の前の循環の判定
-  - `StructureKey`：グループ・項目・入出力の ObjectId と、引けた描画オブジェクトの同一性・スキンド化の有無から作る。頂点は見ない
+  - `StructureKey`：スタック・項目・入出力の ObjectId と、引けた描画オブジェクトの同一性・スキンド化の有無から作る。頂点は見ない
 - `ModifierEvaluator.cs`
   - `GetGraph`：構造キーが変わったときだけグラフを作り直す。`RefreshModel`・`SyncFromInput` はグラフの順で回す
   - 控えのキーを出力の先頭の ObjectId に変え、モデルごとに持つ（一覧のスナップショットの Undo で描画オブジェクトが複製に置き換わっても効く）
@@ -329,16 +329,16 @@
   - `MarkChangedInputs`：Undo・Redo の後に署名を取り直して印を立てる
   - `PrimeAll`：全項目の署名を取り直して印を下ろす（スキンド化の後）
   - 最後の評価の結果（Ok・Failed・Blocked・Rebuilt と理由）と、最後の流しの記録を持つ
-- `PlayerCommandDispatcher.ModifierEval.cs`（新規）：`RunModifierEvaluation`（記録を止めて `RunObjectGroupStep` で流す。成功後に `SourceDigest` を取り直し、`LastBeltMessage`・`LastProfileMessage` を結果に控える）、`EvaluateModifiersAfterDrag`、照会の組み立て
+- `PlayerCommandDispatcher.ModifierEval.cs`（新規）：`RunModifierEvaluation`（記録を止めて `RunModifierStackStep` で流す。成功後に `SourceDigest` を取り直し、`LastBeltMessage`・`LastProfileMessage` を結果に控える）、`EvaluateModifiersAfterDrag`、照会の組み立て
 - 流す契機
   - 一番外側のコマンドの終わり（`PlayerCommandDispatcher.DispatchAuthorized`）。書き込みの無いコマンドと頂点ドラッグ中は流さない。Undo・Redo のときは先に `MarkChangedInputs`
   - 頂点ドラッグを離したとき（`PlayerViewportManager.EnterVerticesMoved` の DragEnd → `OnVerticesDragEnded`）。`IsVerticesDragging` を足した
-- 伝播：`ExecuteSetGroupStepArgs`・`RebuildObjectGroupCommand`・`ExecuteReplaceGroupSource` の成功後に `MarkRebuilt`
-- 循環の拒否：`CaptureObjectGroup`（グループに登録せず失敗を返す）、`ExecuteReplaceGroupSource`（元へ戻して拒否）
+- 伝播：`ExecuteSetGroupStepArgs`・`RebuildModifierStackCommand`・`ExecuteReplaceModifierStackSource` の成功後に `MarkRebuilt`
+- 循環の拒否：`CaptureModifierStack`（スタックに登録せず失敗を返す）、`ExecuteReplaceModifierStackSource`（元へ戻して拒否）
 - 自動更新：スキンド化の 2 経路で `RunAutoUpdateGroups` の後に `PrimeAll`
 - `PrimitiveMeshReplaceExisting`：記録を止めているときは Undo の書き込み先を設定しない
 - 照会 `queryModifierGraph`（`QueryModifierGraphCommand`）
-- `ObjectGroup.AutoUpdate` と `RunAutoUpdateGroups` の注記を改めた
+- `ModifierStack.AutoUpdate` と `RunAutoUpdateGroups` の注記を改めた
 
 #### 決めた扱い
 
@@ -351,7 +351,7 @@
   - 入力か出力の ObjectId が引けない
   - action を引けない
 - 失敗した項目：入力の署名を控え、入力が再び変わるまで流さない。上流（たどった先を含む）に失敗した項目がある間は、下流を流さず印を残す（Blocked）
-- 循環の拒否はグループの参照を変える 2 か所だけ。新規の出力しか作らない経路（魔法陣・鉄塔・サブディビジョン・辺パイプ・デッキの後付け）は循環を作れないので判定しない。読み込み・Undo で生じた循環は Cycle として外し、照会に出す
+- 循環の拒否はスタックの参照を変える 2 か所だけ。新規の出力しか作らない経路（魔法陣・鉄塔・サブディビジョン・辺パイプ・デッキの後付け）は循環を作れないので判定しない。読み込み・Undo で生じた循環は Cycle として外し、照会に出す
 - Undo への記録
   - 評価結果は積まない（記録を止めて流す）
   - `PrimitiveMeshReplaceExisting` が記録を止めている間も `SetMeshObjectFor` を呼んでいた。これが頂点編集の履歴を消し（`MeshUndoController.SetMeshObjectFor`）、入力の編集の Undo が消えていた。記録を止めているときは書き込み先を設定しないようにした
@@ -360,7 +360,7 @@
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage4/`）
 
-鎖：梯子（開始タグ・終了三角付き、`addMeshFromArrays`）→ パイプ（`AutoLadder`、グループとして残す）→ 魔法陣の円周配置（配置元＝パイプ）と紋章。別に 梯子 → 円周配置 RadialA → 円周配置 RadialB（配置元＝RadialA）
+鎖：梯子（開始タグ・終了三角付き、`addMeshFromArrays`）→ パイプ（`AutoLadder`、モディファイアスタックとして残す）→ 魔法陣の円周配置（配置元＝パイプ）と紋章。別に 梯子 → 円周配置 RadialA → 円周配置 RadialB（配置元＝RadialA）
 - `queryModifierGraph` の順は Pipe → MC#0（円周配置）→ MC#1（紋章）→ RadialA → RadialB。下流は Pipe→MC#0、RadialA→RadialB
 - 梯子の上端を `setVertexPositions` で動かすと、Pipe・MC#0・RadialA・RadialB が依存の順に作り直された。紋章は変わらない（01→02、07）
 - Undo 1 回で梯子・パイプ・円周配置が戻った（03）。Redo で進んだ
@@ -368,28 +368,28 @@
 - 組立の内外：配置元（組立の外のパイプ）を直すと魔法陣のうち円周配置の部品だけが作り直され、紋章の頂点は変わらない
 - 引数の伝播：パイプに `params.thickness`=0.1・`params.segmentsFront`=2 を書くと、パイプ 20→33 頂点、円周配置 80→132 頂点。紋章 80 のまま（05）。Undo 1 回でパイプ 20・円周配置 80 に戻った（06）
 - 循環
-  - 円周配置（配置元＝パイプ）を既存へ追加で梯子へ足すと、グループに登録されず理由付きで失敗。グループは 4 件のまま。Undo で梯子が戻り、パイプ・RadialA・RadialB が作り直された
+  - 円周配置（配置元＝パイプ）を既存へ追加で梯子へ足すと、スタックに登録されず理由付きで失敗。スタックは 4 件のまま。Undo で梯子が戻り、パイプ・RadialA・RadialB が作り直された
   - RadialA の配置元を RadialB へ差し替えると拒否され、RadialA の入力は梯子のまま
 - 失敗：梯子の面を全部消すと、パイプは控えた点列で作り直され（Ok）、RadialA は「作り直しの結果が空になりました（42 → 0）」で Failed、RadialB は「上流の項目 RadialA#0 が失敗しているので流していない」で Blocked（要評価の印が残る）（08）。Undo で全部流れて Ok に戻った
 - 保存 → 読み込み（`saveProjectCsv` → `loadProjectCsv`）のあと、梯子の編集で 4 項目が依存の順に作り直され（09）、Undo で戻った
 - サブディビジョン（Handler）：ケージの `setVertexPositions`・`moveSelectedVertices` に子が追随、面 4 枚の削除で 2786→2741 頂点・境界 1、Undo で 2786・境界 0（10）
-- 段 2・段 3：パイプの出力への `setVertexPositions`、サブディビジョンの子への `deleteFaces` は拒否。`setObjectGroupStepArgs` は効く
+- 段 2・段 3：パイプの出力への `setVertexPositions`、サブディビジョンの子への `deleteFaces` は拒否。`setModifierStackStepArgs` は効く
 - 検査：3 つの csproj のコンパイルはエラー 0。`queryCommandAudit` の完了条件の項目はすべて 0。Editor.log にエラーなし
 - 確かめていないもの：実際のマウスでの頂点ドラッグ（DragEnd で流す経路）。`moveSelectedVertices` はコマンドの終わりで流れた
-- 段 4 と関係なく見つかったこと：同じ頂点に `setVertexPositions` のあと `moveSelectedVertices` を掛けると、`setVertexPositions` の書き込みが失われ、前の位置に差分を足した位置になった（グループの無い直方体でも同じ）
+- 段 4 と関係なく見つかったこと：同じ頂点に `setVertexPositions` のあと `moveSelectedVertices` を掛けると、`setVertexPositions` の書き込みが失われ、前の位置に差分を足した位置になった（スタックの無い直方体でも同じ）
 
 ### 段 5：スキンド化後の評価空間 — 状態：済（2026-10-29）
 
 - 評価をバインド姿勢で行い、揺れものの鎖を作り直せるようにする
 - 段 4 から持ち越すこと
   - 入力か出力がスキンド化済みの項目は評価から外している（`queryModifierGraph` の reasons に出る）
-  - スキンド化直後の塗り直しは自動更新（`RunAutoUpdateGroups`、`AutoUpdate` の立ったグループ）が担っている。評価器との二重を避けるため、2 経路で `PrimeAll` を呼んでいる
+  - スキンド化直後の塗り直しは自動更新（`RunAutoUpdateGroups`、`AutoUpdate` の立ったスタック）が担っている。評価器との二重を避けるため、2 経路で `PrimeAll` を呼んでいる
   - 姿勢（行列）だけを変える経路は署名（ローカル位置）を変えない（段 1 の確かめた結果）
 
 #### 調べて分かったこと
 
 - 頂点の格納空間：MeshFilter はローカル、スキンドはバインド姿勢のワールド（`SkinKindConverter`・`MeshFilterToSkinnedConverter` の Phase 4 が `WorldMatrix` を掛けて焼く）。ポーズ抜きの行列は `BindWorldMatrix`、`WorldMatrix` はポーズ込み
-- 生成は空間を変換しない。梯子の格納値をそのまま点列にし（`ObjectGroupOps.RefreshBelts`）、ウェイトも格納値の位置で突き合わせ（`BeltWeightBinder`）、出力の格納値へそのまま書く（`PrimitiveMeshReplaceExisting`）。梯子と出力の格納空間が一致するときだけ正しい
+- 生成は空間を変換しない。梯子の格納値をそのまま点列にし（`ModifierStackOps.RefreshBelts`）、ウェイトも格納値の位置で突き合わせ（`BeltWeightBinder`）、出力の格納値へそのまま書く（`PrimitiveMeshReplaceExisting`）。梯子と出力の格納空間が一致するときだけ正しい
 - 揺れ鎖は空間を見ていたが、ポーズ込みの行列（`VertexToWorldMatrix`・親の `WorldMatrix`）を使っていた
 
 #### 実装
@@ -401,8 +401,8 @@
 - `MeshContext.Transform.cs`：`VertexToBindWorldMatrix`・`BindWorldToVertexMatrix`
 - `ModifierGraph.ClassifyStatus`：スキンド化済みで一律に外すのをやめ、`ModifierSpace.Classify` で決める。`Entry.Space`・`SpaceReason` を足した
 - `ModifierEvaluator.MarkInputsChanged`：指定した描画オブジェクトを入力に持つ項目へ、署名を見ずに印を立てる
-- `PlayerCommandDispatcher.ObjectGroup.cs`
-  - `RunObjectGroupStep`：評価できない項目は流さない。梯子を読む項目は M を求め、入れ子の `Dispatch` の間だけ渡す
+- `PlayerCommandDispatcher.ModifierStack.cs`
+  - `RunModifierStackStep`：評価できない項目は流さない。梯子を読む項目は M を求め、入れ子の `Dispatch` の間だけ渡す
   - `RunAutoUpdateGroups` を消した
 - `PlayerCommandDispatcher.ModifierEval.cs`：`ReevaluateAfterSkinning`（`MarkInputsChanged` → `RunModifierEvaluation` → `PrimeAll`）。照会 `queryModifierGraph` に `spaces` を足した
 - `PlayerCommandDispatcher.DeformSkin.cs`：スキンド化の 2 経路は `ReevaluateAfterSkinning` を呼ぶ
@@ -413,7 +413,7 @@
   - `PlayerCommandDispatcher.Blend.cs` の `SyncSkinWeightToMirrors`、`ReplaceMirrorSideContents`：同じ
   - 揺れ鎖を評価器が流すようになり、梯子の編集の Undo が消えていた（直す前に確かめた）
 - `ModifierOutputGuard`：種別の変換（`convertMeshFilterToSkinned`・`convertToSkinned`・`convertToMeshFilter`）は出力にも掛けてよい。出力を選んだまま一括スキンド化すると拒否されていた（直す前に確かめた）
-- 注記：`ObjectGroup.AutoUpdate`、両シナリオのパネルの冒頭
+- 注記：`ModifierStack.AutoUpdate`、両シナリオのパネルの冒頭
 
 #### 決めた扱い
 
@@ -442,12 +442,12 @@
   - フリル 1200 頂点、パイプ 152 頂点（スキンド化の前と同じ）。全頂点にウェイトがあり、すべて鎖のボーンを指す。梯子は 601 頂点のうち 600 が鎖、1（上のふたの中心）が親のボーン
 - 梯子（スキンド化済み）の裾の 3 頂点を `setVertexPositions` で動かす：鎖 → フリルの順に作り直され、パイプ側は流れない。フリルは裾の前だけが梯子に合わせて変わり、ほかは動かない（04→05）。全頂点が鎖のボーンを指す
 - Undo 1 回で梯子・鎖・フリルが戻った（1200 頂点）。最初は Undo が効かず、揺れ鎖の `SetMeshObjectFor` が履歴を消していた。直したあとに確かめた（03）
-- `setObjectGroupStepArgs`（SkirtFrill の `params.thickness`=0.02）：作り直され全頂点が鎖を指す（06）。Undo 1 回で 0.004・1200 頂点に戻った
+- `setModifierStackStepArgs`（SkirtFrill の `params.thickness`=0.02）：作り直され全頂点が鎖を指す（06）。Undo 1 回で 0.004・1200 頂点に戻った
 - 姿勢：センターを Y 40° 回すと、フリルと鎖が体に付いて回る（07→08）。回したまま梯子を直すと、直した部分が回った体の前に出て、頂点は飛ばない（09）
 - 保存 → 読み込み（`saveProjectCsv` → `loadProjectCsv`）のあと、梯子の編集で鎖 → フリルが作り直され、全頂点が鎖を指す（10）
 - 段 1〜4
   - サブディビジョン：子への `deleteFaces` は拒否。ケージの頂点の移動に子が追随。`level` の書き換えが効く
-  - 循環：円周配置 RadialA（配置元＝ケージ）を配置元にして、既存へ追加でケージへ足すと、グループに登録せず理由付きで失敗
+  - 循環：円周配置 RadialA（配置元＝ケージ）を配置元にして、既存へ追加でケージへ足すと、スタックに登録せず理由付きで失敗
   - 失敗：梯子の面を全部消すと、鎖は「円環を検出できない」で Failed、フリルは Blocked。Undo で両方 Ok に戻った
 - 3 つの csproj のコンパイルはエラー 0。Editor.log にエラーなし
 - 見つかったこと：同じ梯子の編集・厚みの変更で、フリルは 1200 → 1198 頂点になる（生成器の結果。M は単位で、空間の変換は掛かっていない）
@@ -461,7 +461,7 @@
 
 ### 段 6：逆方向 — 状態：済（2026-10-30）
 
-- 配置系の共通の核（姿勢の推定・分解）、パイプ → 梯子、断面の線分 → 断面をグループの逆方向として組み込む
+- 配置系の共通の核（姿勢の推定・分解）、パイプ → 梯子、断面の線分 → 断面をスタックの逆方向として組み込む
 - 出力の編集を確定したときの流れ（逆方向 → 正方向 → 下流）と、保つもの・失うものの宣言
 
 #### 実装
@@ -486,30 +486,30 @@
   - `queryModifierInverse`（照会）・`commitModifierOutputEdit`（確定）・`discardModifierOutputEdit`（破棄）
   - 見本はビューアの `BuildModifierTemplate`（`PolyLingPlayerViewerCore.ModifierInverse.cs`）が作る。書き戻しと同じ変換を `ApplyReplaceTransforms` に切り出して共有した（`PolyLingPlayerViewerCore.GeneratedMesh.cs`）
   - 評価空間の判定を `ComputeStepSpace` に切り出し、作り直しと逆方向で共有した
-  - 梯子を取り込んでいる項目は `BeltAcquire.AcquireStrips` で段 → 頂点に引いて梯子の頂点を書く。点列を持っている項目は項目の梯子の引数を書く（`ObjectGroupOps.WriteBeltArgs` を `RefreshBelts` から切り出した）
+  - 梯子を取り込んでいる項目は `BeltAcquire.AcquireStrips` で段 → 頂点に引いて梯子の頂点を書く。点列を持っている項目は項目の梯子の引数を書く（`ModifierStackOps.WriteBeltArgs` を `RefreshBelts` から切り出した）
   - 頂点へ藤壺は `VertexBillboardPlaceToolHandler.CollectVertexTargets`（置く順の頂点の列。`BuildCore` もこれを使う）で頂点を引き、置いた位置を入力の `WorldMatrix` の逆で格納値へ戻す
   - 未確定がある間は保存（`saveProjectFile`・`saveProjectCsv`・`saveProjectBinary`）を断る（`PlayerCommandDispatcher.DispatchCore`）
-- パネル（`PlayerObjectGroupSubPanel`）：「出力の編集（逆方向）」欄。「項目の引数」で選んだ項目の保つもの・失うもの・未確定かを出し、確定・破棄のボタンを持つ（UI 自動操作の ID：`objectGroup.inverseInfo` / `inverseCommit` / `inverseDiscard`）。表示用に `ObjectGroupStepView` へ `InverseMethod`・`InverseKeeps`・`InverseLoses`・`OutputEditPending` を足した
+- パネル（`PlayerModifierStackSubPanel`）：「出力の編集（逆方向）」欄。「項目の引数」で選んだ項目の保つもの・失うもの・未確定かを出し、確定・破棄のボタンを持つ（UI 自動操作の ID：`modifierStack.inverseInfo` / `inverseCommit` / `inverseDiscard`）。表示用に `ModifierStackStepView` へ `InverseMethod`・`InverseKeeps`・`InverseLoses`・`OutputEditPending` を足した
 - 断面の線分 → 断面
-  - `openGroupProfileEditSpace`（`OpenGroupProfileEditSpaceCommand`）と `GroupProfileEditSpaceAdapter`（新規）：項目の断面から線分の代理を作って作業空間を開く
-  - 反映は代理の線分を `ProfileAcquire` で断面として読み、`setObjectGroupStepArgs`（内部用の `AllowProfileKeys` で断面のキーを許す）で項目へ書いて作り直す。取消しは項目の断面から代理を作り直す。閉じると代理を消す（`EditSpaceSession.DeleteProxyOnClose`）
-  - `ObjectGroupOps.ArgWriteBlockReason`・`TryValidateStepArgs` に断面のキーを許す版を足した
+  - `openModifierStackProfileEditSpace`（`OpenModifierStackProfileEditSpaceCommand`）と `ModifierStackProfileEditSpaceAdapter`（新規）：項目の断面から線分の代理を作って作業空間を開く
+  - 反映は代理の線分を `ProfileAcquire` で断面として読み、`setModifierStackStepArgs`（内部用の `AllowProfileKeys` で断面のキーを許す）で項目へ書いて作り直す。取消しは項目の断面から代理を作り直す。閉じると代理を消す（`EditSpaceSession.DeleteProxyOnClose`）
+  - `ModifierStackOps.ArgWriteBlockReason`・`TryValidateStepArgs` に断面のキーを許す版を足した
   - 作業空間の元・代理を ObjectId で引き直す（`RebindEditSpaceObjects`）。一覧のスナップショットの Undo が描画オブジェクトを複製で置き換えると、代理を見失って「壊れた」扱いになり、閉じても代理が消えなかった（直す前に確かめた）
 
 #### 決めた扱い
 
 - 確定したときは、正方向で作り直した結果に置き換える（編集は丸められる）。出力は入力と引数から導くもの（2.1・2.4）で、編集した形を残すと次に入力が変わったときに黙って消えるため。丸められる量は照会 `queryModifierInverse` の `maxDeviation`・`meanDeviation` で示す
-- 確定は「入力を書く → その項目を作り直す（`RunObjectGroupStep`）→ `MarkRebuilt` → 下流はコマンドの終わりに依存の順に流れる」。Undo は一覧のスナップショットとグループの差し替えの 1 件（段 3 と同じ形）。Undo 1 回で入力・出力・下流が戻り、出力は編集したまま未確定に戻る
+- 確定は「入力を書く → その項目を作り直す（`RunModifierStackStep`）→ `MarkRebuilt` → 下流はコマンドの終わりに依存の順に流れる」。Undo は一覧のスナップショットとスタックの差し替えの 1 件（段 3 と同じ形）。Undo 1 回で入力・出力・下流が戻り、出力は編集したまま未確定に戻る
 - 未確定の判定は控え（保存しない）による。読み込み直後は出力を正方向の結果として控える。未確定のまま保存すると読み込み後に編集した形が正方向の結果として残るので、保存を断る
 - 書き直す梯子が別の項目の出力のときは断る（上流の逆方向へは辿らない）
 - 頂点へ藤壺は、ボーン・原点へ置いたものと、スキンド化済みの入力は断る（置いた位置が姿勢込みの GPU のワールド座標で、格納値へ戻す行列が一意でない）
 - 試しの作り直し（照会のずれ）は梯子を点列で渡すので、スキンドの出力でもウェイトの欠けでは止めない（`ModifierSpace.PrepareForOutput` の `checkWeights`）。確定の作り直しは今までどおり検査する
 - 藤壺のパーツ ID：採番は生成器（置いた順、梯子をまたいで 0 から。`PrimitiveMeshFactory.GeneratePlaceObject` の `PartsIdCounter`）を正とする。逆方向はパーツ ID に頼らず、生成の控えで対応を取る
-- 断面の作業空間（グループの項目）は、断面を線分オブジェクトから取り込んでいる項目を対象にしない（その線分を編集すれば段 4 の評価で追随する）
+- 断面の作業空間（スタックの項目）は、断面を線分オブジェクトから取り込んでいる項目を対象にしない（その線分を編集すれば段 4 の評価で追随する）
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage6/`）
 
-- パイプ（梯子 5 段・断面 4 点の閉ループ、AutoLadder、グループとして残す）
+- パイプ（梯子 5 段・断面 4 点の閉ループ、AutoLadder、モディファイアスタックとして残す）
   - 輪 2 を相似でなく、輪 3 を平行移動、輪 4 を 2 倍＋平行移動に編集すると未確定（`pending`=1）になり、照会で書き直す入力（梯子の頂点 12 個）とずれ（最大 0.010）が出た（01→02）
   - 確定で梯子の段 3・4 が書き直され（段 4 は長さ 0.2）、パイプが作り直された（03）
   - Undo 1 回で梯子が戻り、出力は編集したまま未確定に戻り、評価器は流さない（Blocked）（04）
@@ -522,12 +522,12 @@
 - ネジ配置（円・XZ・6 個）：1.2 倍で `params.pcdRadius`=0.6・`params.scale`=0.24、ずれ 1.3e-7
 - 鉄塔のデッキ：Y 軸まわり 30°・上へ 0.3 で `params.rotationY`=45（元 15）・`params.height`=1.5、ずれ 1.3e-7（08）
 - 頂点へ藤壺（頂点 2 個）：1 個目を (0, −0.1, 0) 動かして確定すると、入力の頂点 0 が同じ量だけ動いた。ずれ 0
-- 断面の線分 → 断面（パイプの断面）：`openGroupProfileEditSpace` で代理を作り（未反映の変更なし）、代理の点を動かして反映すると項目の `profile` が書き換わりパイプが作り直された（11）。Undo 1 回で断面が戻った。取消し・閉じる（代理を消す）が通った
+- 断面の線分 → 断面（パイプの断面）：`openModifierStackProfileEditSpace` で代理を作り（未反映の変更なし）、代理の点を動かして反映すると項目の `profile` が書き換わりパイプが作り直された（11）。Undo 1 回で断面が戻った。取消し・閉じる（代理を消す）が通った
 - 保存 → 読み込みのあと、パイプの出力の編集が未確定と判定され、確定で梯子の段 4 が書き直された（12）
 - 揺れパイプ（シナリオ `roboF_T5_SK_initialDebug_フリル`）
   - `a8`（パイプへのミラー）が通った。一括スキンド化で 4 項目が流れ、失敗 0
   - AhogePipe（スキンド化済み、評価空間「バインド空間へ戻して書く」）を X 軸まわり 25° 回して照会するとずれ最大 0.018。確定で梯子「アホ毛用はしご_skinned」の頂点 18 個が書き直され、パイプの 152 頂点すべてに 9 本の鎖のボーンのウェイトが入った（13→14→15）。Undo 1 回で未確定に戻り、破棄で作り直された
-  - パネルから確定（`objectGroup.inverseCommit`）でも同じく確定した（16→17→18）
+  - パネルから確定（`modifierStack.inverseCommit`）でも同じく確定した（16→17→18）
 - 段 1〜5：サブディビジョンの子への `setVertexPositions`・`deleteFaces` は拒否、`level` の書き換えで 698 頂点に作り直し、ケージの編集に追随（評価器の状態 Handler）
 - 3 つの csproj のコンパイルはエラー 0。`queryCommandAudit` の完了条件の項目はすべて 0。`queryUiAutomationAudit` の登録失敗・属性の付け忘れ・重複は 0。Editor.log にエラーなし
 - 段 6 と関係なく見つかったこと
@@ -573,7 +573,7 @@
     - 面構成・UV・パーツ ID・サブ ID は入力のまま
     - 三角形の内外は重心座標で判定し、縁は `EdgeEpsilon`（1e-5）で拾う
   - `PrimitiveMeshFactory.Build` に解決口 `SurfacePasteResolver` を足した。ビューアの `ResolveSurfacePasteForCommand`（`PolyLingPlayerViewerCore.CreateCommands.cs`）が入力と、モデル空間へ移した参照面の複製を渡す。見本（`BuildModifierTemplate`）にも渡す
-  - 記録は基底の `OnKeepAsGroup`。依存の辺は `IsMeshRef` から出る（2 入力）。逆方向は持たない（出力の編集は段 2 の保護で拒否）
+  - 記録は基底の `OnKeepAsModifierStack`。依存の辺は `IsMeshRef` から出る（2 入力）。逆方向は持たない（出力の編集は段 2 の保護で拒否）
 - まつげ `createLush`（`CreateLushCommand : CreateBeltPrimitiveCommand`）
   - 入力：梯子、原型 `sourceMasterIndices`（複数なら結合）
   - 段の補間：既存の `BeltSplineOptions`
@@ -637,7 +637,7 @@
 
 まつげ
 - 梯子の頂点の編集で 貼り付け → まつげ が作り直された（04）。Undo 1 回で戻った（05）
-- `setObjectGroupStepArgs` で回転を書き換えると作り直された。Undo 1 回で前の回転に戻り（06）、Redo で進んだ
+- `setModifierStackStepArgs` で回転を書き換えると作り直された。Undo 1 回で前の回転に戻り（06）、Redo で進んだ
 - 逆方向（梯子を直接読むまつげ Lush2）
   - 回転の引数だけ違う形（始点 (45,10,−50)・終点 (75,−10,−130)）を出力へ書いた
   - 照会で、梯子は書き直さず、回転が始点 (45.00,10.00,−50.00)・終点 (75.00,−10.00,−130.00) に戻ることが出た（ずれ 7.8e-8）
@@ -654,7 +654,7 @@
 
 藤壺のパーツ ID
 - 梯子＋原型、段の間引き 2、補間 1 で試した
-- 新規作成と作り直し（`rebuildObjectGroup`）で、パーツ ID（0〜4）とサブ ID（原型のまま 0）が一致した
+- 新規作成と作り直し（`rebuildModifierStack`）で、パーツ ID（0〜4）とサブ ID（原型のまま 0）が一致した
 - パイプも作り直しの前後で一致した
 
 段 1〜6
@@ -694,10 +694,10 @@
 2. 新規オブジェクトとして作った項目の作り直しで、置き方の位置が二重に掛かっていた
    - 症状：`placement.worldPosition` が 0 でない項目（2D押し出し・パイプ・取り出した梯子からのパイプ）を作り直すたびに、出力がその位置の分だけずれた（2D押し出しは画面から外れた）
    - 原因：作成（`PrimitiveMeshCreateNewObject` → `BuildPrimitiveMeshContext`）は位置と焼かなかった回転・拡大を出力の姿勢（BoneTransform）へ入れるが、書き戻し（`PrimitiveMeshReplaceExisting` → `ApplyReplaceTransforms`）は同じ値を頂点へ焼いていた
-   - 直し方：`RunObjectGroupStep` で、作ったときの追加先モードが新規オブジェクト・新規モデルなら、書き戻しの引数の位置を 0、焼かなかった回転・拡大を単位にする（`PlayerCommandDispatcher.StripPoseOwnedByOutput`）。逆方向の見本（`BuildModifierTemplate`）も同じ扱いにした。既存へ追加で作ったもの（頂点へ焼いてある）は変えない
+   - 直し方：`RunModifierStackStep` で、作ったときの追加先モードが新規オブジェクト・新規モデルなら、書き戻しの引数の位置を 0、焼かなかった回転・拡大を単位にする（`PlayerCommandDispatcher.StripPoseOwnedByOutput`）。逆方向の見本（`BuildModifierTemplate`）も同じ扱いにした。既存へ追加で作ったもの（頂点へ焼いてある）は変えない
 3. 作業空間の反映を、選択で出力の保護に掛けていた（断面系）
-   - 症状：グループの項目の断面の作業空間（`openGroupProfileEditSpace`）で、回転体の出力を選んだまま `applyEditSpace` すると「出力は編集できません」で拒否された
-   - 原因：`applyEditSpace` は Writes=ModelWide で、`ModifierOutputGuard` が選択中の描画オブジェクトを書き込み先とみなしていた。作業空間が実際に書くのは元データ（UV なら元の描画オブジェクト、線分の断面なら線分オブジェクト）で、グループの項目の断面は項目の引数だけを書く
+   - 症状：スタックの項目の断面の作業空間（`openModifierStackProfileEditSpace`）で、回転体の出力を選んだまま `applyEditSpace` すると「出力は編集できません」で拒否された
+   - 原因：`applyEditSpace` は Writes=ModelWide で、`ModifierOutputGuard` が選択中の描画オブジェクトを書き込み先とみなしていた。作業空間が実際に書くのは元データ（UV なら元の描画オブジェクト、線分の断面なら線分オブジェクト）で、スタックの項目の断面は項目の引数だけを書く
    - 直し方：`ModifierOutputGuard.DenyReason` に書き込み先を明示する口（explicitTargets）を足し、反映・取消し・閉じるはビューアの作業空間が書く先で判定する（`PlayerCommandDispatcher.OnEditSpaceWriteTargets` → `PolyLingPlayerViewerCore.EditSpaceWriteTargets`）。反映は元データ、取消し・閉じるは代理だけ（空）
    - 確かめた：出力を選んだままでも断面の反映が通り、回転体が作り直された。UV の作業空間を出力（回転体）で開いて反映すると、代理を選んでいても拒否された
 4. 隠した入力を `moveSelectedVertices`・`scaleSelection` で動かしても下流が流れなかった（まつげ・眉）
@@ -715,7 +715,7 @@
 - 位置・回転・拡大の扱い（直したもの 2）：新規オブジェクト・新規モデルとして作った項目の置き方は出力の姿勢が持つ。作り直しは姿勢を変えず中身だけを入れ替える。作ったあとに出力を動かしても、作り直しで戻らない
 - 作業空間の反映・取消し・閉じるの書き込み先は、作業空間が書く先で決める（直したもの 3）
 - ブレンドは段 4 の決めた扱いのまま（作り直せない。照会の reasons に「RebuildRole が無い」）。記録の誤り（下の確かめた結果）は作り直しの設計と一緒に 6 章で扱う
-- 断面を線分オブジェクトから取り込む項目をコマンドで作るときは、断面の値も渡す。作成は値を使い、取り込み元は作り直しで読む（`ObjectGroupOps.RefreshProfile`）。値を渡さないと作成に失敗する（2D押し出し）か既定の断面で作られる（回転体）
+- 断面を線分オブジェクトから取り込む項目をコマンドで作るときは、断面の値も渡す。作成は値を使い、取り込み元は作り直しで読む（`ModifierStackOps.RefreshProfile`）。値を渡さないと作成に失敗する（2D押し出し）か既定の断面で作られる（回転体）
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage8/`）
 
@@ -732,7 +732,7 @@
 - 逆方向：出力全体を (0.02, 0, 0.01) 動かして照会（ずれ最大 0.0098）、確定で梯子の段 9 個の頂点 18 個がちょうど同じ量動いた（05）。Undo 1 回で梯子が戻り出力は未確定、破棄で作り直し（06）。`deleteFaces` は「位置の編集だけ」で拒否
 - 保存 → 読み込みのあとも鎖 → パイプが流れ、ボーン数は変わらない
 
-パイプの梯子化（梯子 → 旧互換パイプ（グループなし）→ `extractPipeBelt` HairBelt → `createPipe` HairRe）
+パイプの梯子化（梯子 → 旧互換パイプ（スタックなし）→ `extractPipeBelt` HairBelt → `createPipe` HairRe）
 - 元のパイプの上の輪を動かすと HairBelt → HairRe の順に作り直された（c3_extract_06→07。直したもの 2 のあと）。Undo 1 回で戻った
 - `params.rungStep`=2 で HairBelt が 14 → 8 頂点、HairRe も流れた。Undo で 14
 - HairRe の逆方向は「梯子 HairBelt は別の項目の出力」で断られた（6 章の上流への逆方向）。HairBelt への書き込みは拒否
@@ -759,24 +759,24 @@
 断面系（折れ線 → 回転体 Rev、閉ループ → 2D押し出し P2D・パイプ ProfPipe、断面を値で持つ RT_Bottle）
 - 折れ線の点を動かすと Rev だけ、閉ループの点を動かすと P2D・ProfPipe が作り直された（c7_profile_05→06。直したもの 2 のあと）。Undo 1 回で戻った（07）
 - `params.radialSegments`=5 で Rev が作り直された（08）。このあとの Undo 2 回では、その前の折れ線の編集は戻らなかった（段 6 の「Undo は担当の履歴ごとに分かれている」と同じ現れ）
-- 線分から取り込む Rev は `openGroupProfileEditSpace` を「その線分を編集すれば追随」で断った。RT_Bottle は作業空間を開き、代理の点を動かして反映すると作り直された（12→13。直したもの 3 のあと）
+- 線分から取り込む Rev は `openModifierStackProfileEditSpace` を「その線分を編集すれば追随」で断った。RT_Bottle は作業空間を開き、代理の点を動かして反映すると作り直された（12→13。直したもの 3 のあと）
 - 保存 → 読み込みのあと、折れ線・閉ループの編集で 3 項目が流れた（09）
 
 ブレンド（BlA・BlB → 宛先 BlC、宛先を書き換える設定）
-- グループは記録されるが、照会の出力は BlC ではなく BlC_backup（ブレンド前の形の控え）だった。BlC は入力に並ぶ。状態は Excluded（RebuildRole が無い）
-  - 原因：`BlendOperation.ApplyBlend` は宛先を書き換える設定でも `<宛先>_backup` を足す。`CaptureObjectGroup` は増えた ObjectId の最大を出力にするので、`PlayerCommandDispatcher.Blend.cs` の「新規オブジェクトを作らない設定では宛先そのものが出力先」という意図と違う
+- スタックは記録されるが、照会の出力は BlC ではなく BlC_backup（ブレンド前の形の控え）だった。BlC は入力に並ぶ。状態は Excluded（RebuildRole が無い）
+  - 原因：`BlendOperation.ApplyBlend` は宛先を書き換える設定でも `<宛先>_backup` を足す。`CaptureModifierStack` は増えた ObjectId の最大を出力にするので、`PlayerCommandDispatcher.Blend.cs` の「新規オブジェクトを作らない設定では宛先そのものが出力先」という意図と違う
   - そのため BlC への書き込みは通り、BlC_backup への書き込みが「出力は編集できません」で拒否される
 - BlA を編集しても作り直されない（要評価の印だけ立つ）。Undo 1 回で戻った
 
 魔法陣（リング・紋章・円周配置（配置元＝直方体））
 - 紋章の `params.size`=0.5 で紋章だけ作り直され（c9_magic_01→02）、Undo 1 回で戻った（03）
-- `replaceObjectGroupSource` で配置元を球へ差し替えると円周配置だけ作り直された（04）。直後の Undo 1 回で配置元が戻った
+- `replaceModifierStackSource` で配置元を球へ差し替えると円周配置だけ作り直された（04）。直後の Undo 1 回で配置元が戻った
 - 差し替えたあとは球の編集で円周配置が流れ（05）、元の直方体の編集では流れない
 - 逆方向：円周配置を 1.5 倍にして確定すると `params.radius`=1.2・`params.scale`=1.5（ずれ 3e-7）。Undo 1 回で未確定に戻った
 - 保存 → 読み込みのあと、球の編集で円周配置が流れた（11）
 
 鉄塔（塔体＋デッキ（配置元＝四角の板））
-- `replaceObjectGroupSource` でデッキの配置元を三角の板へ取り替えた（c10_tower_01→02）
+- `replaceModifierStackSource` でデッキの配置元を三角の板へ取り替えた（c10_tower_01→02）
 - 三角の板の頂点を伸ばすとデッキが作り直された（03）。Undo 1 回で戻った（04）
 - `params.height`=2.5 で作り直された（05）
 - 逆方向：デッキを 0.5 上げて確定すると `params.height`=1.5（ずれ 0）（06）。Undo・破棄が通った
@@ -797,21 +797,21 @@
 
 #### 段 8 と関係なく見つかったこと
 
-- 頂点編集の Undo の履歴は、書き込み先のオブジェクトが替わると消える（`MeshUndoController.SetMeshObjectFor` の `_vertexEditStack.Clear()`）。BlA を編集し、続けて BlC を編集して Undo を 2 回すると、BlA の編集は戻らず、2 回目は一覧の履歴へ進んでブレンドのグループが消えた。段 6 の「Undo は担当の履歴ごとに分かれている」と同じ仕組みの別の現れ
+- 頂点編集の Undo の履歴は、書き込み先のオブジェクトが替わると消える（`MeshUndoController.SetMeshObjectFor` の `_vertexEditStack.Clear()`）。BlA を編集し、続けて BlC を編集して Undo を 2 回すると、BlA の編集は戻らず、2 回目は一覧の履歴へ進んでブレンドのスタックが消えた。段 6 の「Undo は担当の履歴ごとに分かれている」と同じ仕組みの別の現れ
 - スキンド化済みのパイプの出力を `moveSelectedVertices` で動かすと、データは動くが画面は次の更新まで古い形のまま（揺れパイプ c2_pipe_04）。原因は調べていない
 - `runScenario stage8_パイプの梯子化` を、モデル 0 に回転体があるまま流すと、応答の deletedObjectIds にその回転体の ObjectId が入った。原因は調べていない
 
 ### 段 9 以降の決めた扱い（2026-10-30。6 章からの段分けで承認）
 
 - ブレンド（段 13）：基準の形を読む入力キー（例 `baseMasterIndex`、Read）を足し、宛先を出力にする。宛先を書き換える設定では控え `<宛先>_backup` が基準、複製を作る設定では元の宛先が基準。作り直しは出力へ書き、控えは作らない
-- 作成時の梯子の行列（段 10）：梯子の 格納→バインド を常に生成物へ掛け、出力をモデル空間に置く。段 5 の「梯子・出力ともに MeshFilter なら M を掛けない」を改める。保存済みのグループのうち梯子の行列が単位でないものは、次の作り直しで出力の位置が変わる
+- 作成時の梯子の行列（段 10）：梯子の 格納→バインド を常に生成物へ掛け、出力をモデル空間に置く。段 5 の「梯子・出力ともに MeshFilter なら M を掛けない」を改める。保存済みのスタックのうち梯子の行列が単位でないものは、次の作り直しで出力の位置が変わる
 - ローカルで読む入力（原型・断面）がスキンド化済みのとき（段 10）：スキンド化のときに元の ローカル→バインド の行列を描画オブジェクトに控えて保存し、それで読む（新しい保存項目）
 - Undo の履歴（段 12）：履歴は今の 2 本（一覧・頂点編集）のまま、書き込み先が替わったときに頂点編集の履歴を消すのをやめる。順序は今の時系列の調停（`MeshUndoController.cs` の OperationLog、`UndoGroup.cs` の PerformUndo）に任せる。1 本にまとめるかは今後の課題（6 章）
 
 ### 段 9：控えと差分の取り違え — 状態：済（2026-10-30）
 
 - 範囲
-  - 作った直後の編集を変化・未確定として扱わない件：グループを足した直後に、その項目の入力の署名と正方向の出力を控える口（例 `ModifierEvaluator.PrimeGroup`）を足し、`CaptureObjectGroup`（`PlayerCommandDispatcher.ObjectGroup.cs`）と、組立（魔法陣・鉄塔。`CaptureObjectGroup` を通らない）がグループを作る箇所で呼ぶ。今は `RefreshModel`・`MarkChangedInputs` が初めて見た時点の値を控えるだけで、サブディビジョンだけが作成時に控えている（`SubdivisionSync.cs`）
+  - 作った直後の編集を変化・未確定として扱わない件：スタックを足した直後に、その項目の入力の署名と正方向の出力を控える口（例 `ModifierEvaluator.PrimeGroup`）を足し、`CaptureModifierStack`（`PlayerCommandDispatcher.ModifierStack.cs`）と、組立（魔法陣・鉄塔。`CaptureModifierStack` を通らない）がスタックを作る箇所で呼ぶ。今は `RefreshModel`・`MarkChangedInputs` が初めて見た時点の値を控えるだけで、サブディビジョンだけが作成時に控えている（`SubdivisionSync.cs`）
   - runScenario の deletedObjectIds：原因は、実行前と実行後の安定 ID をどちらもその時のカレントモデルから取っていること（`PlayerCommandDispatcher.Revision.cs` の `CaptureObjectIds`・`FinishRevision`、控えは `PlayerCommandDispatcher.cs` の `DispatchAuthorized`）。シナリオ先頭の `createEmptyModel` がカレントを新しいモデルへ替えるので、前のモデルの全 ID が消えた扱いになる。控えをモデルごと（モデルの参照と ID の組）に持ち、同じモデル同士で比べる。新しく増えたモデルの ID は created に入れる
   - スキンド化済みの出力を `moveSelectedVertices` で動かしたとき画面が古いまま：原因は未特定。読んだ経路は `MoveToolHandler.Commands.cs` の `ExecuteFromCommand` → `ApplyNumericMove` → `MoveToolHandler.Move.cs` の `ApplyDelta` → `OnSyncMeshPositions` → `PlayerViewportManager.Renderer.cs` の `SyncMeshPositionsAndTransform`（位置バッファへ書く）。面は `UnityMesh` を描き（`MeshSceneRenderer.cs`）、`UnityMesh` を書き直すのは `UpdateTransform` から呼ぶ `WritebackTransformedVertices`（`UnifiedSystemAdapter.cs`）。出力の編集が未確定のときは評価が止まり、`RunModifierEvaluation` は `EnterTopologyChanged` の前で戻る。再現して原因を特定してから直す
 - 確かめ方
@@ -825,11 +825,11 @@
 
 #### 調べて分かったこと（画面が古いまま）
 
-- 再現の条件：グループを足したあとに出力を動かすだけでは画面は動いた。`setObjectGroupStepArgs`（AhogePipe の `params.thickness`=0.01）→ Undo → `moveSelectedVertices` の順で再現した。データは動く（`getRawData` の y が 1.0229 → 0.9729）が画面は変わらない（`SandBox/Captures/stage9/c2_repro_06→07→08`、`10→11` は同じ画像）。段 8 の c2_pipe_04 も引数の書き換えの Undo の後だった
+- 再現の条件：スタックを足したあとに出力を動かすだけでは画面は動いた。`setModifierStackStepArgs`（AhogePipe の `params.thickness`=0.01）→ Undo → `moveSelectedVertices` の順で再現した。データは動く（`getRawData` の y が 1.0229 → 0.9729）が画面は変わらない（`SandBox/Captures/stage9/c2_repro_06→07→08`、`10→11` は同じ画像）。段 8 の c2_pipe_04 も引数の書き換えの Undo の後だった
 - Editor.log：`[WritebackTransformedVertices] 再生成した Mesh の頂点数が展開頂点数と一致しない mesh='AhogePipe_skinned' regenerated=576 expected=1152`（AhogePipe+_skinned も同じ）
 - 原因
-  - 引数の書き換え・作り直しの Undo は 1 つのグループで、一覧のスナップショット `MeshFilterToSkinnedRecord` とグループの差し替え `ObjectGroupChangeRecord` を積む（`PlayerCommandDispatcher.Subdivision.cs` の `RecordSubdivisionUndo`）
-  - `UndoStack.PerformUndo`・`PerformRedo` は `LastExecutedRecord` にグループの先頭の 1 件だけを入れる（`UndoStack.cs`）。Undo では `ObjectGroupChangeRecord` が入る（ログ `lastRecord=ObjectGroupChangeRecord, needsRebuild=False`）
+  - 引数の書き換え・作り直しの Undo は 1 つのスタックで、一覧のスナップショット `MeshFilterToSkinnedRecord` とスタックの差し替え `ModifierStackChangeRecord` を積む（`PlayerCommandDispatcher.Subdivision.cs` の `RecordSubdivisionUndo`）
+  - `UndoStack.PerformUndo`・`PerformRedo` は `LastExecutedRecord` にスタックの先頭の 1 件だけを入れる（`UndoStack.cs`）。Undo では `ModifierStackChangeRecord` が入る（ログ `lastRecord=ModifierStackChangeRecord, needsRebuild=False`）
   - `PolyLingPlayerViewerCore.Lifecycle.cs` の一覧の Undo の枝は `needsRebuild` を `lastRecord` だけで判定し、型の一覧に `MeshFilterToSkinnedRecord` が無かった。`EnterUndoApplied`（`RebuildAdapter`）を通らず、行列の更新（`EnterVerticesMoved`・`UpdateTransform`）だけが走った
   - GPU バッファは Undo 前の面構成（304 頂点・展開 1152）のまま、メッシュは 152 頂点（展開 576）に戻る。以後の頂点移動の書き戻しは `UnifiedSystemAdapter.WritebackTransformedVertices` の頂点数の照合で捨てられ、`UnityMesh` が更新されない
   - Undo の直後に形が正しく見えたのは、`MeshFilterToSkinnedRecord.CloneMeshContext` が `UnityMesh` を `MeshObject` から作り直しているため（`MeshListRecords.cs`）
@@ -838,8 +838,8 @@
 #### 実装
 
 - 作った直後の控え
-  - `ModifierEvaluator.PrimeGroup(model, group)`（グループの全項目）・`PrimeStep(model, step)`（1 項目）を足した。中身は既存の `Prime(model, entry)`（入力の署名・要評価の印を下ろす・正方向の出力の控え）
-  - 呼ぶ箇所：`CaptureObjectGroup` の `AddObjectGroup` の後（`PlayerCommandDispatcher.ObjectGroup.cs`）、組立の `ExecuteEmptyParentAssembly` の `AddObjectGroup` の後（`PlayerCommandDispatcher.MagicCircle.cs`。魔法陣・鉄塔の塔体）、デッキの後付けは `AppendStep` が返す項目に `PrimeStep`（`PlayerCommandDispatcher.LatticeTower.cs`）
+  - `ModifierEvaluator.PrimeGroup(model, group)`（スタックの全項目）・`PrimeStep(model, step)`（1 項目）を足した。中身は既存の `Prime(model, entry)`（入力の署名・要評価の印を下ろす・正方向の出力の控え）
+  - 呼ぶ箇所：`CaptureModifierStack` の `AddModifierStack` の後（`PlayerCommandDispatcher.ModifierStack.cs`）、組立の `ExecuteEmptyParentAssembly` の `AddModifierStack` の後（`PlayerCommandDispatcher.MagicCircle.cs`。魔法陣・鉄塔の塔体）、デッキの後付けは `AppendStep` が返す項目に `PrimeStep`（`PlayerCommandDispatcher.LatticeTower.cs`）
   - `ModifierEvaluator.cs` 冒頭の注記に「作った直後の控え」を足した
 - 版の差分（`PlayerCommandDispatcher.Revision.cs`）：控えを「モデルの参照 → ID の集合」に変え、プロジェクトの全モデルから取る。同じモデル同士で比べ、新しく増えたモデルの ID は created、無くなったモデルの ID は deleted に入れる。版はカレントモデルのまま
 - Undo の後の作り直し
@@ -853,8 +853,8 @@
 
 #### 決めた扱い
 
-- 作成直後の控えはグループ・項目を足したコマンドがその場で取る。初めて見たときに控える扱い（`RefreshModel`・`MarkChangedInputs`・`IsOutputEditPending`）は、読み込み・Undo で現れた項目のために残す
-- 既存のグループへ項目を足すときは、足した項目だけ控える。ほかの項目を控え直すと、未確定の出力の編集を正方向の結果として上書きする
+- 作成直後の控えはスタック・項目を足したコマンドがその場で取る。初めて見たときに控える扱い（`RefreshModel`・`MarkChangedInputs`・`IsOutputEditPending`）は、読み込み・Undo で現れた項目のために残す
+- 既存のスタックへ項目を足すときは、足した項目だけ控える。ほかの項目を控え直すと、未確定の出力の編集を正方向の結果として上書きする
 - 版の差分で無くなったモデルの ID は deleted に入れる
 - 一覧の Undo・Redo の作り直しの判定は、その回に戻した・進めた記録の全部で行う
 
@@ -894,7 +894,7 @@
   - `edgeRibbonFace.masterIndices`：GPU のワールド座標（`EdgeRibbonFaceToolHandler` → ツールの `GetWorldPositions`）
   - `createVertexBillboardPlace.masterIndices`：GPU のワールド座標・`WorldMatrix`（`VertexBillboardPlaceToolHandler.BuildCore`）
   - `applyBlend.sourceMasterIndices`：`VertexToWorldMatrix`（`BlendPreviewState.BlendVertices`）
-- Local（格納値のまま読む）：梯子 `beltSourceIndex`（`ObjectGroupOps.RefreshBelts`・`BeltAcquire`）、断面 `profileSourceIndex`（`ProfileAcquire`）、原型 `sourceMasterIndices`（`ResolvePlaceSourcesForCommand` → `MeshSourceMultiPick`）、ケージ `cageMasterIndex`、`applyBlend.destMasterIndex`
+- Local（格納値のまま読む）：梯子 `beltSourceIndex`（`ModifierStackOps.RefreshBelts`・`BeltAcquire`）、断面 `profileSourceIndex`（`ProfileAcquire`）、原型 `sourceMasterIndices`（`ResolvePlaceSourcesForCommand` → `MeshSourceMultiPick`）、ケージ `cageMasterIndex`、`applyBlend.destMasterIndex`
 - スキンド化の 2 経路はどちらも `WorldMatrix`（ポーズ込み）で頂点を焼いている（`MeshFilterToSkinnedConverter` Phase 4 の `savedWorldMatrices`、`SkinKindConverter.ToSkinned` の `VertexToWorldMatrix`）。控える行列はこの焼いた行列そのもの
 - オブジェクト移動のドラッグを離すと `MoveObjectsCommand`・`RotateObjectsCommand` を `DispatchPanelCommand` へ送る（`ObjectMoveToolHandler.OnLeftDragEnd`、`PolyLingPlayerViewerCore.VertexInteraction.cs`）。書き込みのあるコマンドの終わりと同じ口を通る
 
@@ -904,7 +904,7 @@
   - `PLParamAttribute.cs`：enum `PLMeshRefSpace { Unspecified, Local, Model }` と `MeshRefSpace` を足した
   - `PanelCommandMeshRefs.cs`：`MeshRefKey.Space` を足した
   - 付け先：上の「調べて分かったこと」のとおり（`PanelCommand.PrimitiveBelt.cs`・`Primitive.cs`・`MagicCircle.cs`・`LatticeTower.cs`・`SpringBoneLadder.cs`・`Subdivision.cs`・`TopologyTargeted.cs`・`Blend.cs`）
-  - `PanelCommandFactoryAudit.cs`：グループに残るコマンド（Capture が OnKeepAsGroup・Always）の入力キーで空間が未指定のものを数え、`queryCommandAudit` に出す（完了条件）
+  - `PanelCommandFactoryAudit.cs`：スタックに残るコマンド（Capture が OnKeepAsModifierStack・Always）の入力キーで空間が未指定のものを数え、`queryCommandAudit` に出す（完了条件）
 - 署名に行列（`ModifierEvaluator.cs`・`MeshSignature.cs`）
   - `MeshSignature.Matrix`（1e-5 に丸める）。`Sig.Matrix` を足した
   - `Entry.ModelInputs`・`LocalInputs`・`MatrixInputs`。行列を混ぜるのは `MatrixInputs`＝Model の入力と梯子（梯子はローカルで読むが、生成物へ梯子の 格納→バインド を掛けるので行列が結果に効く）
@@ -917,7 +917,7 @@
   - `ModifierSpace.Classify`：Model の入力はスキンドでも評価する。Local の入力（梯子以外）がスキンドで控えが無ければ外す。梯子を持つ項目は梯子があれば常に Transform。梯子を持たない項目で出力がスキンドなら外す
 - 梯子の行列
   - `ModifierSpace.TryComputeMatrix(belt, output, poseOwnedByOutput)`：常に M を返す。M ＝（出力の枠の バインド→格納）×（梯子の 格納→バインド）。出力の枠は、新規オブジェクト・新規モデルとして作った項目では出力の親の `BindWorldMatrix`（出力自身の姿勢は入れない）、それ以外は出力の `VertexToBindWorldMatrix`。スキンドの出力は単位（`OutputFrameBindToVertex`）
-  - `ComputeStepSpace`（`PlayerCommandDispatcher.ObjectGroup.cs`）：作ったときの追加先モードを項目の引数から読む（`IsPoseOwnedByOutput`。`StripPoseOwnedByOutput` と同じ判定）
+  - `ComputeStepSpace`（`PlayerCommandDispatcher.ModifierStack.cs`）：作ったときの追加先モードを項目の引数から読む（`IsPoseOwnedByOutput`。`StripPoseOwnedByOutput` と同じ判定）
   - 作成：`ExecuteCreatePrimitiveMesh` が梯子コマンドで新規オブジェクト・既存へ追加のとき `_createBeltSource` を立てる。`PrimitiveMeshCreateNewObject` は生成物へ梯子の `VertexToBindWorldMatrix` を掛ける。`PrimitiveMeshAddToExisting` は姿勢・位置を焼いたあとに M を掛ける（作り直しの `PrimitiveMeshReplaceExisting` と同じ順）
   - 行列を掛ける処理は `ModifierSpace.ApplyMatrix` にまとめた（`PrepareForOutput` も使う）
 - 照会 `queryModifierGraph` の spaces の Transform の名前を「梯子の行列で出力の格納空間へ移して書く」にした
@@ -940,7 +940,7 @@
   - 保存 → 読み込み：CSV（`SandBox/stage10/lash/`）では球の頂点の移動で LashPasted → Lush → Brow が流れた。CSV には球の `skinBakeMatrix`（z に 0.1）が書かれていた。.mfproj（`SandBox/stage10/proj/stage10_b.mfproj`）では球の BoneTransform の PositionZ を 0.2 にすると同じ 3 項目が流れ、頂点 0 の z が 0.5426 → 0.6426
 - `stage10_パイプの梯子化_位置付き`
   - 作成直後の SrcPipe と HairRe の最初の輪は、梯子の最初の段のワールド位置（x 0.2〜0.4、y 0.2、z 0.1）に重なった（`pipe_belt_01_created`）
-  - `rebuildObjectGroup`（HairBelt・HairRe）のあと HairRe・HairBelt の頂点の値は変わらない（`pipe_belt_02_rebuilt`）
+  - `rebuildModifierStack`（HairBelt・HairRe）のあと HairRe・HairBelt の頂点の値は変わらない（`pipe_belt_02_rebuilt`）
   - HairBelt の BoneTransform の PositionX を 0.1 にすると HairRe が流れ、x が 0.1 動いた。.mfproj の読み込みのあと（`stage9_作成直後の編集` のモデル）でも同じに流れた
 - `barnacle_place`
   - 一括スキンド化のあと、照会の reasons に「形として読む入力がスキンド化済み」は出ない。藤壺の出力（スキンド）は作り直しで失敗する（下の「段 10 と関係なく見つかったこと」の 1）。出力を MeshFilter へ戻して原型の円錐の先端を動かすと、藤壺が流れた
@@ -959,66 +959,66 @@
 - バイナリの頂点の位置が、`setVertexPositions`・`moveSelectedVertices` のあとの頂点の位置と違う。`queryProjectSyncDiff` via=binary で位置の違いが出て、`loadProjectBinary` のあとの円錐の先端は編集の前の値だった。書いているのは `MeshObject.Positions`（`RemoteBinarySerializer.cs` の `WritePositions`）。原因は調べていない。同じ照会で法線の要素数の違い（A=0・B=1）も出た
 - `queryProjectSyncDiff` via=csv で、一括スキンド化で作ったボーンの objectId が保存の JSON では 0、CSV の往復では採番されていた。`convertMeshFilterToSkinned` の応答の createdObjectIds も [0]。原因は調べていない
 
-### 段 11：シナリオとグループの整合 — 状態：済（2026-10-30）
+### 段 11：シナリオとスタックの整合 — 状態：済（2026-10-30）
 
 - 前提（2026-10-30 にコードで確かめた）
-  - シナリオとグループは同じ型（`ObjectGroup`・`ObjectGroupStep`）で、違いは置き場と参照の埋まり方だけ（`ObjectGroup.cs` 冒頭の「手順の知識として使う」、`ScenarioLibrary.cs` 冒頭の「型は分けない」）
-  - 生成の中身はどちらもコマンド（Action＋Args）で、段 1〜10 の宣言（読む空間・逆方向・記録の種類・出力の保護）はコマンド側に付くので、シナリオから流しても同じに効く。流すと、グループとして残す生成項目は `CaptureObjectGroup` でグループになる
-  - 両者の違いは本来「グループは上流と下流が密でリアルタイムに反映する／シナリオは比較的疎で処理時間のかかる処理が多い」だけのはずだが、次の 3 点はそれでは説明できない乖離になっている
+  - シナリオとスタックは同じ型（`ModifierStack`・`ModifierStackStep`）で、違いは置き場と参照の埋まり方だけ（`ModifierStack.cs` 冒頭の「手順の知識として使う」、`ScenarioLibrary.cs` 冒頭の「型は分けない」）
+  - 生成の中身はどちらもコマンド（Action＋Args）で、段 1〜10 の宣言（読む空間・逆方向・記録の種類・出力の保護）はコマンド側に付くので、シナリオから流しても同じに効く。流すと、モディファイアスタックとして残す生成項目は `CaptureModifierStack` でスタックになる
+  - 両者の違いは本来「スタックは上流と下流が密でリアルタイムに反映する／シナリオは比較的疎で処理時間のかかる処理が多い」だけのはずだが、次の 3 点はそれでは説明できない乖離になっている
 - 範囲
   1. つながりの表し方を相互に変換できるようにする
-     - グループは `MeshRefIds`（ObjectId）でつながり、依存は `ModifierGraph` が全グループから導く。シナリオは Args の `@prev`・`@<項目 ID>`（流したときの戻り値）でつながり、`MeshRefIds` は空（`PanelCommand.Scenario.cs` 冒頭の「シナリオは実体に縛らない」）
-     - `saveScenarioFromGroup` は `MeshRefIds`・`OutputObjectIds` を消すだけで `@` 参照へ置き換えない（`PlayerCommandDispatcher.Scenario.cs` の `RunSaveScenarioFromGroup`）。項目が 2 つ以上のグループから作ったシナリオは項目同士がつながらない
-     - 同じグループの前の項目の出力を指す参照は `@<項目 ID>.masterIndices` に書き換える。グループの外を指す参照の扱いは段の始めにコードを読んで決める
+     - スタックは `MeshRefIds`（ObjectId）でつながり、依存は `ModifierGraph` が全スタックから導く。シナリオは Args の `@prev`・`@<項目 ID>`（流したときの戻り値）でつながり、`MeshRefIds` は空（`PanelCommand.Scenario.cs` 冒頭の「シナリオは実体に縛らない」）
+     - `saveScenarioFromModifierStack` は `MeshRefIds`・`OutputObjectIds` を消すだけで `@` 参照へ置き換えない（`PlayerCommandDispatcher.Scenario.cs` の `RunSaveScenarioFromModifierStack`）。項目が 2 つ以上のスタックから作ったシナリオは項目同士がつながらない
+     - 同じスタックの前の項目の出力を指す参照は `@<項目 ID>.masterIndices` に書き換える。スタックの外を指す参照の扱いは段の始めにコードを読んで決める
   2. 流しの項目の区切りで評価器を通す
      - 評価器が流れるのは一番外側の、書き込みのあるコマンドの終わりだけ（`PlayerCommandDispatcher.cs` の `DispatchAuthorized`、`PlayerCommandDispatcher.ModifierEval.cs` の `ShouldEvaluateModifiersAfter`）。`runScenario` は `Writes = PLWriteScope.None` で、中の項目は入れ子の Dispatch なので、流している途中も流し終えたあとも評価器が流れない。流しの中ではきっかけ（`RebuildAdapter`）も挟まない（段 9 の実装の注記）
      - 同じコマンドの並びでも、1 つずつ撃つかシナリオで流すかで結果が変わる。書き込みのある項目を実行したあとに、署名を取り直してから評価する
-  3. `ObjectGroup.cs` 冒頭の「項目の間に依存グラフは持たない。実行の順はリストの並びそのもの」は段 4 以降と食い違っているので直す
+  3. `ModifierStack.cs` 冒頭の「項目の間に依存グラフは持たない。実行の順はリストの並びそのもの」は段 4 以降と食い違っているので直す
 - 確かめ方（段の始めに改めた。外の入力が無い空のモデルでは流せないため）
   - `stage9_作成直後の入力編集` を流し終えたあと、HairBelt の `dirty`=0 で、下流が作り直されている
-  - `stage8_辺パイプ` のグループ（`createEdgePipe` の 2 項目）を `saveScenarioFromGroup` でシナリオにし、同じモデルで既定値のまま流すと、新しくできた項目の action・入出力のつながり・状態が元と一致する（グループ名は比べない）
-  - `stage8_パイプの梯子化` の HairBelt・HairRe を `mergeObjectGroup` で 1 つにしてシナリオにすると、HairRe の梯子が `@` 参照、SrcPipe が引数になる。入力を変えて流すと出力がそれに追随する
+  - `stage8_辺パイプ` のスタック（`createEdgePipe` の 2 項目）を `saveScenarioFromModifierStack` でシナリオにし、同じモデルで既定値のまま流すと、新しくできた項目の action・入出力のつながり・状態が元と一致する（スタック名は比べない）
+  - `stage8_パイプの梯子化` の HairBelt・HairRe を `mergeModifierStack` で 1 つにしてシナリオにすると、HairRe の梯子が `@` 参照、SrcPipe が引数になる。入力を変えて流すと出力がそれに追随する
   - stage8・stage9・stage10・`barnacle_place`・`roboF_T5_SK_initialDebug_フリル` が最後まで流れ、照会の状態と出力の頂点 0 の `getRawData` が変更前と一致する
 - 完了の条件：上の 4 つが通る
 
 #### 調べて分かったこと
 
-- MeshRef のキーは今の索引で引き直せる（`ObjectGroupOps.RewriteMeshRefs`。モデル索引のキーも扱う）。外の参照の既定値はこれで取れる
-- 生成コマンドは出力を `MasterIndices[0]` で返す（例 `PlayerCommandDispatcher.EdgePipe.cs` の帯・パイプ）。同じグループの前の項目の出力は `@<項目 ID>.masterIndices` で引ける
-- `mergeObjectGroup` は項目を `Clone()` で写し、`AddStep` は ID が空のときだけ振るので、まとめたグループでは項目 ID が重なる（HairBelt＋HairRe はどちらも e1）
-- グループの作り直しは梯子・断面の点列を取り込み元から読み直す（`BuildCommand` の `RefreshBelts`・`RefreshProfile`）が、シナリオの項目は Args の点列をそのまま撃っていた。グループから写したシナリオの点列は写した時点の控えなので、外の入力を引数で替えて流すと点列が古いまま残る
+- MeshRef のキーは今の索引で引き直せる（`ModifierStackOps.RewriteMeshRefs`。モデル索引のキーも扱う）。外の参照の既定値はこれで取れる
+- 生成コマンドは出力を `MasterIndices[0]` で返す（例 `PlayerCommandDispatcher.EdgePipe.cs` の帯・パイプ）。同じスタックの前の項目の出力は `@<項目 ID>.masterIndices` で引ける
+- `mergeModifierStack` は項目を `Clone()` で写し、`AddStep` は ID が空のときだけ振るので、まとめたスタックでは項目 ID が重なる（HairBelt＋HairRe はどちらも e1）
+- スタックの作り直しは梯子・断面の点列を取り込み元から読み直す（`BuildCommand` の `RefreshBelts`・`RefreshProfile`）が、シナリオの項目は Args の点列をそのまま撃っていた。スタックから写したシナリオの点列は写した時点の控えなので、外の入力を引数で替えて流すと点列が古いまま残る
 - `stage9_作成直後の入力編集` の変更前：HairBelt の `dirty`=1（流し終えても評価器が流れない）
 
 #### 実装
 
-- `ObjectGroupOps.cs`
-  - `BuildScenarioSteps`：グループの項目をシナリオの項目へ写す。写す前に `EnsureScenarioItemIds`。MeshRef のキーごとに、前の項目の出力（1 個）→ `@<項目 ID>.masterIndices`、グループの外 → シナリオの引数 `<項目 ID>_<キー>`（既定値は今の索引。モデル索引のキーも同じ）、0 だけ → そのまま。内と外が混じる・出力が複数の項目を指す・モデル索引付きの参照が内を指す、は断る。`MeshRefIds`・`OutputObjectIds` は空にする
+- `ModifierStackOps.cs`
+  - `BuildScenarioSteps`：スタックの項目をシナリオの項目へ写す。写す前に `EnsureScenarioItemIds`。MeshRef のキーごとに、前の項目の出力（1 個）→ `@<項目 ID>.masterIndices`、スタックの外 → シナリオの引数 `<項目 ID>_<キー>`（既定値は今の索引。モデル索引のキーも同じ）、0 だけ → そのまま。内と外が混じる・出力が複数の項目を指す・モデル索引付きの参照が内を指す、は断る。`MeshRefIds`・`OutputObjectIds` は空にする
   - `RefreshInputs`：`RefreshBelts`・`RefreshProfile` をまとめた公開の口。`BuildCommand` もこれを使う
-- `PlayerCommandDispatcher.Scenario.cs` の `RunSaveScenarioFromGroup`：`BuildScenarioSteps` の項目と引数で登録する。応答に `params`。`PanelCommand.Scenario.cs` の説明と結果の宣言も直した
+- `PlayerCommandDispatcher.Scenario.cs` の `RunSaveScenarioFromModifierStack`：`BuildScenarioSteps` の項目と引数で登録する。応答に `params`。`PanelCommand.Scenario.cs` の説明と結果の宣言も直した
 - `PlayerCommandDispatcher.ScenarioRun.cs` の `TryExecuteRunStep`
   - コマンドを組む前に `RefreshInputs` を掛ける（取り込み方が Baked・取り込み元が -1 なら書いてある点列のまま）
   - 項目が成功し、そのコマンドが書き込みありなら `RunModifierEvaluation("シナリオ <名前>/<項目 ID>", recheckInputs: true)`
-- 注記：`ObjectGroup.cs` 冒頭（依存の順は `ModifierGraph` が導く、つながりの表し方と相互の変換）、`PlayerCommandDispatcher.ScenarioRun.cs` 冒頭、`PlayerCommandDispatcher.ModifierEval.cs` 冒頭（いつ流すか）、`PlayerCommandDispatcher.Scenario.cs` 冒頭
-- 試験用のシナリオ（`@settings/PolyLing/PolyLing/scenarios/stage11/`）：`stage11_辺パイプ_グループから`・`stage11_パイプの梯子化_グループから`（どちらも `saveScenarioFromGroup` で作った）
+- 注記：`ModifierStack.cs` 冒頭（依存の順は `ModifierGraph` が導く、つながりの表し方と相互の変換）、`PlayerCommandDispatcher.ScenarioRun.cs` 冒頭、`PlayerCommandDispatcher.ModifierEval.cs` 冒頭（いつ流すか）、`PlayerCommandDispatcher.Scenario.cs` 冒頭
+- 試験用のシナリオ（`@settings/PolyLing/PolyLing/scenarios/stage11/`）：`stage11_辺パイプ_スタックから`・`stage11_パイプの梯子化_スタックから`（どちらも `saveScenarioFromModifierStack` で作った）
 
 #### 決めた扱い
 
-- シナリオは疎なグループとして扱う。流すときの項目は、グループの項目と同じに入力を読み直し、書き込みのある項目のあとに評価器を流す。違いは密か疎か・処理時間だけにする
-- グループからシナリオへ写すとき、グループの外の参照はシナリオの引数にする（グループの入力＝疎なグループの入力）
-- シナリオからグループへは流すことで戻る。流すと項目ごとにグループになる（`createEdgePipe` のように 1 グループへまとめる処理はシナリオに写らない）
+- シナリオは疎なスタックとして扱う。流すときの項目は、スタックの項目と同じに入力を読み直し、書き込みのある項目のあとに評価器を流す。違いは密か疎か・処理時間だけにする
+- スタックからシナリオへ写すとき、スタックの外の参照はシナリオの引数にする（スタックの入力＝疎なスタックの入力）
+- シナリオからスタックへは流すことで戻る。流すと項目ごとにスタックになる（`createEdgePipe` のように 1 スタックへまとめる処理はシナリオに写らない）
 - 書いてある点列と取り込み元の両方を持つ項目は、取り込み元を正とする（作り直しと同じ）
 
 #### 確かめた結果（MCP で Play）
 
 変更前の値は、変更を入れたまま新しい動きだけを一時に止めて取った（同じ Play の手順で、モデル番号も同じ）。
 - `stage9_作成直後の入力編集`：変更前 HairBelt `dirty`=1 → 変更後 `dirty`=0、`lastPass` は「シナリオ stage9_作成直後の入力編集/e5: 作り直し 1」
-- `stage8_辺パイプ` のグループから写したシナリオ：引数は `e1_masterIndices`（EdgeSrc、既定値 0）の 1 つ、帯 → パイプは `@e1.masterIndices`。同じモデルで流すと、新しい項目 EdgeRibbon_1#0（edgeRibbonFace、入力 EdgeSrc）→ EdgePipe_1#0（createPipe、入力 EdgeRibbon_1）が元の 2 項目と同じ action・つながり・状態（Evaluate）になり、出力の頂点 0・1 も元と一致した
+- `stage8_辺パイプ` のスタックから写したシナリオ：引数は `e1_masterIndices`（EdgeSrc、既定値 0）の 1 つ、帯 → パイプは `@e1.masterIndices`。同じモデルで流すと、新しい項目 EdgeRibbon_1#0（edgeRibbonFace、入力 EdgeSrc）→ EdgePipe_1#0（createPipe、入力 EdgeRibbon_1）が元の 2 項目と同じ action・つながり・状態（Evaluate）になり、出力の頂点 0・1 も元と一致した
 - `stage8_パイプの梯子化` の HairBelt・HairRe をまとめて写したシナリオ：項目 ID は e1・e2 に振り直され、HairRe の `beltSourceIndex` は `@e1.masterIndices`、SrcPipe は引数 `e1_sourceMasterIndices` になった
   - `stage9_作成直後の入力編集` のモデルで流すと、HairBelt_1（入力 SrcPipe）→ HairRe（入力 HairBelt_1）がつながった
   - SrcPipe のレールの頂点 10 個を z 0.2 へ動かして流し直すと、新しい HairRe_1 の頂点 1 の z は 0.2835（写した時点の点列のままなら 0.0835）。梯子が取り込み元から読み直された。先に作った HairBelt・HairBelt_1・HairRe も評価器で追随した
 - 既存のシナリオ（変更前と同じ順に同じ Play で流した）
   - stage8 の 8 本・stage9 の 4 本・stage10：照会の状態・`dirty`・`pending`・出力の頂点 0 がすべて変更前と一致（`stage9_作成直後の編集` の HairRe `pending`=1、`stage9_鉄塔_デッキ後付け直後の編集` の Tw#1・Tw#2 `pending`=1、`stage9_魔法陣_作成直後の編集` の MC#2 `pending`=1 も同じ）
-  - `barnacle_place`：BT_Barnacle の頂点は変更前と一致。退避 BT_Barnacle_stash は変更前と違う（変更前は入力の編集前の形、変更後は作り直した形）。入力の編集（e26・e27）のあとに評価器が藤壺を作り直し、そのあとの `rebuildObjectGroup` が作り直した形を退避したため。項目を 1 つずつ撃ったときと同じ動き
+  - `barnacle_place`：BT_Barnacle の頂点は変更前と一致。退避 BT_Barnacle_stash は変更前と違う（変更前は入力の編集前の形、変更後は作り直した形）。入力の編集（e26・e27）のあとに評価器が藤壺を作り直し、そのあとの `rebuildModifierStack` が作り直した形を退避したため。項目を 1 つずつ撃ったときと同じ動き
   - `roboF_T5_SK_initialDebug_フリル`（c7 の保存の前まで）：照会の 4 項目の状態・結果・説明が変更前と一致
 - 段 1〜10
   - サブディビジョン：BT_Base をケージにした子が、ケージの全頂点の z 0.1 の移動に追随（子の頂点 0 の z が -0.005 → 0.095）。子への `deleteSelection` は出力の保護で拒否された
@@ -1038,7 +1038,7 @@
   - 原因：`MeshUndoController.SetMeshObject` と `SetMeshObjectFor` が、呼ばれるたびに頂点編集の履歴を消す（`_vertexEditStack.Clear()`）。`setVertexPositions` も書く前に `SetMeshObject` を呼ぶ（`PlayerCommandDispatcher.MeshAttributes.cs`）。履歴の間は時系列で調停している（OperationLog）ので、消された記録の分だけ一覧の履歴へ進む
   - 頂点編集の履歴に積む記録の型を洗い出し、それぞれが自分の書き込み先を持つようにしてから、消すのをやめる
 - 確かめ方
-  - `stage8_ブレンド`：BlA を編集 → BlC を編集 → Undo 2 回で両方戻り、グループが残る
+  - `stage8_ブレンド`：BlA を編集 → BlC を編集 → Undo 2 回で両方戻り、スタックが残る
   - `stage8_断面系`：折れ線の編集 → `params.radialSegments` の書き換え → Undo 2 回で両方戻る
   - 段 6 のパイプの確定 → Undo 2 回で、その前の頂点の編集まで戻る
 - 完了の条件：上の 3 つが時系列どおりに 1 回ずつ戻る
@@ -1055,7 +1055,7 @@
   - 積まれない型（生成する所が無い）：`VertexMoveRecord`・`VertexGroupMoveRecord`（`EndVertexDragCommand`・`RecordVertexGroupMoveCommand` を作る所も、`EndVertexDrag`・`RecordVertexGroupMove` の呼び出しも無い）、`VertexUVChangeRecord`・`BoneWeightChangeRecord`（new する所が無い）、`FaceAddRecord`・`FaceDeleteRecord`・`VertexAddRecord`・`KnifeCutOperationRecord`（`RecordFaceAdd` などの呼び出し元が無い）。手を入れていない
 - Player の Undo の後処理（`Lifecycle.cs` の OnUndoRedoPerformed）は、スナップショットの記録で作り直す相手を `ctx.MeshObject`（今の選択）から逆引きしていた。書き込み先が選択と違うと、書いたオブジェクトの表面メッシュが作り直されない
 - 変更前の再現（同じ Play、キャプチャは `SandBox/Captures/stage12/*_before_*`）
-  - `stage8_ブレンド`：BlA（y 0.5→0.9）→ BlC（y 0.75→1.2）→ Undo 2 回で、BlC は戻ったが BlA は 0.9 のまま、2 回目でブレンドのグループが消えた（`queryModifierGraph` の entries=0）
+  - `stage8_ブレンド`：BlA（y 0.5→0.9）→ BlC（y 0.75→1.2）→ Undo 2 回で、BlC は戻ったが BlA は 0.9 のまま、2 回目でブレンドのスタックが消えた（`queryModifierGraph` の entries=0）
   - `stage8_断面系`：ProfLine の頂点 3（x 0.3→0.4）→ Rev の `params.radialSegments`=8（66→34 頂点）→ Undo 2 回で、Rev は 66 頂点に戻ったが ProfLine は 0.4 のまま
   - 藤壺（`barnacle_place`）：出力 BT_Barnacle の頂点 0 を `setVertexPositions` で y 0.394→0.444 → `commitModifierOutputEdit` → Undo 2 回。1 回目（確定の Undo）で 0.444・未確定に戻り、2 回目の頂点編集の Undo では 0.444 のまま（書き込み先の参照が確定の Undo で置き換えられたオブジェクトを指していた）
 
@@ -1081,7 +1081,7 @@
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage12/`）
 
-- `stage8_ブレンド`：BlA（y 0.5→0.9）→ BlC（y 0.75→1.2）→ Undo 1 回で BlC が 0.75、2 回目で BlA が 0.5 に戻り、グループ BlC_backup#0 は残った（`blend_after_00→01`）。Redo 2 回で BlA 0.9・BlC 1.2 に進んだ（`blend_after_02`）
+- `stage8_ブレンド`：BlA（y 0.5→0.9）→ BlC（y 0.75→1.2）→ Undo 1 回で BlC が 0.75、2 回目で BlA が 0.5 に戻り、スタック BlC_backup#0 は残った（`blend_after_00→01`）。Redo 2 回で BlA 0.9・BlC 1.2 に進んだ（`blend_after_02`）
 - `stage8_断面系`：ProfLine の頂点 3（x 0.3→0.4、Rev が追随）→ Rev の `params.radialSegments`=8（34 頂点）→ Undo 1 回で Rev が 66 頂点、2 回目で ProfLine が 0.3 に戻り Rev も追随して 0.3（`prof_after_00→01`）。Redo 2 回で ProfLine 0.4・Rev 34 頂点（`prof_after_02`）
 - 逆方向の確定（藤壺）：出力の頂点 0 を `setVertexPositions` で y 0.394→0.444 → 確定（0.397）→ Undo 1 回で 0.444・未確定（`pending`=1、Blocked）、2 回目で 0.394・`pending`=0（`commit_after_00→02`）。Redo 2 回で 0.444（未確定）→ 確定後の 0.397（`commit_after_03`）
 - 段 1〜11
@@ -1090,7 +1090,7 @@
   - 作成直後の pending：`stage9_作成直後の編集` で HairRe の `pending`=1、`stage9_魔法陣_作成直後の編集` で MC#2 の `pending`=1
   - 一覧のスナップショットの Undo のあとの頂点移動：藤壺の `params.scale` の書き換え → Undo → 出力を `moveSelectedVertices`（y 0.3）で、動いた形が画面に出た（`s9_listundo_00→01`）。`WritebackTransformedVertices` の警告なし
   - 入力の BoneTransform：`stage8_まつげ眉` で球の PositionZ を 0.1 にすると LashPasted の頂点 0 の z が 0.4426 → 0.5426
-  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_グループから`（そのモデル）で HairBelt_1 → HairRe がつながり状態は Evaluate、`stage11_辺パイプ_グループから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながった
+  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_スタックから`（そのモデル）で HairBelt_1 → HairRe がつながり状態は Evaluate、`stage11_辺パイプ_スタックから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながった
 - 検査：3 つの csproj のコンパイルはエラー 0。`unity_validate_changes` もエラー・例外 0。`queryCommandAudit` の完了条件の項目（付け忘れ・action の衝突・引数の対応なし・未対応の型・読む空間の未指定）はすべて 0。Editor.log（2 回の Play の間）にエラーなし
 
 #### 段 12 と関係なく見つかったこと（6 章へ回した）
@@ -1102,18 +1102,18 @@
 - 範囲（上の決めた扱い）
   - 基準の形を読む入力キーを足す。書き戻しの印（`RebuildRole`：`DestMasterIndex` を TargetIndex、`CreateNewObject` を TargetMode=false）
   - `BlendOperation.ApplyBlend` に、基準を入力から読み控えを作らない分岐を足す
-  - 記録のあとに項目の MeshRef（基準・出力）を差し替える。今は控え `_backup` が出力として記録され、宛先は入力に並ぶ（`CaptureObjectGroup` が増えた ObjectId の最大を出力にするため）
+  - 記録のあとに項目の MeshRef（基準・出力）を差し替える。今は控え `_backup` が出力として記録され、宛先は入力に並ぶ（`CaptureModifierStack` が増えた ObjectId の最大を出力にするため）
 - 確かめ方：`stage8_ブレンド`（宛先を書き換える設定と、複製を作る設定の両方）。BlA の編集で流れる → Undo 1 回 → 重みの書き換え → 保存 → 読み込みのあとの編集
 - 完了の条件：照会の状態が Evaluate。作り直しを繰り返しても結果が同じ（混ぜた結果へ重ねて混ぜない）。出力の保護が宛先に掛かる
 
 #### 調べて分かったこと
 
 - 受け口（`PlayerCommandDispatcher.Blend.cs` の `ApplyBlendCommand`）は `BlendPreviewState.Start` で宛先の今の位置・法線を控え（`Backup`・`NormalBackup`）、`BlendOperation.ApplyBlend` がそれを基準に混ぜる。宛先を書き換える設定では基準の複製 `<宛先>_backup` を足し、複製を作る設定では `<宛先>_blend` を足して書く
-- 記録は `CaptureObjectGroup(c, 前の ObjectId, 複製なら -1・書き換えなら宛先)`。増えた ObjectId の最大を出力にするので、書き換える設定では控え `_backup` が出力になり、fallback の宛先は使われなかった
+- 記録は `CaptureModifierStack(c, 前の ObjectId, 複製なら -1・書き換えなら宛先)`。増えた ObjectId の最大を出力にするので、書き換える設定では控え `_backup` が出力になり、fallback の宛先は使われなかった
 - `RebuildRole` が無いので `ModifierInventory.InputKeys` は宛先も入力に数え、照会は Excluded（「RebuildRole が無い」）だった
 - 合成は `BlendPreviewState.BlendVertices`。ソースは `VertexToWorldMatrix` でワールドへ出し宛先の `WorldToVertexMatrix` で戻す。基準（backup）は宛先の格納空間のまま混ぜる（読む空間は Local）
 - 選択頂点だけ（`SelectedVerticesOnly`）は書き込み先の今の選択を読む。選択は引数に残らない
-- 保存の読み込みは 3 経路（`ObjectGroupCsv.cs` の `CloseGroup`、`ObjectGroupDTO.cs` の項目、`RemoteProgressiveSerializer.cs` の version 4 以降と version 3）
+- 保存の読み込みは 3 経路（`ModifierStackCsv.cs` の `CloseGroup`、`ModifierStackDTO.cs` の項目、`RemoteProgressiveSerializer.cs` の version 4 以降と version 3）
 - 変更前（同じ手順、`SandBox/Captures/stage13/inplace_before_*`）
   - `stage8_ブレンド`：照会は BlC_backup#0、入力 BlA・BlB・BlC、出力 BlC_backup、Excluded。BlA の頂点 0 を y 0.5 → 0.9 にしても BlC の頂点 0 は y 0.75 のまま（`dirty`=1）
   - 複製の設定（下の `stage13_ブレンド_複製`）：照会は BlC_blend#0、入力 BlA・BlB・BlC、出力 BlC_blend、Excluded
@@ -1133,18 +1133,18 @@
   - 基準を渡したときは書き込み先の表示も元に戻す（作り直しのたびに隠した出力が表示に戻らない）
 - 受け口（`PlayerCommandDispatcher.Blend.cs`）
   - `BaseMasterIndex` を引き、無い・頂点数が違えば理由付きで失敗
-  - `keepAsGroup` と `selectedVerticesOnly` が両方立っていれば断る
+  - `keepAsModifierStack` と `selectedVerticesOnly` が両方立っていれば断る
   - `ApplyBlend` の失敗を Fail にした（プレビューを終えて隠したソースの表示を戻す）
-  - グループとして残すとき、基準＝`baseIndex`・宛先＝書き込み先にしたコマンドを組み直して `CaptureObjectGroup` へ渡し、出力は `explicitOutputIds` で書き込み先の ObjectId を渡す（記録のあとに差し替えるのではなく、記録する前に正しい形にする。循環の判定と `PrimeGroup` も正しい形で通る）
-- 旧形の変換：`ObjectGroupOps.UpgradeLegacyBlendRefs`（項目・グループ）。applyBlend で基準のキーが無く、出力と宛先が 1 個ずつの項目を直す。書き換える設定は 基準＝旧出力・宛先＝出力＝旧宛先、複製の設定は 基準＝旧宛先・宛先＝旧出力。呼ぶ所は `ObjectGroupCsv.cs`・`ObjectGroupDTO.cs`（`UpgradeLegacyProfileArgs` の隣）、`RemoteProgressiveSerializer.cs`（version 4 以降と version 3）
+  - モディファイアスタックとして残すとき、基準＝`baseIndex`・宛先＝書き込み先にしたコマンドを組み直して `CaptureModifierStack` へ渡し、出力は `explicitOutputIds` で書き込み先の ObjectId を渡す（記録のあとに差し替えるのではなく、記録する前に正しい形にする。循環の判定と `PrimeGroup` も正しい形で通る）
+- 旧形の変換：`ModifierStackOps.UpgradeLegacyBlendRefs`（項目・スタック）。applyBlend で基準のキーが無く、出力と宛先が 1 個ずつの項目を直す。書き換える設定は 基準＝旧出力・宛先＝出力＝旧宛先、複製の設定は 基準＝旧宛先・宛先＝旧出力。呼ぶ所は `ModifierStackCsv.cs`・`ModifierStackDTO.cs`（`UpgradeLegacyProfileArgs` の隣）、`RemoteProgressiveSerializer.cs`（version 4 以降と version 3）
 - 注記：`PanelCommandMeshRefs.cs` 冒頭
 - 試験用のシナリオ：`@settings/PolyLing/PolyLing/scenarios/stage13/stage13_ブレンド_複製`（`stage8_ブレンド` の e4 に `createNewObject=true`）
 
 #### 決めた扱い
 
 - 基準から読むのは頂点の位置と法線。面構成は書き込み先のまま。基準と書き込み先の頂点数が違えば作り直しは失敗する
-- 選択頂点だけのブレンドはグループとして残さない（断る）
-- 段 13 より前に保存したブレンドのグループは、読み込みのときに今の形へ直す
+- 選択頂点だけのブレンドはモディファイアスタックとして残さない（断る）
+- 段 13 より前に保存したブレンドのスタックは、読み込みのときに今の形へ直す
 - 6 章の「段 10 から回したもの」のうちブレンドがポーズ込みの座標でソースを読む件は、段 13 では変えていない（6 章に残した）
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stage13/`、保存は `SandBox/stage13/`）
@@ -1152,14 +1152,14 @@
 - 宛先を書き換える設定（`stage8_ブレンド`）
   - 照会：BlC#0、入力 BlA・BlB・BlC_backup、出力 BlC、Evaluate
   - BlA の頂点 0 を y 2.0 にすると BlC の頂点 0 が 0.75 → 1.5（`inplace_after_00 → 01_editA`、`lastPass` は「setVertexPositions: 作り直し 1」）
-  - `rebuildObjectGroup` を 2 回流しても BlC は 1.5 のまま、オブジェクトは 4 個のまま（控えが増えない）
+  - `rebuildModifierStack` を 2 回流しても BlC は 1.5 のまま、オブジェクトは 4 個のまま（控えが増えない）
   - BlA を y 3.0（BlC 2.0）→ Undo 1 回で BlA 2.0・BlC 1.5
   - `sourceWeights`=1,0 で BlC が 2.0（BlA と同じ。`inplace_after_02_weights10`）。0.5,0 にして基準 BlC_backup の頂点 0 を y 0 にすると BlC が 1.0（0.5×0＋0.5×2）
   - BlC への `setVertexPositions`・`deleteSelection` は「出力は編集できません」で拒否
-  - 保存 → 読み込み：.mfproj・CSV とも照会は同じ形で Evaluate。読み込みのあと BlA の編集で BlC が流れた（3.0 で 1.5、4.0 で 2.0。重み 0.5,0・基準 0）。CSV の objectgroups には `baseMasterIndex` の参照が書かれる
+  - 保存 → 読み込み：.mfproj・CSV とも照会は同じ形で Evaluate。読み込みのあと BlA の編集で BlC が流れた（3.0 で 1.5、4.0 で 2.0。重み 0.5,0・基準 0）。CSV の modifierstacks には `baseMasterIndex` の参照が書かれる
 - 複製を作る設定（`stage13_ブレンド_複製`）
   - 照会：BlC_blend#0、入力 BlA・BlB・BlC、出力 BlC_blend、Evaluate
-  - BlA の頂点 0 を y 2.0 にすると BlC_blend が 1.5、元の BlC は 0.5 のまま。`rebuildObjectGroup` 2 回でも 1.5
+  - BlA の頂点 0 を y 2.0 にすると BlC_blend が 1.5、元の BlC は 0.5 のまま。`rebuildModifierStack` 2 回でも 1.5
   - BlA を y 3.0 → Undo 1 回で BlC_blend 1.5
   - `sourceWeights`=0,1 で BlC_blend が 1.0（BlB と同じ）
   - BlC_blend への `setVertexPositions`・`deleteSelection` は拒否
@@ -1167,14 +1167,14 @@
 - 旧形の読み込み（変更前に保存した 4 つ）
   - 書き換える設定（.mfproj・CSV）：照会は 入力 BlA・BlB・BlC_backup、出力 BlC、Evaluate。BlA を y 2.0 にすると BlC が 1.5
   - 複製の設定（.mfproj・CSV）：照会は 入力 BlA・BlB・BlC、出力 BlC_blend、Evaluate。BlA を y 2.0 にすると BlC_blend が 1.5、BlC は 0.5
-- 選択頂点だけ＋グループとして残すは理由付きで断られた
+- 選択頂点だけ＋モディファイアスタックとして残すは理由付きで断られた
 - 段 1〜12
   - サブディビジョン：BT_Base をケージにした子が、ケージの全頂点の z 0.1 の移動に追随（子の頂点 0 の z が -0.005 → 0.095）。子への `deleteSelection` は出力の保護で拒否
   - 逆方向の確定と Undo 1 回：藤壺の出力全体を y 0.05 動かして確定 → 梯子 BT_Ball の頂点 20 の y が 0.3155 → 0.3655（ずれ最大 1.2e-7）、Undo 1 回で 0.3155・藤壺の頂点 0 が 0.394（段 12 と同じ）
   - 作成直後の pending：`stage9_作成直後の編集` で HairRe の `pending`=1、`stage9_魔法陣_作成直後の編集` で MC#2 の `pending`=1
   - 一覧のスナップショットの Undo のあとの頂点移動：藤壺の `params.scale` の書き換え → Undo → 出力を `moveSelectedVertices`（y 0.3）で、動いた形が画面に出た（`s9_listundo_00→01`）。`WritebackTransformedVertices` の警告なし
   - 入力の BoneTransform：`stage8_まつげ眉` で球の PositionZ を 0.1 にすると LashPasted の頂点 0 の z が 0.4426 → 0.5426
-  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_グループから`（そのモデル）で HairBelt_1 → HairRe がつながり Evaluate、`stage11_辺パイプ_グループから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながった
+  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_スタックから`（そのモデル）で HairBelt_1 → HairRe がつながり Evaluate、`stage11_辺パイプ_スタックから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながった
   - Undo 2 回：`stage8_断面系` で ProfLine の頂点 3（x 0.3→0.4）→ Rev の `params.radialSegments`=8（34 頂点）→ Undo 2 回で Rev 66 頂点・ProfLine 0.3。藤壺の出力の頂点 0 を y 0.394→0.444 → 確定 → Undo 1 回で 0.444、2 回目で 0.394
 - 検査：3 つの csproj のコンパイルはエラー 0。`unity_validate_changes` もエラー・例外 0。`queryCommandAudit` の完了条件の項目（付け忘れ・action の衝突・引数の対応なし・未対応の型・読む空間の未指定・WriteWhen の不正）はすべて 0。Editor.log（変更後の 3 回の Play の間）にエラーなし
 
@@ -1208,7 +1208,7 @@
 - 振り分け（`PlayerCommandDispatcher.ModifierInverse.cs`。ファイルを書き直した）
   - `SourceVertexWrites`：3 つの方法で入力の頂点の新しい格納値を作る。`copiedVertices` は新しい位置そのもの、`ribbonCenters` は中点の移動を元の頂点の `WorldMatrix` の逆で格納空間へ、`surfacePaste` は `InvertPoint`。元のメッシュがモデル内に無い（スキンド化済みの入力を `LocalView` の複製で読んだ）ときと、帯の元がスキンドのときは断る。ずれの試算は、入力から作った頂点を新しい入力に対する位置へ動かした見本と編集後で取る（入力から導くだけの頂点は含まない）
   - 上流へ連ねる：`BuildInversePlanCore`（項目 1 つ。編集後の出力を外から渡せる）と `ResolveInverseChain`。書く入力が別の項目の出力なら、その出力の複製に書く値を入れたものを「その項目の出力の編集」として逆方向を組む（再帰）。逆方向を持たない項目に当たったら「「…」は別の項目（…）の出力で、その項目は逆方向を持たないので書き直せません（上流の逆方向を連ねられない）」で断る。同じ項目へ 2 つの経路から書く・32 段を超える、も断る
-  - 確定：一番上流の入力の頂点と各段の引数を書き、上流から順に `RunObjectGroupStep` → `MarkRebuilt`。失敗したら全部戻す。Undo は一覧のスナップショットと、引数を書き換えたグループごとの差し替えをまとめた 1 件
+  - 確定：一番上流の入力の頂点と各段の引数を書き、上流から順に `RunModifierStackStep` → `MarkRebuilt`。失敗したら全部戻す。Undo は一覧のスナップショットと、引数を書き換えたスタックごとの差し替えをまとめた 1 件
   - 確定で入力の頂点を書いたあと、GPU の位置を `SyncMeshPositionsAndTransform` で合わせる（下の決めた扱い）
   - 照会・確定の応答に `chainCount`・`chain`（上流から順に、項目・action・方法・書くもの・保つもの・失うもの・その段のずれ）。`writes` は経路全体で実際に書くもの。確定の応答に `actualMaxDeviation`・`actualMeanDeviation`（作り直した実際の出力と編集した出力のずれ）
 - 結果の宣言：`queryModifierInverse` に `chainCount`・`chain`、method の説明に方法を足した（`PanelCommand.Query.cs`）。`commitModifierOutputEdit` の説明（`PanelCommand.MeshList.cs`）
@@ -1248,14 +1248,14 @@
   - 作成直後の pending：`stage9_作成直後の編集` で HairRe の `pending`=1、`stage9_魔法陣_作成直後の編集` で MC#2 の `pending`=1
   - 一覧のスナップショットの Undo のあとの頂点移動：藤壺の `params.scale`=2 → Undo → 出力を `moveSelectedVertices`（y 0.3）で、動いた形が画面に出た（`s9_listundo_00 → 01`）
   - 入力の BoneTransform：`stage8_まつげ眉` で球の PositionZ を 0.1 にすると LashPasted の頂点 0 の z が 0.4426 → 0.5426
-  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_グループから`（そのモデル）で HairBelt_1 → HairRe、`stage11_辺パイプ_グループから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながり Evaluate
+  - シナリオ：`stage9_作成直後の入力編集` のあと HairBelt の `dirty`=0。`stage11_パイプの梯子化_スタックから`（そのモデル）で HairBelt_1 → HairRe、`stage11_辺パイプ_スタックから`（`stage8_辺パイプ` のモデル）で EdgeRibbon_1 → EdgePipe_1 がつながり Evaluate
   - Undo 2 回：`stage8_断面系` で ProfLine の頂点 3（x 0.3 → 0.4）→ Rev の `params.radialSegments`=8 → Undo 2 回で Rev が 16 分割・ProfLine 0.3
   - ブレンド：`stage8_ブレンド` で BlA の頂点 0 を y 2.0 にすると BlC が 0.75 → 1.5、BlC への `setVertexPositions` は拒否。`stage13_ブレンド_複製`（Play を入れ直して流した）で BlC_blend が 1.5、BlC は 0.5 のまま、BlC_blend への書き込みは拒否
 - 検査：3 つの csproj のコンパイルはエラー 0。`unity_validate_changes` もエラー・例外 0。`queryCommandAudit` の完了条件の項目（付け忘れ・action の衝突・引数の対応なし・未対応の型・読む空間の未指定・WriteWhen の不正）はすべて 0。Editor.log（変更後の Play の間）にエラーなし
 
 #### 段 14 と関係なく見つかったこと（6 章へ回した）
 
-- `stage8_辺パイプ` のモデルで `stage11_辺パイプ_グループから` を流したあとの照会 `queryModifierGraph` で、EdgeRibbon#0 の downstream が「1,2」と出た（2 は EdgeRibbon_1#0 で、入力は EdgeSrc。EdgeRibbon は読まない）。原因は調べていない
+- `stage8_辺パイプ` のモデルで `stage11_辺パイプ_スタックから` を流したあとの照会 `queryModifierGraph` で、EdgeRibbon#0 の downstream が「1,2」と出た（2 は EdgeRibbon_1#0 で、入力は EdgeSrc。EdgeRibbon は読まない）。原因は調べていない
 
 ### 段 15：厚み付け・フリルの逆方向 — 状態：済（2026-10-30）
 
@@ -1269,7 +1269,7 @@
 
 - 厚み付け（`BeltShapeOps.ApplySolidify` → `FaceGroupSolidifier.Build`）は新しいメッシュを作る。元の頂点 1 個から、表の殻・裏の殻と、境界の頂点ならベベル帯の縦列ができる。控えの枠は元の部品を指したまま残るので、その後の連結（`MeshObjectAppendOps.Append`）で全体へ届かなかった
 - 呼び出しは `PrimitiveMeshFactory.cs` の 3 か所（フリルの融合あり・融合なし、パイプ）。厚み 0 のときは元の部品をそのまま返す
-- フリル（`FrillMeshGenerator`）は、段 s→s+1 の区間ごとに左右のレールへ波形の頂点を置く。1 つの頂点はその区間の両端の段から決まる。融合ありでは複数の梯子のステップが同じレールの頂点を共有する。枠の控えは無く、記録は基底の OnKeepAsGroup だった
+- フリル（`FrillMeshGenerator`）は、段 s→s+1 の区間ごとに左右のレールへ波形の頂点を置く。1 つの頂点はその区間の両端の段から決まる。融合ありでは複数の梯子のステップが同じレールの頂点を共有する。枠の控えは無く、記録は基底の OnKeepAsModifierStack だった
 - 変更前（同じ Play）：`stage8_パイプの梯子化` の HairRe を `params.thickness`=0.01 にして出力を z 0.1 動かすと、照会は「生成の控えに枠がありません」で `canCommit`=0。フリルは `queryModifierInventory` で逆方向なし
 
 #### 実装
@@ -1368,7 +1368,7 @@
 
 - `MeshObject.Positions`：読むたびに今の位置を写す（配列は使い回す）。`InvalidatePositionCache` は何もしない
 - `PlayerViewportManager.SettleWorldPositions(project)`：GPU を CPU に合わせる唯一の入口。バッファが合っていなければ `EnterTopologyChanged`、合っていれば全メッシュの位置を送り、変換し、画面へ配る。頂点ドラッグの最中は何もしない
-- 呼ぶ所：書き込みのあるコマンドの終わり（`PlayerCommandDispatcher.DispatchAuthorized`）と、GPU のワールド位置を読む直前（DeformSkin・ObjectGroup の縮み・帯・頂点へ藤壺・逆方向の見本・UV 投影・パネルの `OnRequestUpdateTransform` 4 か所。いずれも `UpdateTransform` から替えた）
+- 呼ぶ所：書き込みのあるコマンドの終わり（`PlayerCommandDispatcher.DispatchAuthorized`）と、GPU のワールド位置を読む直前（DeformSkin・ModifierStack の縮み・帯・頂点へ藤壺・逆方向の見本・UV 投影・パネルの `OnRequestUpdateTransform` 4 か所。いずれも `UpdateTransform` から替えた）
 - 外したもの：段 14 の確定で入力を書いたあとの `SyncMeshPositionsAndTransform`（2 か所）。段 A で残していた「位置だけを戻す記録は作り直しへ回す」の分け方
 
 #### 確かめた結果（MCP で Play、キャプチャは `SandBox/Captures/stageB/`）
@@ -1420,21 +1420,21 @@
   - `ModifierGraph.Build`（69-103）は Write の入力を書き手として、同じオブジェクトを読む項目すべてへつなぐ
 - 直し方：宣言を直す。全コマンドの Write の宣言を実際の書き込みと照らす検査を `queryCommandAudit` に足す
 - 消える症状：`queryModifierGraph` の downstream に入力を読まない項目が出る（旧段 17。6 章「段 14 から回したもの」）
-- 確かめ方：`stage8_辺パイプ` のモデルで `stage11_辺パイプ_グループから` を流したあとの downstream。`queryCommandAudit` の新しい検査が 0 件
+- 確かめ方：`stage8_辺パイプ` のモデルで `stage11_辺パイプ_スタックから` を流したあとの downstream。`queryCommandAudit` の新しい検査が 0 件
 - 完了の条件：downstream が入力の関係どおり
 - 調べて分かったこと
   - Write の宣言を読むのは 3 か所。担当者判定（`RemoteOwnership.cs`:524）と出力の保護（`ModifierOutputGuard.cs`:138）は `IsWriteActive` で書き込み条件（WriteWhen）をコマンドの引数で判定する。依存グラフ（`ModifierEvaluator.cs`:391）だけが `Access == Write` を見て条件を無視していた。揺れ鎖（`paintWeights=true` のときだけ書く）も、塗らない設定で書き手として線を引いていた
-  - 辺から帯・頂点へ藤壺・辺をパイプにするが入力へ書くのは、辞書名が空のとき選択を辞書として保存する場合だけ（`PlayerCommandDispatcher.EditTools.cs`:359-402、`VertexBillboard.cs`:38-39、`EdgePipe.cs`:131-135）。グループの項目は辞書名を持つので読むだけ。今の書き込み条件の書き方（キー 1 つ・bool か enum）では表せなかった
+  - 辺から帯・頂点へ藤壺・辺をパイプにするが入力へ書くのは、辞書名が空のとき選択を辞書として保存する場合だけ（`PlayerCommandDispatcher.EditTools.cs`:359-402、`VertexBillboard.cs`:38-39、`EdgePipe.cs`:131-135）。スタックの項目は辞書名を持つので読むだけ。今の書き込み条件の書き方（キー 1 つ・bool か enum）では表せなかった
 - 実装
   - 依存グラフも書き込み条件を項目の引数で判定する（`ModifierEvaluator.IsWriteKeyActive` → `PanelCommandFactory.IsWriteActive`）。3 か所が同じ判定になった
   - グラフの構造キーに項目ごとの「書き込みが有効な入力」を混ぜた（`ModifierEvaluator.WriteActiveSignature`、`ModifierGraph.StructureKey`）
   - 書き込み条件の書き方を広げた：`&` で節を並べる（すべて満たすとき）、文字列は空を `key=` で書く。入れ子の型では各節に接頭辞を付ける。`InvalidWriteWhens` も合わせた（`PanelCommandMeshRefs.cs`、`PLParamAttribute.cs` の説明）
-  - 宣言：辺から帯 `placement.keepAsGroup=true&edgeSetName=`、頂点へ藤壺 `placement.keepAsGroup=true&vertexSetName=&target=Vertices`、辺をパイプにする `edgeSetName=`
+  - 宣言：辺から帯 `placement.keepAsModifierStack=true&edgeSetName=`、頂点へ藤壺 `placement.keepAsModifierStack=true&vertexSetName=&target=Vertices`、辺をパイプにする `edgeSetName=`
   - 見張り：作り直しで項目を 1 つ流すたびに、書き込みが有効でない入力の形・位置の署名を前後で比べ、変わっていれば `[ModifierWrite]` のエラーログ（`ModifierEvaluator.SnapshotReadOnlyInputs`・`UndeclaredWrites`、`PlayerCommandDispatcher.ModifierEval.cs`）。「宣言したのに書かない」は条件しだいで正しく起こるので見張らない
 - 確かめた結果
   - Unity のコンパイル・例外 0。`queryCommandAudit` の書き込み条件の不正 0
-  - `stage8_辺パイプ` → `stage11_辺パイプ_グループから`：EdgeRibbon#0 の downstream が「1」（前は「1,2」）
-  - `roboF_T5_SK_initialDebug_フリル`：揺れ鎖 → フリル、揺れ鎖 → パイプの線がある。`setObjectGroupStepArgs` で `paintWeights=false` にすると揺れ鎖 → フリルの線が消え、Undo で戻る（構造キーで作り直された）
+  - `stage8_辺パイプ` → `stage11_辺パイプ_スタックから`：EdgeRibbon#0 の downstream が「1」（前は「1,2」）
+  - `roboF_T5_SK_initialDebug_フリル`：揺れ鎖 → フリル、揺れ鎖 → パイプの線がある。`setModifierStackStepArgs` で `paintWeights=false` にすると揺れ鎖 → フリルの線が消え、Undo で戻る（構造キーで作り直された）
   - 辺パイプの出力を動かして確定（actualMax 1.5e-8）→ Undo で作り直し 4、`barnacle_place` 最後まで、`stage8_まつげ眉` の梯子を動かして作り直し 6・失敗 0
   - 流している間、`[ModifierWrite]`・`[ObjectId]` のエラーは出なかった。見張りが宣言漏れを拾うこと自体は、宣言漏れの項目が無いので実際には確かめていない
 
@@ -1460,7 +1460,7 @@
   - 評価器の控えに梯子の行列 M の出力の枠の署名（`State.OutputFrame`、`OutputFrameSig`。Transform・出力 1 つの項目だけ）を足し、`TakeInputs`・`InputsChanged`・`MarkMatrixChanged`・`ForwardKey` に入れた（`ModifierEvaluator.cs`）
 - 確かめた結果
   - Unity のコンパイル・例外 0、`queryCommandAudit` の完了条件の不足 0
-  - `stage8_辺パイプ`：EdgeSrc にポーズ（PositionY 0.5）を付けて `rebuildObjectGroup` → 帯・パイプの位置はポーズ無しと同じ
+  - `stage8_辺パイプ`：EdgeSrc にポーズ（PositionY 0.5）を付けて `rebuildModifierStack` → 帯・パイプの位置はポーズ無しと同じ
   - EdgeSrc を隠して頂点を動かす → 作り直し 2・失敗 0、帯が追随
   - 新規オブジェクトとして作った EdgePipe の親を、位置を持つ直方体へ付け替える（`setParentsByName`）→ EdgePipe の項目が作り直された（前は作り直されなかった）
   - 回帰：`stage8_ブレンド` の BlC の高さ 1.5、`stage8_頂点藤壺` の scale=2 → Undo で元の位置、出力を動かして確定（ずれ 3.3e-8）→ Undo、辺パイプの確定（actualMax 1.5e-8）→ Undo で作り直し 2、`barnacle_place` 最後まで、`stage8_まつげ眉` の梯子を動かして作り直し 6・失敗 0。エラー・警告のログ無し
@@ -1511,7 +1511,7 @@
   - 試算と確定の違いはコードに残っていた：梯子・まつげの試算は取り込み方を Baked にした別のコマンド、頂点へ藤壺・帯・梯子化・貼り付けの試算は作り直さずに見本の頂点をずらした近似（入力から導くだけの頂点は数えない）
   - 見本を作る口（`PolyLingPlayerViewerCore.ModifierInverse.cs`）は頂点へ藤壺・帯で GPU の同期（`SettleWorldPositions`）を呼んでいた。生成器は段 E から CPU のバインド姿勢の値を読むので要らない
 - 実装
-  - 試算を 1 本にした（`PlayerCommandDispatcher.TrialRebuild`）：入力の頂点と項目の引数を書く → `ObjectGroupOps.BuildCommand` で組み直す（確定の `RunObjectGroupStep` と同じ。梯子は記録した取り込み方で取り直す）→ 見本の口で出力の形を作る → 編集後の出力とのずれ → 書いたものを戻す。上流の出力へ書く分もここで書くので、各段のずれは今までどおり「その段だけ」
+  - 試算を 1 本にした（`PlayerCommandDispatcher.TrialRebuild`）：入力の頂点と項目の引数を書く → `ModifierStackOps.BuildCommand` で組み直す（確定の `RunModifierStackStep` と同じ。梯子は記録した取り込み方で取り直す）→ 見本の口で出力の形を作る → 編集後の出力とのずれ → 書いたものを戻す。上流の出力へ書く分もここで書くので、各段のずれは今までどおり「その段だけ」
   - 方法ごとの試算（Baked のコマンド、見本ずらし）を消した
   - 試算できなかったときは理由を経路の行に出す（`InversePlan.TrialError`。「その段のずれ（試算できない: 理由）」）
   - 見本の口の `SettleWorldPositions` を `ComputeWorldMatrices` にした
@@ -1569,7 +1569,7 @@
 - 実装・確かめた結果（説明）：`barnacle_place` の e20・e25・e28・e29・e31 を `setScenarioItem` で今の動き（入力の編集で評価器がその場で作り直す。e32 の作り直しは結果を変えない）に直した。最後まで流れる
 - ギズモ（調べている途中）
   - MCP で流すときは `setCurrentView` でカレントビューを立てないと、Undo を挟まなくてもギズモが出ない（`UpdateGizmoOverlay` が `_activePanel` の無いとき何もしない。画面ではポインタが乗ったビューがカレントになる）
-  - カレントビューを立てて `stage8_頂点藤壺` → `selectAllElements`（VB_Out）でギズモが出る。`setObjectGroupStepArgs`（scale=2）→ Undo → `selectAllElements` では出ず、選んだ頂点の色も付かない。そのあと `selectMesh`（Drawable 2）を足すと出る
+  - カレントビューを立てて `stage8_頂点藤壺` → `selectAllElements`（VB_Out）でギズモが出る。`setModifierStackStepArgs`（scale=2）→ Undo → `selectAllElements` では出ず、選んだ頂点の色も付かない。そのあと `selectMesh`（Drawable 2）を足すと出る
   - Undo のあとは VB_Out がオブジェクトとして選ばれていない。`selectAllElements` は頂点・面の選択だけを書き、オブジェクトの選択は変えない。Undo の前後で、選ばれていたオブジェクトと球の頂点の選択（15 → 12 個）が変わっている。一覧のスナップショットの Undo が選択の状態をコマンドの前に戻しているかは、まだ確かめていない
   - 画面の取り込みは状態を見分けるのに使えなかった：コマンドで選択したとき、描画側には選択が変わった印を立てるだけで（`PlayerSelectionOps.ApplyElementSet` → `UnifiedSystemAdapter.NotifySelectionChanged`）、ギズモの描き直し（`OnRefreshGizmoOverlay`）は呼ばれない。描き直しはビューの更新（`PlayerViewportManager.Render.cs`）とマウスの移動（`EnterHoverChanged`）から来る。同じ手順でも出る・出ないが揃わなかった
 - ギズモ（原因）：一覧のスナップショットを戻す Undo・Redo（`MeshFilterToSkinnedRecord.RestoreList`）が、戻すたびにオブジェクトとボーンの選択を空にしていた（`ClearMeshSelection`・`ClearBoneSelection`）。一括スキンド化で実体を入れ替えていたころの扱いで、段 A のあとは実体を替えないので要らない。Undo のあと出力がオブジェクトとして選ばれず、頂点を選んでも選択の色とギズモが出なかった
@@ -1578,14 +1578,14 @@
   - 切り分け用に照会 `querySelectionState`（カレントのモデル・選択カテゴリ・オブジェクトとボーンの選択・オブジェクトごとの頂点・辺・面・線分の選択の数・操作モード・カレントビュー・今の選択からギズモを組めるか）と、`setGizmoDebugLog`（`AxisGizmo.GizmoDebugLog` を入り切り）を足した。ギズモは `UpdateGizmoOverlay` と同じ手順でその場で組み直して返すので、画面の描き直しの時点に左右されない（`PolyLingPlayerViewerCore.DescribeViewState`、`PlayerCommandDispatcher.OnDescribeViewState`）
 - 確かめた結果（ギズモ）
   - Unity のコンパイル・例外 0、`queryCommandAudit` の付け忘れ・不正 0
-  - `stage8_頂点藤壺` → `selectAllElements`（VB_Out）：選択 VB_Out、ギズモを組める → `setObjectGroupStepArgs`（scale=2）→ Undo：選択 VB_Out のまま（頂点の選択は空）→ `selectAllElements`：ギズモを組める。画面の取り込みでもギズモと選択の色が出た
+  - `stage8_頂点藤壺` → `selectAllElements`（VB_Out）：選択 VB_Out、ギズモを組める → `setModifierStackStepArgs`（scale=2）→ Undo：選択 VB_Out のまま（頂点の選択は空）→ `selectAllElements`：ギズモを組める。画面の取り込みでもギズモと選択の色が出た
   - Redo のあとも選択 VB_Out のまま
   - `barnacle_place` → 一括スキンド化 → Undo で BT_Barnacle（6）、Redo で BT_Barnacle_skinned（14）が選ばれたまま（索引が変わっても同じ実体を選び直す）。エラーのログ無し
 - 段 I で見つけたもの（扱う段は未定）
   - ~~貼り付け（`createSurfacePaste`）は、出力がスキンド化済みだと評価から外れる（「生成物を出力の格納空間へ移す読み方を持たない」）。`stage8_まつげ眉` の LashPasted・BrowFlat・Brow~~ → 済（2026-10-31）
     - 実装
       - `PLParamAttribute.OutputSpaceSource`（新規）：生成物がその入力の格納空間で出来る入力に付ける。`CreateSurfacePasteCommand.SourceIndex` に付けた（`PanelCommand.PrimitiveBelt.cs`）
-      - `ModifierSpace.SpaceSourceKey`（`BeltSourceKey` を置き換え）：梯子を読む型は梯子の取り込み元、それ以外は `OutputSpaceSource` を付けた int の引数のキー。評価器の分類（`Classify`）・評価器の署名（`ModifierEvaluator` の `BeltKey`）・作り直しの行列（`PlayerCommandDispatcher.ObjectGroup.cs` の `ComputeStepSpace`）・作成時の行列（`PolyLingPlayerViewerCore.CreateCommands.cs` の `ResolveCreateBeltSource`。追加先が新規オブジェクト・既存へ追加のとき）が同じこの関数を使う
+      - `ModifierSpace.SpaceSourceKey`（`BeltSourceKey` を置き換え）：梯子を読む型は梯子の取り込み元、それ以外は `OutputSpaceSource` を付けた int の引数のキー。評価器の分類（`Classify`）・評価器の署名（`ModifierEvaluator` の `BeltKey`）・作り直しの行列（`PlayerCommandDispatcher.ModifierStack.cs` の `ComputeStepSpace`）・作成時の行列（`PolyLingPlayerViewerCore.CreateCommands.cs` の `ResolveCreateBeltSource`。追加先が新規オブジェクト・既存へ追加のとき）が同じこの関数を使う
       - 行列は梯子と同じ M ＝（出力の枠の バインド→格納）×（入力の 格納→バインド）。照会の空間の名前を「生成物を入力（梯子・貼り付け元）の格納空間から出力の格納空間へ移して書く」にした
       - ~~`extractPipeBelt` には付けていない。読む入力 `SourceMasterIndices` が int の配列で、`MeshRefSpace.Local`（スキンドなら控えた行列でローカルへ戻して読む）なので、1 つの入力の格納空間で出来る形に当たらない。出力がスキンド化済みの `extractPipeBelt` は今も外れる~~ → 済（2026-10-31）
         - 実装：`SourceMasterIndices` を `MeshRefSpace.Model`・`OutputSpaceSource` にした。`SpaceSourceKey` は int の配列も受け、先頭を生成物の座標系とする（`Classify` は並びの 格納→バインド の行列が違えば理由を付けて外す）。作成時の `ResolveCreateBeltSource` も先頭を読む。生成器へはパイプを格納値のまま渡す（`PrimitiveMeshFactory.ResolveStoredSources`。`LocalView` で戻さない）。写した頂点は元のパイプの頂点のウェイトを持つ（`PipeBeltExtractor.AddVertex`。開始タグは始点のウェイト）
@@ -1595,10 +1595,10 @@
       - スキンド化の前（`stage8_まつげ眉` を流し直したモデル）：LashPasted・BrowFlat・Brow の照会で「入力から作った頂点が動いていない」（作り直しの見本＝作成時の出力）。LashLadder の頂点 1 を動かすと「作り直し 6 / 失敗 0」。Brow の頂点 0 を動かして確定すると、BrowFlat → BrowPipe → Brow の 3 段を連ねて LashLadder の頂点 2 個を書き直し、実際のずれ 最大 0.0109
       - 一括スキンド化（まつげ・Lush2・BrowPipe は `inheritBeltWeights`=true）：6 項目とも Evaluate、「作り直し 6 / 失敗 0」。貼り付け 3 つは作り直しの見本＝今の出力。LashLadder_skinned の頂点 1 を動かすと「作り直し 6 / 失敗 0」
       - Editor.log のエラー 0
-  - ~~`polyling_call` で `model_index` を省くと 0 になり、`setObjectGroupStepArgs` がカレントでないモデルの参照として断る（「参照先が別のモデルにあります」）~~ → 済（2026-10-31。MCP サーバの作り直しが要る）
+  - ~~`polyling_call` で `model_index` を省くと 0 になり、`setModifierStackStepArgs` がカレントでないモデルの参照として断る（「参照先が別のモデルにあります」）~~ → 済（2026-10-31。MCP サーバの作り直しが要る）
     - 原因：MCP サーバ（PolyLingMcpServer の `polyling_call`・`pl_` 個別ツール）が `model_index` の既定を 0 にして常に送り、Unity 側の受け口（`PolyLingControlProtocol.HandleCall`）も省かれたら 0 にしていた
     - 実装：Unity 側は `PolyLingCommandGateway.CurrentModelIndex`（パネルが `Dispatch` と対で設定・解除）を足し、`HandleCall` は `modelIndex` が無いか負ならカレントのモデル（モデルが無ければ 0）にする。サーバ側は `model_index` の既定を -1 にし、説明を「省くとカレントのモデル」にした（`UnityProjectTools.cs`・`GenericCommandTools.cs`・`ServerProfile.cs`。ZIP で渡し、作り直しは利用者）
-    - 確かめた結果（サーバは作り直す前）：カレントをモデル 2 にして `setObjectGroupStepArgs`（VB_Out#0、scale=2）を `model_index` を省いて送ると今まで通り断られ、`model_index`=-1 で送ると通った。エラーのログ 0
+    - 確かめた結果（サーバは作り直す前）：カレントをモデル 2 にして `setModifierStackStepArgs`（VB_Out#0、scale=2）を `model_index` を省いて送ると今まで通り断られ、`model_index`=-1 で送ると通った。エラーのログ 0
   - ~~コマンドで頂点・面を選んだとき（`selectElements`・`selectAllElements`）、ギズモの描き直しが呼ばれない。画面ではマウスを動かすと描き直されるが、MCP から流すと次に描き直されるまで前のギズモが残る~~ → 済（2026-10-31）
     - 原因：要素の選択はクリック・コマンドとも `PlayerSelectionOps.ApplyElementSet` を通り、最後の `OnSelectionChanged` の受け側（`PolyLingPlayerViewerCore.VertexInteraction.cs`）が描画への通知とセクションの再描画しかしていなかった。ギズモは次のホバー（`EnterHoverChanged` → `OnRefreshGizmoOverlay`）で描き直されていた。オブジェクトの選択は `EnterTopologyChanged` で描き直される
     - 実装：その受け側の最後で `UpdateGizmoOverlay` を呼ぶ
@@ -1615,10 +1615,10 @@
   - ~~バインド姿勢そのものの変化（`BoneTransform`・バインドへの焼き込み）を入力の変化として検知しない → 段 10~~ → 済（段 10。Model の入力と梯子は署名に `VertexToBindWorldMatrix` を混ぜ、書き込みのあるコマンドの終わりに取り直す）
   - ~~作成時（`PrimitiveMeshCreateNewObject`）は梯子の行列を見ない → 段 10~~ → 済（段 10。作成・作り直しとも梯子の行列を常に掛ける）
   - ~~形として読む入力がスキンド化済みの項目は評価できない（貼り付け・まつげの参照面・原型も同じ） → 段 10~~ → 済（段 10。Model の入力はスキンドでも読み、Local の入力はスキンド化で控えた行列でローカルへ戻して読む）
-  - ~~項目を作った直後（評価器が初めて見る前）の入力・出力の編集を変化・未確定として扱わない → 段 9~~ → 済（段 9。グループ・項目を足したコマンドがその場で控える）
+  - ~~項目を作った直後（評価器が初めて見る前）の入力・出力の編集を変化・未確定として扱わない → 段 9~~ → 済（段 9。スタック・項目を足したコマンドがその場で控える）
 - 段 8 から回したもの
-  - ~~ブレンドの作り直し（→ 段 13）：宛先を書き換える設定では、ブレンド前の形の控え（`<宛先>_backup`）が出力として記録され、宛先は入力に並ぶ（`CaptureObjectGroup` が増えた ObjectId の最大を出力にするため）。宛先は保護されず、控えが保護される。宛先を出力にすると宛先が入力でもあるので循環になる。控えを入力・宛先を出力とする形にして書き戻しの印（`RebuildRole`）を足すかを、作り直しの設計と一緒に決める → 決定（段 9 以降の決めた扱い）：基準の形を読む入力キーを足し、宛先を出力にする~~ → 済（段 13。`baseMasterIndex` を入力、書き込み先を出力にし、記録する前にコマンドをその形へ組み直す。旧形の保存は読み込みで直す）
-  - ~~Undo の履歴（→ 段 12）：頂点編集の履歴は書き込み先のオブジェクトが替わると消え（`MeshUndoController.SetMeshObject`・`SetMeshObjectFor`）、一覧の履歴とも分かれている。続けて Undo すると、手前の編集を飛ばして別の履歴の操作（グループの追加など）を戻すことがある~~ → 済（段 12。消すのをやめ、頂点編集の記録が書き込み先（参照・モデル・ObjectId）を持って Undo・Redo の時点に引き直す）
+  - ~~ブレンドの作り直し（→ 段 13）：宛先を書き換える設定では、ブレンド前の形の控え（`<宛先>_backup`）が出力として記録され、宛先は入力に並ぶ（`CaptureModifierStack` が増えた ObjectId の最大を出力にするため）。宛先は保護されず、控えが保護される。宛先を出力にすると宛先が入力でもあるので循環になる。控えを入力・宛先を出力とする形にして書き戻しの印（`RebuildRole`）を足すかを、作り直しの設計と一緒に決める → 決定（段 9 以降の決めた扱い）：基準の形を読む入力キーを足し、宛先を出力にする~~ → 済（段 13。`baseMasterIndex` を入力、書き込み先を出力にし、記録する前にコマンドをその形へ組み直す。旧形の保存は読み込みで直す）
+  - ~~Undo の履歴（→ 段 12）：頂点編集の履歴は書き込み先のオブジェクトが替わると消え（`MeshUndoController.SetMeshObject`・`SetMeshObjectFor`）、一覧の履歴とも分かれている。続けて Undo すると、手前の編集を飛ばして別の履歴の操作（スタックの追加など）を戻すことがある~~ → 済（段 12。消すのをやめ、頂点編集の記録が書き込み先（参照・モデル・ObjectId）を持って Undo・Redo の時点に引き直す）
   - ~~スキンド化済みの出力を `moveSelectedVertices` で動かしたとき、画面が次の更新まで古い形のまま（→ 段 9）~~ → 済（段 9。一覧のスナップショットの Undo・Redo で GPU バッファを作り直していなかった）
   - ~~`runScenario` の応答の deletedObjectIds に、前のモデルの描画オブジェクトの ObjectId が入ったことがある（→ 段 9）~~ → 済（段 9。控えをモデルごとに持つ）
 - 段 9 から回したもの（扱う段は未定）
@@ -1643,7 +1643,7 @@
       - 入力が確定前に戻ったので要評価（`MarkChangedInputs`）になり、`EvaluatePending` が作り直して、出力を確定前の入力に対する正方向の形にする
     - 署名が同じものは見分けられないので、「確定の Undo のあとの出力」と「入力の Undo の直後に残った前の入力の結果」を、署名の控えだけでは区別できない
 - 段 14 から回したもの（扱う段は未定）
-  - ~~`stage8_辺パイプ` のモデルで `stage11_辺パイプ_グループから` を流したあと、`queryModifierGraph` の EdgeRibbon#0 の downstream が「1,2」と出た（2 の EdgeRibbon_1#0 は EdgeSrc を読み、EdgeRibbon は読まない）。原因は調べていない → 段 D~~ → 済（段 D。依存グラフも書き込み条件を引数で判定し、宣言を実際の書き込みに合わせた）
+  - ~~`stage8_辺パイプ` のモデルで `stage11_辺パイプ_スタックから` を流したあと、`queryModifierGraph` の EdgeRibbon#0 の downstream が「1,2」と出た（2 の EdgeRibbon_1#0 は EdgeSrc を読み、EdgeRibbon は読まない）。原因は調べていない → 段 D~~ → 済（段 D。依存グラフも書き込み条件を引数で判定し、宣言を実際の書き込みに合わせた）
 - 段 15 から回したもの（扱う段は未定）
   - ~~SkirtFrill（融合あり・2 プロファイル・鎖の配り）の `queryModifierInverse` で、各段のずれ（試算）が -1。試算は梯子を点列で渡して作り直した形と比べ、頂点数が違うと出さない。試算の作り直しの頂点数は確かめていない → 段 G~~ → 済（段 G。今のコードでは再現しなかった。試算を確定と同じ手順にし、試算できないときは理由を出す）
   - ~~roboF の SkirtFrill の最初の確定で、梯子の頂点が書き直されていなかった（確定の直後の値が確定前と同じ）。同じ手順のやり直し 2 回では書き直された。原因は特定していない → 段 G~~ → 再現しなかった（段 G。1 回目の確定の実際のずれが、梯子を書いた試算と一致）
@@ -1651,17 +1651,17 @@
   - ~~モデルごと入れ替える Undo（`ModelReplaceRecord.Swap`、`ModelUndoRecords.cs`）で、`ModelContext` を鍵にした評価器の控え（グラフ・状態）とモデルへの参照（`EditSpaceSession.Model`・`MeshUndoTarget.Model`）が古くなる。`ModelBundle.ToModel` を読んでいないので直し方は決めていない~~ → 済（2026-10-31）
     - 原因：置き換え（`ExecuteReplaceModelBundle`・PMX/MQO の置換読込 `ReplaceCurrentModelWithImported`）とその Undo・Redo（`Swap`）は、`ModelBundle.ToModel` で新しい実体を作り `RemoveModelAt` → `InsertModel` で差し替えていた。外した実体は `Clear(true)` で空になる。頂点編集の記録（`MeshUndoTarget`・複数メッシュの記録の `Model`）は外した実体の一覧で引き直すので見つからず、置き換えより前の頂点編集は Undo しても書き戻されない。DTO に入らない `SourceDocument`・`PmxModelInfo` も Undo・Redo で落ちていた
     - 同じ形のもの（同日に一緒に直した）
-      - モデルの追加（読み込み）の Redo：控え `ModelContextSnapshot`（名前・メッシュ・材質・選択だけ）から実体を作り直していた。頂点編集の記録が古い実体を指すうえ、オブジェクトグループ・表情・Humanoid などが落ちる
+      - モデルの追加（読み込み）の Redo：控え `ModelContextSnapshot`（名前・メッシュ・材質・選択だけ）から実体を作り直していた。頂点編集の記録が古い実体を指すうえ、モディファイアスタック・表情・Humanoid などが落ちる
       - モデルの削除（`DeleteModelCommand`）：`RemoveModelAt` で消すだけで Undo に積んでいなかった（`RecordModelRemove` は `MeshUndoController_ProjectStack.cs` の注記の中にしか無かった）
-    - 決めた扱い：Undo の記録が外した実体そのものを持ち、Undo・Redo で同じ実体を外し・入れ直す。実体が替わらないので、頂点編集の記録・評価器の控え・オブジェクトグループ・表情・`SourceDocument` などがそのまま当たる。外した実体は記録が持つ間メモリに残り、記録が捨てられても `UnityMesh` を破棄しない（Undo の記録に捨てるときの口が無い。終了まで残す。2026-10-31 に了承）
-      - 取らなかった形：実体を作り直して外した実体から辿る（置き換え先の印）は、DTO・スナップショットに入らないもの（`SourceDocument`・`PmxModelInfo`、追加ではオブジェクトグループなど）が落ちる。既存の実体へ DTO を組み直す形は、DTO に値が無いときだけ書かない `TPoseBackup` が前のモデルの値のまま残る
+    - 決めた扱い：Undo の記録が外した実体そのものを持ち、Undo・Redo で同じ実体を外し・入れ直す。実体が替わらないので、頂点編集の記録・評価器の控え・モディファイアスタック・表情・`SourceDocument` などがそのまま当たる。外した実体は記録が持つ間メモリに残り、記録が捨てられても `UnityMesh` を破棄しない（Undo の記録に捨てるときの口が無い。終了まで残す。2026-10-31 に了承）
+      - 取らなかった形：実体を作り直して外した実体から辿る（置き換え先の印）は、DTO・スナップショットに入らないもの（`SourceDocument`・`PmxModelInfo`、追加ではモディファイアスタックなど）が落ちる。既存の実体へ DTO を組み直す形は、DTO に値が無いときだけ書かない `TPoseBackup` が前のモデルの値のまま残る
     - 実装
       - `ProjectContext.DetachModelAt`（一覧から外すだけで Clear しない）・`ReplaceModelAt`（同じ位置で入れ替え、外した実体を返す。Clear しない）
       - `ModelReplaceRecord`：置き換え前と後の `ModelContext` を持つ（以前は `ModelDTO`）。Undo・Redo は実体で位置を引いて入れ替える。置き換えの 2 か所（`ExecuteReplaceModelBundle`・`ReplaceCurrentModelWithImported`）は `ReplaceModelAt` で外した実体を記録へ渡す
       - `ModelOperationRecord` の Add・Remove：`ModelContext Model`（実体）を持つ（以前は `ModelContextSnapshot`）。外すときは `DetachModelAt`、入れ直すときは同じ実体を `InsertModel`
       - `DeleteModelCommand`：`DetachModelAt` で外し、`RecordModelRemove`（`MeshUndoController_MeshList.cs`、新規）で積む
     - 確かめた結果
-      - 置き換え：`stage8_頂点藤壺` の VB_Ball を `moveSelectedVertices` で y +0.1 → `importMqoFile`（Replace、`chest_side.mqo`）→ Undo でモデルが戻り、オブジェクトグループの項目 VB_Out#0 が残る → Undo で頂点 20 の y が 0.4536 → 0.3536
+      - 置き換え：`stage8_頂点藤壺` の VB_Ball を `moveSelectedVertices` で y +0.1 → `importMqoFile`（Replace、`chest_side.mqo`）→ Undo でモデルが戻り、モディファイアスタックの項目 VB_Out#0 が残る → Undo で頂点 20 の y が 0.4536 → 0.3536
       - 追加：`importMqoFile`（NewModel）→ 頂点を y +0.1（0.8475 → 0.9475）→ Undo 3 回でモデルが無くなる → Redo 3 回でモデルが戻り頂点が 0.9475
       - 削除：`stage8_頂点藤壺` の VB_Ball を y +0.1 → `deleteModel` → Undo でモデルが戻り、VB_Out#0 が残る（評価器の控えも削除前のまま）→ Undo で頂点 20 が 0.3536 → Redo で 0.4536 → Redo でモデルが再び外れる
       - エラーのログ 0

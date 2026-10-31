@@ -938,55 +938,55 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // オブジェクトグループ変更記録
+    // モディファイアスタック変更記録
     // ============================================================
 
     /// <summary>
-    /// オブジェクトグループの追加 / 削除 / 差し替えの Undo 記録。
+    /// モディファイアスタックの追加 / 削除 / 差し替えの Undo 記録。
     ///
     /// 【なぜメッシュリストのレコードに混ぜないか】
-    ///   グループはメッシュの追加・削除とは別のタイミングで増減する。
-    ///   「ちょっと作るだけ」はグループを作らずに描画オブジェクトだけ増えるし、
-    ///   グループの解除は描画オブジェクトを残したままグループだけ消す。
+    ///   スタックはメッシュの追加・削除とは別のタイミングで増減する。
+    ///   「ちょっと作るだけ」はスタックを作らずに描画オブジェクトだけ増えるし、
+    ///   スタックの解除は描画オブジェクトを残したままスタックだけ消す。
     ///   MorphExpressionChangeRecord と同じく独立したレコードにする。
     ///
     /// 【実体ではなく複製を持つ】
-    ///   グループは Args と MeshRefIds を可変の辞書で持つ。参照のまま控えると、
+    ///   スタックは Args と MeshRefIds を可変の辞書で持つ。参照のまま控えると、
     ///   あとで中身を書き換えたときに記録側も一緒に変わる。
     /// </summary>
-    public class ObjectGroupChangeRecord : MeshListUndoRecord
+    public class ModifierStackChangeRecord : MeshListUndoRecord
     {
-        /// <summary>追加されたグループ（Undo 時に削除）。</summary>
-        public Poly_Ling.Data.ObjectGroup AddedGroup;
+        /// <summary>追加されたスタック（Undo 時に削除）。</summary>
+        public Poly_Ling.Data.ModifierStack AddedGroup;
         /// <summary>追加位置。</summary>
         public int AddedIndex = -1;
 
-        /// <summary>削除されたグループ（Undo 時に復元）。</summary>
-        public Poly_Ling.Data.ObjectGroup RemovedGroup;
+        /// <summary>削除されたスタック（Undo 時に復元）。</summary>
+        public Poly_Ling.Data.ModifierStack RemovedGroup;
         /// <summary>削除位置。</summary>
         public int RemovedIndex = -1;
 
-        /// <summary>差し替え前のグループ（Undo 時に戻す）。</summary>
-        public Poly_Ling.Data.ObjectGroup OldGroup;
-        /// <summary>差し替え後のグループ（Redo 時に入れる）。</summary>
-        public Poly_Ling.Data.ObjectGroup NewGroup;
+        /// <summary>差し替え前のスタック（Undo 時に戻す）。</summary>
+        public Poly_Ling.Data.ModifierStack OldGroup;
+        /// <summary>差し替え後のスタック（Redo 時に入れる）。</summary>
+        public Poly_Ling.Data.ModifierStack NewGroup;
         /// <summary>差し替え位置。-1 = 差し替えではない。</summary>
         public int ReplacedIndex = -1;
 
         public override void Undo(ModelContext ctx)
         {
-            if (ctx?.ObjectGroups == null) return;
+            if (ctx?.ModifierStacks == null) return;
 
-            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ObjectGroups.Count && OldGroup != null)
-                ctx.ObjectGroups[ReplacedIndex] = OldGroup.Clone();
+            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ModifierStacks.Count && OldGroup != null)
+                ctx.ModifierStacks[ReplacedIndex] = OldGroup.Clone();
 
-            if (AddedGroup != null && AddedIndex >= 0 && AddedIndex < ctx.ObjectGroups.Count)
-                ctx.ObjectGroups.RemoveAt(AddedIndex);
+            if (AddedGroup != null && AddedIndex >= 0 && AddedIndex < ctx.ModifierStacks.Count)
+                ctx.ModifierStacks.RemoveAt(AddedIndex);
 
             if (RemovedGroup != null && RemovedIndex >= 0)
             {
-                int idx = Mathf.Clamp(RemovedIndex, 0, ctx.ObjectGroups.Count);
-                ctx.ObjectGroups.Insert(idx, RemovedGroup.Clone());
+                int idx = Mathf.Clamp(RemovedIndex, 0, ctx.ModifierStacks.Count);
+                ctx.ModifierStacks.Insert(idx, RemovedGroup.Clone());
             }
 
             ctx.IsDirty = true;
@@ -995,19 +995,19 @@ namespace Poly_Ling.UndoSystem
 
         public override void Redo(ModelContext ctx)
         {
-            if (ctx?.ObjectGroups == null) return;
+            if (ctx?.ModifierStacks == null) return;
 
-            if (RemovedGroup != null && RemovedIndex >= 0 && RemovedIndex < ctx.ObjectGroups.Count)
-                ctx.ObjectGroups.RemoveAt(RemovedIndex);
+            if (RemovedGroup != null && RemovedIndex >= 0 && RemovedIndex < ctx.ModifierStacks.Count)
+                ctx.ModifierStacks.RemoveAt(RemovedIndex);
 
             if (AddedGroup != null && AddedIndex >= 0)
             {
-                int idx = Mathf.Clamp(AddedIndex, 0, ctx.ObjectGroups.Count);
-                ctx.ObjectGroups.Insert(idx, AddedGroup.Clone());
+                int idx = Mathf.Clamp(AddedIndex, 0, ctx.ModifierStacks.Count);
+                ctx.ModifierStacks.Insert(idx, AddedGroup.Clone());
             }
 
-            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ObjectGroups.Count && NewGroup != null)
-                ctx.ObjectGroups[ReplacedIndex] = NewGroup.Clone();
+            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ModifierStacks.Count && NewGroup != null)
+                ctx.ModifierStacks[ReplacedIndex] = NewGroup.Clone();
 
             ctx.IsDirty = true;
             ctx.OnListChanged?.Invoke();
@@ -1015,10 +1015,10 @@ namespace Poly_Ling.UndoSystem
 
         public override string ToString()
         {
-            if (AddedGroup   != null) return $"ObjectGroupAdd: {AddedGroup.Name}";
-            if (RemovedGroup != null) return $"ObjectGroupRemove: {RemovedGroup.Name}";
-            if (NewGroup     != null) return $"ObjectGroupReplace: {NewGroup.Name}";
-            return "ObjectGroupChange";
+            if (AddedGroup   != null) return $"ModifierStackAdd: {AddedGroup.Name}";
+            if (RemovedGroup != null) return $"ModifierStackRemove: {RemovedGroup.Name}";
+            if (NewGroup     != null) return $"ModifierStackReplace: {NewGroup.Name}";
+            return "ModifierStackChange";
         }
     }
 

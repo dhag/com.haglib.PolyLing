@@ -1,10 +1,10 @@
 // ModifierSpace.cs
-// オブジェクトグループの項目（モディファイア）を、スキンド化のあとにどの空間で評価するか。
+// モディファイアスタックの項目（モディファイア）を、スキンド化のあとにどの空間で評価するか。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【何が問題か】（PolyLing_作り直し整備計画.md 4 章 2・段 5）
 //   頂点の格納空間は種別で違う。MeshFilter はローカル、スキンドはバインド姿勢のワールド。
-//   生成は空間を変換しない。梯子の頂点の格納値をそのまま点列にし（ObjectGroupOps.RefreshBelts）、
+//   生成は空間を変換しない。梯子の頂点の格納値をそのまま点列にし（ModifierStackOps.RefreshBelts）、
 //   ウェイトも格納値の位置で突き合わせ（BeltWeightBinder）、出力の格納値へそのまま書く
 //   （PrimitiveMeshReplaceExisting）。梯子と出力の格納空間が違うと出力が飛ぶ。
 //
@@ -195,9 +195,9 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// 作ったときの追加先モードが新規オブジェクト・新規モデルか（置き方は出力の姿勢が持つ。段 8・段 10）。
         /// StripPoseOwnedByOutput と同じ判定。梯子の行列 M の出力の枠を決める（TryComputeMatrix）。
-        /// 作り直し（RunObjectGroupStep）と評価器の署名（ModifierEvaluator.OutputFrameSig）が同じこの判定を使う（段 E）。
+        /// 作り直し（RunModifierStackStep）と評価器の署名（ModifierEvaluator.OutputFrameSig）が同じこの判定を使う（段 E）。
         /// </summary>
-        public static bool IsPoseOwnedByOutput(Type t, ObjectGroupStep step)
+        public static bool IsPoseOwnedByOutput(Type t, ModifierStackStep step)
         {
             if (t == null || step == null) return false;
             var rb = PanelCommandFactory.RebuildKeys(t);
@@ -290,7 +290,7 @@ namespace Poly_Ling.Ops
         // 書き戻しへの受け渡し
         //
         // 作り直しは入れ子の Dispatch で生成コマンドを流し、ReplaceExisting が出力へ書く。
-        // その間だけ、どの行列で移すか・ウェイトを残すかをここに置く（RunObjectGroupStep が立てる）。
+        // その間だけ、どの行列で移すか・ウェイトを残すかをここに置く（RunModifierStackStep が立てる）。
         // ================================================================
 
         /// <summary>書き戻しの指定 1 回ぶん。</summary>

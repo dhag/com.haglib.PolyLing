@@ -167,7 +167,7 @@ namespace Poly_Ling.Data
         /// 上の点列をどうやって取り込んだか。
         ///
         /// 【なぜ点列ではなく取り方を持つか】
-        ///   ObjectGroup が作り直すとき、控えた点列をそのまま使うとソースを
+        ///   ModifierStack が作り直すとき、控えた点列をそのまま使うとソースを
         ///   直しても出力先は古いままになる。かといって頂点ID や頂点番号を
         ///   控えると、手作業で作る人がそれを管理する羽目になる。
         ///   取り方（自動検索の種類・上下展開の有無・選択辞書の名前）だけを
@@ -372,7 +372,7 @@ namespace Poly_Ling.Data
     /// TwoProfiles が false のときは A だけを使う。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
         InverseLoses = "波形の歪み（段の前後の区間ごとの相似でない変形）、補間した段だけの動き、厚みの変化")]
     public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
@@ -426,7 +426,7 @@ namespace Poly_Ling.Data
 
     /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
         InverseLoses = "輪のひしゃげ（相似でない変形）、段の軸まわりのねじれ、補間した段だけの動き、厚みの変化")]
     public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
@@ -488,7 +488,7 @@ namespace Poly_Ling.Data
     [PLUiRoute("パイプの梯子取り出し",
         "leftPane.fold.Primitive", "leftPane.liveAdvancedPrimitiveBtn",
         "primitiveAdvanced.shape.Pipe", "primitiveAdvanced.PipeBeltExtractRun")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, InverseOf = "createPipe",
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, InverseOf = "createPipe",
         Inverse = ModifierInverseMethod.CopiedVertices,
         InverseKeeps = "パイプの面構成・頂点 ID・ウェイト、輪のレール以外の頂点、引数",
         InverseLoses = "開始タグの位置（始点と最初の段から導く）、輪のレール以外の頂点の追随（レールの 2 頂点と始点・終点だけを書く）")]
@@ -525,7 +525,7 @@ namespace Poly_Ling.Data
     /// 索引から MeshObject への解決はディスパッチャ側が行う。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.BeltFrames,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、配置元、引数",
         InverseLoses = "部品の歪み、段の向きまわりの傾き、倍率（倍率の決め方が一律のとき）、間引いた段・補間した段だけの動き")]
     public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
@@ -579,7 +579,7 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
         Description = "まつげ等。梯子の段（スプライン分割で補間した段）ごとに原型を置く。枠（次の段の中点／梯子の面の法線）・置く位置（中点／左／右）・回転（始点→終点の補間）・倍率を引数で選ぶ。旧 NCSHAGLIB の LushMaker の移植で、参照面への貼り付けは createSurfacePaste で別に行う。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.LushFrames,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.LushFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、原型、段の補間・置く位置・倍率の引数",
         InverseLoses = "部品の歪み、段の向き（1 本の向きの変化は回転の引数へ寄せる）、段ごとの回転のうち始点→終点の線形の補間で表せない分、補間した段だけの動き（元の段へ最小二乗で当てはめる）、倍率の変化")]
     public sealed class CreateLushCommand : CreateBeltPrimitiveCommand
@@ -633,7 +633,7 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
         Description = "平面化＋貼り付け。入力（梯子・パイプなど）の複製を作り、頂点を原点を通り方向に直交する平面へ落とす（flatten）か、そのまま、方向に沿った直線で参照面と交わる点へ移して平面からの高さを足す。交点が無い頂点は動かさない。参照面を -1 にすると平面化だけ。座標はモデル空間（バインド姿勢）で扱う。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.SurfacePaste,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.SurfacePaste,
         InverseKeeps = "入力の面構成・頂点 ID・ウェイト、参照面、引数",
         InverseLoses = "平面化するとき方向に沿った成分の変化（参照面へ貼り直す）。交点の無い頂点は出力の位置がそのまま入力になる")]
     public sealed class CreateSurfacePasteCommand : CreatePrimitiveMeshCommand

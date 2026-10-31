@@ -30,7 +30,7 @@
 //   控えの範囲が曖昧になるので止めてからにする。
 //
 // 【戻り値は控えない】
-//   項目（ObjectGroupStep）に戻り値の欄が無い。失敗した項目だけ Note で残す。
+//   項目（ModifierStackStep）に戻り値の欄が無い。失敗した項目だけ Note で残す。
 //
 // 【索引も焼いたまま入る】
 //   索引を名前からの照会に置き換えるべきかは、queryScenarioAudit が
@@ -58,7 +58,7 @@ namespace Poly_Ling.Data
     public static class ScenarioRecorder
     {
         /// <summary>控えている項目。null なら控えが無い。</summary>
-        private static List<ObjectGroupStep> _steps;
+        private static List<ModifierStackStep> _steps;
 
         /// <summary>記録の状態。</summary>
         private static ScenarioRecordingState _state = ScenarioRecordingState.None;
@@ -93,7 +93,7 @@ namespace Poly_Ling.Data
                     : "既に記録中です。stopScenarioRecording で終了し、保存か破棄をしてから始めてください";
                 return false;
             }
-            _steps     = new List<ObjectGroupStep>();
+            _steps     = new List<ModifierStackStep>();
             _state     = ScenarioRecordingState.Recording;
             _stageMark = -1;
             return true;
@@ -151,12 +151,12 @@ namespace Poly_Ling.Data
             { error = "記録中は保存できません。pauseScenarioRecording か stopScenarioRecording の後に保存してください"; return false; }
             if (string.IsNullOrEmpty(name)) { error = "シナリオの名前が空です"; return false; }
 
-            var g = new ObjectGroup(name);
+            var g = new ModifierStack(name);
             g.Steps.Clear();   // コンストラクタが空の項目を 1 つ足すため
             foreach (var s in _steps) g.AddStep(s);
 
             g.Goal = goal ?? "";
-            g.Provenance = new ObjectGroupProvenance
+            g.Provenance = new ModifierStackProvenance
             {
                 ParentName    = "",
                 ChangeSummary = "startScenarioRecording から記録したコマンドを saveScenarioRecording で保存した",
@@ -211,9 +211,9 @@ namespace Poly_Ling.Data
 
             Type t = cmd.GetType();
 
-            var step = new ObjectGroupStep
+            var step = new ModifierStackStep
             {
-                Kind   = ObjectGroupStepKind.Command,
+                Kind   = ModifierStackStepKind.Command,
                 Action = PanelCommandFactory.ActionOf(t),
             };
             foreach (var kv in PanelCommandFactory.ToArgs(cmd))
@@ -256,7 +256,7 @@ namespace Poly_Ling.Data
                 if (_steps[i].IsExecutable && string.IsNullOrEmpty(_steps[i].Purpose))
                     _steps[i].Purpose = stage;
 
-            var head = new List<ObjectGroupStep>();
+            var head = new List<ModifierStackStep>();
             if (failed)
                 head.Add(NoteStep($"{stage}: 記録したときこの段で失敗した（{did}）"));
             if (!string.IsNullOrWhiteSpace(ui))
@@ -270,7 +270,7 @@ namespace Poly_Ling.Data
             _stageMark = -1;
         }
 
-        private static ObjectGroupStep NoteStep(string text)
-            => new ObjectGroupStep { Kind = ObjectGroupStepKind.Note, Purpose = text ?? "" };
+        private static ModifierStackStep NoteStep(string text)
+            => new ModifierStackStep { Kind = ModifierStackStepKind.Note, Purpose = text ?? "" };
     }
 }

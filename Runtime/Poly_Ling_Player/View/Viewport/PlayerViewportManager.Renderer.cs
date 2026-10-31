@@ -340,7 +340,7 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // mc を入力に持つオブジェクトグループの項目へ知らせる（評価器のきっかけ 2）。
+            // mc を入力に持つモディファイアスタックの項目へ知らせる（評価器のきっかけ 2）。
             // ドラッグ中にも追随する項目（サブディビジョンの子など）はここで位置を書き、
             // それ以外は要評価の印だけ立つ。面構成の変更は RebuildAdapter 側が受け持つ。
             NotifyModifierInputMoved(model, mc, adapter, bm);
@@ -350,7 +350,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// mc を入力に持つオブジェクトグループの項目へ、位置が変わったことを知らせる（評価器のきっかけ 2）。
+        /// mc を入力に持つモディファイアスタックの項目へ、位置が変わったことを知らせる（評価器のきっかけ 2）。
         /// ドラッグ中にも追随する項目の出力は、描画バッファに載っていればここで GPU へ書く。
         /// </summary>
         private static void NotifyModifierInputMoved(
@@ -516,6 +516,7 @@ namespace Poly_Ling.Player
             // GetData が走り、しかも単一配列 _screenPositions を
             // 最後の slot のカメラで上書きしてしまう。
             // CPU が読む値は PresentAll 末尾の最終確定 1 回で作る。
+            long tv = System.Diagnostics.Stopwatch.GetTimestamp();   // 計測（モディファイア高速化計画 段 13）
             bool recomputeCulling =
                 _slotContentDirty[slot]
                 || (_slotCameraDirty[slot] && CameraChangeAffectsCulling(slot, cam));
@@ -542,10 +543,15 @@ namespace Poly_Ling.Player
             // 二度と再構築されなくなる。
             // PrepareWeightVisualization はここでは呼ばない。
             // slot 非依存の処理であり、PresentAll 側で 1 回だけ実行する。
+            tv = AddViewTiming("P:カリング", tv);
             _renderer.PrepareNormals(project);
+            tv = AddViewTiming("P:法線", tv);
             _renderer.PrepareWireframeAndVertices(cam, project, slot);
+            tv = AddViewTiming("P:ワイヤと頂点", tv);
             _renderer.PrepareBones(project);
+            tv = AddViewTiming("P:ボーン", tv);
             _renderer.PrepareSpringBoneColliders(project);
+            AddViewTiming("P:コライダ", tv);
         }
     }
 }

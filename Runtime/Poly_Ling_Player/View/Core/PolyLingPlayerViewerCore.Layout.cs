@@ -120,7 +120,7 @@ namespace Poly_Ling.Player
             _layoutRoot.UVEditSpaceBtn.clicked     += OnUVEditSpaceButtonClicked;
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
-            _layoutRoot.ObjectGroupBtn.clicked       += ShowObjectGroupPanel;
+            _layoutRoot.ModifierStackBtn.clicked       += ShowModifierStackPanel;
             _layoutRoot.NormalExcludeSetBtn.clicked  += ShowNormalExcludeSetPanel;
             _layoutRoot.NormalEditBtn.clicked        += ShowNormalEditPanel;
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
@@ -297,6 +297,12 @@ namespace Poly_Ling.Player
                 _layoutRoot.SubToolLassoSelectBtn.clicked += () => EnterSelectSubTool(true);
             if (_layoutRoot.SubToolDeleteBtn != null)
                 _layoutRoot.SubToolDeleteBtn.clicked      += ExecuteDeleteSelection;
+            if (_layoutRoot.CopySelectionBtn != null)
+                _layoutRoot.CopySelectionBtn.clicked      += ExecuteCopySelection;
+            if (_layoutRoot.CutSelectionBtn != null)
+                _layoutRoot.CutSelectionBtn.clicked       += ExecuteCutSelection;
+            if (_layoutRoot.PasteSelectionBtn != null)
+                _layoutRoot.PasteSelectionBtn.clicked     += ExecutePasteSelectionFromLeftPane;
             if (_layoutRoot.ToolDeleteFaceBtn != null)
                 _layoutRoot.ToolDeleteFaceBtn.clicked    += () =>
                 {
@@ -675,7 +681,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.UVZSection,               () => _uvzSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PartsSelectionSetSection, () => _partsSelSetSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshSelectionSetSection,  () => _meshSelSetSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.ObjectGroupSection,       () => _objectGroupSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.ModifierStackSection,       () => _modifierStackSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalExcludeSetSection,  () => _normalExcludeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalEditSection,        () => _normalEditSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FaceHideSection,          () => _faceHideSubPanel?.Refresh()));

@@ -270,25 +270,25 @@ namespace Poly_Ling.Data
     /// 【辺の読み方】
     ///   EdgeSetName が空なら、対象は選択中の描画オブジェクト全部で、各オブジェクトの選択辺を使う。
     ///   指定されていれば、MasterIndices の各オブジェクトが持つその名前のパーツ選択辞書の辺を使う
-    ///   （選択とは照合しない）。オブジェクトグループの作り直しはこちらで同じ帯を組む。
-    ///   「オブジェクトグループとして残す」が立っていて辞書名が空のときは、
-    ///   受け口が選択辺を辞書へ保存し、その名前を控えたコマンドをグループに残す。
+    ///   （選択とは照合しない）。モディファイアスタックの作り直しはこちらで同じ帯を組む。
+    ///   「モディファイアスタックとして残す」が立っていて辞書名が空のときは、
+    ///   受け口が選択辺を辞書へ保存し、その名前を控えたコマンドをスタックに残す。
     ///
     /// 【梯子タグ】
     ///   分岐の無い開いた連なりの端に、梯子の自動検索（BeltStackDetector）の目印を付ける。
     ///   開始側は 上(+Y)→下、同じなら 手前(-Z)→奥、同じなら 左(-X)→右 で決める。
     /// </summary>
     [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup,    // PlayerCommandDispatcher.EditTools.cs
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack,    // PlayerCommandDispatcher.EditTools.cs
         Inverse = ModifierInverseMethod.RibbonCenters,
         InverseKeeps = "辺の面構成・頂点 ID・ウェイト、帯の幅、辺の辞書",
         InverseLoses = "帯の幅と向きの変化（左右の中点の移動だけを辺の頂点へ戻す）、先端・タグの動き")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
-        // 書くのは「グループとして残す」かつ辞書名が空のとき、選択辺を辞書として保存する場合だけ
-        // （PlayerCommandDispatcher.EditTools.cs）。グループの項目は辞書名を持つので読むだけ（段 D）。
+        // 書くのは「モディファイアスタックとして残す」かつ辞書名が空のとき、選択辺を辞書として保存する場合だけ
+        // （PlayerCommandDispatcher.EditTools.cs）。スタックの項目は辞書名を持つので読むだけ（段 D）。
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
-                 WriteWhen = "placement.keepAsGroup=true&edgeSetName=",
+                 WriteWhen = "placement.keepAsModifierStack=true&edgeSetName=",
                  MeshRefSpace = PLMeshRefSpace.Model,   // GPU のワールド座標で読む（EdgeRibbonFaceToolHandler）
                  Description = "対象の描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
@@ -343,20 +343,20 @@ namespace Poly_Ling.Data
     /// 辺をパイプにする。辺から帯面（開始タグ付き）を作り、その帯を梯子として
     /// 自動検索で取り込んでパイプを作り、帯を隠す。
     ///
-    /// 【オブジェクトグループ】
+    /// 【モディファイアスタック】
     ///   帯面の生成（EdgeRibbonFaceCommand）とパイプの生成（CreatePipeCommand）を
-    ///   それぞれ 1 ステップとして 1 つのグループに残す。作り直しでは帯を作り直してから
+    ///   それぞれ 1 ステップとして 1 つのスタックに残す。作り直しでは帯を作り直してから
     ///   梯子を取り直すので、元の辺を動かせばパイプが追随する。このコマンド自体は残さない。
     ///
     /// 【辺】
     ///   EdgeSetName が空なら選択辺を新しいパーツ選択辞書へ保存して使う
     ///   （対象は選択中の描画オブジェクトと一致すること）。
     /// </summary>
-    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
-    [PLResult("groupName", PLResultKind.Text,    Description = "作ったオブジェクトグループの名前")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのモディファイアスタックになる。")]
+    [PLResult("groupName", PLResultKind.Text,    Description = "作ったモディファイアスタックの名前")]
     [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
     [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
-    [PLModifier(Capture = PLGroupCapture.ViaSteps)]   // 帯面＋パイプを項目にする（PlayerCommandDispatcher.EdgePipe.cs）
+    [PLModifier(Capture = PLStackCapture.ViaSteps)]   // 帯面＋パイプを項目にする（PlayerCommandDispatcher.EdgePipe.cs）
     public class CreateEdgePipeCommand : PanelCommand
     {
         // 書くのは辞書名が空のとき、選択辺を辞書として保存する場合だけ（PlayerCommandDispatcher.EdgePipe.cs。段 D）。
@@ -437,29 +437,29 @@ namespace Poly_Ling.Data
     /// 【頂点の読み方】
     ///   VertexSetName が空なら、対象は選択中の描画オブジェクトで、各オブジェクトの選択頂点を使う。
     ///   指定されていれば、MasterIndices の各オブジェクトが持つその名前のパーツ選択辞書の頂点を使う。
-    ///   「オブジェクトグループとして残す」が立っていて辞書名が空のときは、
-    ///   受け口が選択頂点を辞書へ保存し、その名前を控えたコマンドをグループに残す。
+    ///   「モディファイアスタックとして残す」が立っていて辞書名が空のときは、
+    ///   受け口が選択頂点を辞書へ保存し、その名前を控えたコマンドをスタックに残す。
     ///   以上は Target = Vertices のとき。
     ///
     /// 【ボーン・原点】Target = Bones なら MasterIndices の各ボーンの位置、
     ///   ObjectOrigins なら各描画オブジェクトの原点へ置く（WorldMatrix の平行移動成分。
     ///   マーカー表示と同じ値）。辞書は使わない。位置は MasterIndices だけで決まるので、
-    ///   選択とは照合しない（グループの作り直しでもそのまま再現できる）。
+    ///   選択とは照合しない（スタックの作り直しでもそのまま再現できる）。
     ///
     /// 【向き】ViewDirection / ViewUp（ワールド）から作る。作り直しでもこの値を使うので、
     ///   向きは作ったときのカメラに固定される。
     /// </summary>
     [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup,    // PlayerCommandDispatcher.VertexBillboard.cs
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack,    // PlayerCommandDispatcher.VertexBillboard.cs
         Inverse = ModifierInverseMethod.VertexFrames,
         InverseKeeps = "入力の面構成・頂点 ID・ウェイト、配置元、引数",
         InverseLoses = "部品の回転・倍率・歪み（全部品で共通の向き・倍率で置くため）")]
     public class CreateVertexBillboardPlaceCommand : PanelCommand
     {
-        // 書くのは「グループとして残す」かつ辞書名が空かつ対象が頂点のとき、選択頂点を辞書として保存する場合だけ
-        // （PlayerCommandDispatcher.VertexBillboard.cs）。グループの項目は読むだけ（段 D）。
+        // 書くのは「モディファイアスタックとして残す」かつ辞書名が空かつ対象が頂点のとき、選択頂点を辞書として保存する場合だけ
+        // （PlayerCommandDispatcher.VertexBillboard.cs）。スタックの項目は読むだけ（段 D）。
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
-                 WriteWhen = "placement.keepAsGroup=true&vertexSetName=&target=Vertices",
+                 WriteWhen = "placement.keepAsModifierStack=true&vertexSetName=&target=Vertices",
                  MeshRefSpace = PLMeshRefSpace.Model,   // GPU のワールド座標・WorldMatrix で読む（VertexBillboardPlaceToolHandler）
                  Description = "頂点を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]

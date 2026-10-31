@@ -44,7 +44,7 @@ using Poly_Ling.Vrm;
 
 namespace Poly_Ling.Player
 {
-    public class PlayerMotionClipTestSubPanel
+    public partial class PlayerMotionClipTestSubPanel
     {
         // ── コールバック ──────────────────────────────────────────────────
         /// <summary>モデルの窓口（操作経路統一計画.md E）。</summary>
@@ -514,6 +514,9 @@ namespace Poly_Ling.Player
             _btnSaveJson.style.marginBottom = 4;
             root.Add(_btnSaveJson);
 
+            // 編集の構造 edit の数値の欄（PlayerMotionClipTestSubPanel.Edit.cs）
+            BuildEditSection(root);
+
             root.Add(SecLabel("オプション"));
 
             var scaleRow = new VisualElement();
@@ -561,6 +564,10 @@ namespace Poly_Ling.Player
 
         private void RefreshAll()
         {
+            // 長さの正本は窓口（clipLength）。パネルを通さない load・clear・編集の口の後もここで取り直す。
+            _maxTime     = HasClip ? (Surface?.GetFloat(Tool, "clipLength") ?? 0f) : 0f;
+            _currentTime = Mathf.Clamp(_currentTime, 0f, _maxTime);
+
             var model = Model;
             if (_modelLabel != null)
                 _modelLabel.text = model != null
@@ -584,7 +591,13 @@ namespace Poly_Ling.Player
             if (_clipSection == null) return;
             bool hasClip = HasClip;
             _clipSection.style.display = hasClip ? DisplayStyle.Flex : DisplayStyle.None;
-            if (!hasClip) return;
+            if (!hasClip)
+            {
+                // 隠した節の表示も外したクリップに合わせる（UI 自動操作は隠れた欄も読める）
+                UpdateTimeLabel();
+                RefreshEdit();
+                return;
+            }
 
             int trackCount = Surface.GetInt(Tool, "trackTotal");
             var counts = Surface.Get(Tool, "trackCounts", Array.Empty<int>());
@@ -611,6 +624,7 @@ namespace Poly_Ling.Player
             UpdateSlider();
             UpdateTimeLabel();
             RefreshBoneList();
+            RefreshEdit();
         }
 
         private void RefreshBoneList()
@@ -669,16 +683,22 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// パネルを通さずに窓口 motionClip へ読み込まれたクリップ（コマンド loadMotionClipJson。Blender ブリッジの送信）に
-        /// 表示を合わせる。元ファイルが無いので、JSON 保存（窓口のクリップを書く）までは読み直し・VRMA・BVH・FBX 書き出しは使えない。
+        /// 窓口 motionClip のクリップが入れ替わった後（load・loadMotionClipJson・createLipSyncFromVoicevox。パネルを通さないものを含む）に、
+        /// 時刻を当てた時刻にして表示を合わせる（長さは RefreshAll が窓口から取り直す）。
+        /// 元ファイルの無いクリップ（JSON の文字列から読んだもの）は、JSON 保存（窓口のクリップを書く）までは読み直し・VRMA・BVH・FBX 書き出しは使えない。
         /// </summary>
-        public void AdoptExternalClip(float time)
+        public void AdoptReplacedClip(float time)
         {
             StopPlay();
-            _maxTime     = Surface?.GetFloat(Tool, "clipLength") ?? 0f;
-            _currentTime = Mathf.Clamp(time, 0f, _maxTime);
+            _currentTime = Mathf.Max(0f, time);
             if (Surface != null) _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
-            SetStatus($"外から受けたクリップ: {Surface?.GetString(Tool, "clipName")}");
+            SetStatus($"読み込んだクリップ: {Surface?.GetString(Tool, "clipName")}");
+            RefreshAll();
+        }
+
+        /// <summary>窓口の編集の口（またはその取り消し）でクリップが変わった後に呼ぶ。表示を合わせる（長さは RefreshAll が取り直す）。</summary>
+        public void AdoptEditedClip()
+        {
             RefreshAll();
         }
 
@@ -716,9 +736,9 @@ namespace Poly_Ling.Player
                 "PolyLing モーション JSON の保存", SaveDest.Keys.Motion, "", defName + ".plmotion.json", "json");
             if (string.IsNullOrEmpty(outPath)) return;
 
-            // 元ファイルの無いクリップ（外から受けたもの）は、窓口のクリップをそのまま書き、
-            // そのファイルを元ファイルにする（SaveMotionClipJsonCommand）。
-            if (string.IsNullOrEmpty(_filePath))
+            // 元ファイルの無いクリップ（外から受けたもの）と、編集の口で変えたクリップ（元ファイルを読み直すと変えた分が消える）は、
+            // 窓口のクリップをそのまま書き、そのファイルを元ファイルにする（SaveMotionClipJsonCommand）。
+            if (string.IsNullOrEmpty(_filePath) || (Surface?.GetBool(Tool, "editedSinceLoad") ?? false))
             {
                 var since0 = DateTime.Now.AddSeconds(-2);
                 SendCommand(new Poly_Ling.Data.SaveMotionClipJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath));

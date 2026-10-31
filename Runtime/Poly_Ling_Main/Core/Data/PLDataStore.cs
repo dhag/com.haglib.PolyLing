@@ -29,7 +29,7 @@
 // 【同名のとき】
 //   Put は同名の項目を置き換える。並び位置は元のまま保つ。
 //   自動採番は GenerateUniqueName を使う。規則は ModelContext の
-//   GenerateUniqueMeshSelectionSetName / GenerateUniqueObjectGroupName と同じ。
+//   GenerateUniqueMeshSelectionSetName / GenerateUniqueModifierStackName と同じ。
 
 using System;
 using System.Collections.Generic;
@@ -318,7 +318,7 @@ namespace Poly_Ling.Data
         public void Clear() => _entries.Clear();
 
         /// <summary>
-        /// 一意な名前を作る。規則は ModelContext.GenerateUniqueObjectGroupName と同じ。
+        /// 一意な名前を作る。規則は ModelContext.GenerateUniqueModifierStackName と同じ。
         /// </summary>
         public string GenerateUniqueName(string baseName = "Data")
         {

@@ -140,7 +140,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 作業空間の反映・取消し・閉じるが書く既存の描画オブジェクト（出力の保護の判定に使う。段 8）。
         /// 反映は元データ（UV なら元の描画オブジェクト、断面なら線分オブジェクト）を書く。
-        /// グループの項目の断面（元が無い）は項目の引数だけを書き、作り直しは書き戻しの経路で通る。
+        /// スタックの項目の断面（元が無い）は項目の引数だけを書き、作り直しは書き戻しの経路で通る。
         /// 取消し・閉じるは代理だけを書く。開いていなければ null（通常の判定）。
         /// </summary>
         private System.Collections.Generic.IList<MeshContext> EditSpaceWriteTargets(PanelCommand cmd)
@@ -160,7 +160,7 @@ namespace Poly_Ling.Player
             {
                 case OpenUvEditSpaceCommand c:            reason = OpenUvEditSpace(c, model);     break;
                 case OpenProfileEditSpaceCommand c:       reason = OpenProfileEditSpace(c, model); break;
-                case OpenGroupProfileEditSpaceCommand c:  reason = OpenGroupProfileEditSpace(c, model); break;
+                case OpenModifierStackProfileEditSpaceCommand c:  reason = OpenModifierStackProfileEditSpace(c, model); break;
                 case SetEditSpacePlaneConstraintCommand c: reason = SetEditSpacePlaneConstraint(model, c.Enabled); break;
                 case SetEditSpacePlateUnderlayCommand c:   reason = SetEditSpacePlateUnderlay(model, c, data); break;
                 case ClearEditSpacePlateUnderlayCommand _: reason = ClearEditSpacePlateUnderlay(model, data); break;
@@ -232,7 +232,7 @@ namespace Poly_Ling.Player
         private string EditSpaceBlockReason(PanelCommand cmd)
         {
             // 断面系の代理はモデルに常設のオブジェクトなので断らない（設計方針 9.2 の対象外）。
-            // ただしグループ断面の代理は閉じると消える一時オブジェクトなので断る（DeleteProxyOnClose）。
+            // ただしスタック断面の代理は閉じると消える一時オブジェクトなので断る（DeleteProxyOnClose）。
             if (_editSpace == null || !(_editSpace.TemporaryProxy || _editSpace.DeleteProxyOnClose)) return null;
             switch (cmd)
             {
@@ -281,7 +281,7 @@ namespace Poly_Ling.Player
         /// <summary>作業空間が操作できる状態か。できなければ理由。</summary>
         /// <summary>
         /// 元・代理の描画オブジェクトを ObjectId で引き直す。
-        /// オブジェクト一覧のスナップショットの Undo（グループの項目の作り直しなど）は描画オブジェクトを
+        /// オブジェクト一覧のスナップショットの Undo（スタックの項目の作り直しなど）は描画オブジェクトを
         /// 複製で置き換える（ObjectId は保たれる）ので、控えた実体がモデルから外れることがある。
         /// </summary>
         private static void RebindEditSpaceObjects(EditSpaceSession s)
@@ -517,10 +517,10 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// オブジェクトグループの項目の断面で作業空間を開く（段 6「断面の線分 → 断面」）。
+        /// モディファイアスタックの項目の断面で作業空間を開く（段 6「断面の線分 → 断面」）。
         /// 項目の断面から線分の代理を作ってモデルへ足す（通常の Undo に残る）。閉じるときに消す。
         /// </summary>
-        private string OpenGroupProfileEditSpace(OpenGroupProfileEditSpaceCommand c, ModelContext model)
+        private string OpenModifierStackProfileEditSpace(OpenModifierStackProfileEditSpaceCommand c, ModelContext model)
         {
             if (_editSpace != null) return "作業空間が既に開いています。先に終了してください";
             var project = ActiveProject;
@@ -531,12 +531,12 @@ namespace Poly_Ling.Player
                 return $"断面の種類 '{c.Kind}' がありません（revolution / profile2d / frillA / frillB / pipe）";
 
             int modelIdx = project.CurrentModelIndex;
-            string why = GroupProfileEditSpaceAdapter.ReadItemProfile(project, modelIdx, c.GroupName, c.StepIndex, kind, out var prof);
+            string why = ModifierStackProfileEditSpaceAdapter.ReadItemProfile(project, modelIdx, c.StackName, c.StepIndex, kind, out var prof);
             if (why != null) return why;
 
             // ── 代理を作る（ここまで副作用なし） ──
-            string name = model.GenerateUniqueMeshName($"{c.GroupName}#{c.StepIndex}_{PlayerPrimitiveMeshSubPanel.KindName(kind)}");
-            var proxyMo = GroupProfileEditSpaceAdapter.BuildLineMesh(prof, name);
+            string name = model.GenerateUniqueMeshName($"{c.StackName}#{c.StepIndex}_{PlayerPrimitiveMeshSubPanel.KindName(kind)}");
+            var proxyMo = ModifierStackProfileEditSpaceAdapter.BuildLineMesh(prof, name);
             if (proxyMo == null || proxyMo.FaceCount == 0) return "項目の断面から線分を作れません";
 
             var unityMesh = proxyMo.ToUnityMesh();
@@ -554,8 +554,8 @@ namespace Poly_Ling.Player
 
             var session = new EditSpaceSession
             {
-                Adapter            = new GroupProfileEditSpaceAdapter(
-                                         () => ActiveProject, DispatchFromPanel, modelIdx, c.GroupName, c.StepIndex, kind),
+                Adapter            = new ModifierStackProfileEditSpaceAdapter(
+                                         () => ActiveProject, DispatchFromPanel, modelIdx, c.StackName, c.StepIndex, kind),
                 Model              = model,
                 Source             = null,
                 FaceCount          = proxyMo.FaceCount,
@@ -597,7 +597,7 @@ namespace Poly_Ling.Player
             ApplyAllUnderlays();
 
             NotifyPanels(ChangeKind.ListStructure);
-            session.LastMessage = $"開きました（{c.GroupName}#{c.StepIndex} の断面。線分 {proxyMo.FaceCount}）";
+            session.LastMessage = $"開きました（{c.StackName}#{c.StepIndex} の断面。線分 {proxyMo.FaceCount}）";
             return null;
         }
 
@@ -786,7 +786,7 @@ namespace Poly_Ling.Player
             int modelIdx = project?.CurrentModelIndex ?? 0;
 
             // 断面系：代理は常設のオブジェクトなので消さない。ビルボードを開く前へ戻す。
-            // グループの項目の断面（段 6）は、開くときに作った代理を消す（通常の Undo に残る）。
+            // スタックの項目の断面（段 6）は、開くときに作った代理を消す（通常の Undo に残る）。
             if (!s.TemporaryProxy)
             {
                 if (s.Proxy != null) s.Proxy.Billboard = s.PrevProxyBillboard;

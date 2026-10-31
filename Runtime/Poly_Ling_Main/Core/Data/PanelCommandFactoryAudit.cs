@@ -273,7 +273,7 @@ namespace Poly_Ling.Data
             // 【参考】索引の印（IsMeshRef）の付け忘れ。完了条件（全項目 0）には入れない。
             // queryScenarioAudit はこの印で焼いてはいけない索引を見分けるので、
             // 印の無い引数は点検を素通りする。どれだけ漏れているかを出す。
-            // 印を付けると ObjectGroup の作り直しの挙動が変わるため、一覧を見て個別に付ける。
+            // 印を付けると ModifierStack の作り直しの挙動が変わるため、一覧を見て個別に付ける。
             var unmarked = new List<string>();
             foreach (var t in PLParamAudit.FindCommandTypes())
                 foreach (var key in PanelCommandFactory.UnmarkedMeshIndexKeys(t))
@@ -421,14 +421,14 @@ namespace Poly_Ling.Data
                 foreach (var n in noAccess) sb.Append('\n').Append("  ").Append(n);
             }
 
-            // 読む空間（PLParam.MeshRefSpace）の未指定。グループに残るコマンド（Capture が OnKeepAsGroup・Always）の
+            // 読む空間（PLParam.MeshRefSpace）の未指定。スタックに残るコマンド（Capture が OnKeepAsModifierStack・Always）の
             // 入力キー（ModifierInventory.InputKeys）だけを数える。評価器が署名の取り方とスキンド化済みの入力の
             // 読み方をこれで決めるので完了条件に入れる（作り直し整備計画 段 10）。
             var noSpace = new List<string>();
             foreach (var t in PLParamAudit.FindCommandTypes())
             {
                 var ma = t.GetCustomAttribute<PLModifierAttribute>(inherit: true);
-                if (ma == null || (ma.Capture != PLGroupCapture.OnKeepAsGroup && ma.Capture != PLGroupCapture.Always)) continue;
+                if (ma == null || (ma.Capture != PLStackCapture.OnKeepAsModifierStack && ma.Capture != PLStackCapture.Always)) continue;
                 foreach (var k in ModifierInventory.InputKeys(t))
                     if (k.Space == PLMeshRefSpace.Unspecified) noSpace.Add(t.Name + "." + k.Key);
             }

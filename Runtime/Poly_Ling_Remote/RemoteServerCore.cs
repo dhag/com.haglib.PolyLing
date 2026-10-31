@@ -656,7 +656,7 @@ namespace Poly_Ling.Remote
 
                     var placement = PrimitivePlacement.Default;
                     placement.AddMode     = Poly_Ling.Player.PrimitiveAddMode.NewObject;
-                    placement.KeepAsGroup = false;
+                    placement.KeepAsModifierStack = false;
 
                     var addCmd = new AddGeneratedMeshCommand(
                         proj.CurrentModelIndex, meshObject, "RemoteMesh", placement, poseAlreadyBaked: true);

@@ -67,6 +67,7 @@ namespace Poly_Ling.MeshBridge
             // ここに規則を書き直すと GPU 展開バッファ
             // （UnifiedBufferManager_Build.BuildExpandedVertexMapping）や書き戻し
             // （UnifiedSystemAdapter.WritebackTransformedVertices）と食い違う。
+            long tp = Poly_Ling.Ops.ModifierStepProfiler.Now();   // 計測（モディファイア高速化計画 段 13）
             var nonIsolatedVerts = MeshExpansion.BuildNonIsolatedSet(source);
 
             // パス1: 頂点順 -> UV順 で Unity頂点を作成（孤立頂点はスキップ）。
@@ -103,6 +104,8 @@ namespace Poly_Ling.MeshBridge
                         unityBoneWeights.Add(vertex.BoneWeight ?? default);
                 }
             }
+            Poly_Ling.Ops.ModifierStepProfiler.Add("UnityMesh:頂点の展開", tp);
+            tp = Poly_Ling.Ops.ModifierStepProfiler.Now();
 
             // パス2: 面を三角形に分解し、サブメッシュ別の三角形indexを構築。
             var subMeshTriangles = new List<int>[subMeshCount];
@@ -138,6 +141,9 @@ namespace Poly_Ling.MeshBridge
                 }
             }
 
+            Poly_Ling.Ops.ModifierStepProfiler.Add("UnityMesh:三角形分割", tp);
+            tp = Poly_Ling.Ops.ModifierStepProfiler.Now();
+
             // --- ここから生 Unity Mesh API ---
             mesh.SetVertices(unityVerts);
             mesh.SetUVs(0, unityUVs);
@@ -156,6 +162,7 @@ namespace Poly_Ling.MeshBridge
             if (!source.PreserveNormals &&
                 (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up)))
                 mesh.RecalculateNormals();
+            Poly_Ling.Ops.ModifierStepProfiler.Add("UnityMesh:Mesh への設定", tp);
 
             return mesh;
         }

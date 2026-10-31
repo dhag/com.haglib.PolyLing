@@ -197,7 +197,7 @@ namespace Poly_Ling.Player
         public VisualElement UVZSection            { get; private set; }
         public VisualElement PartsSelectionSetSection { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
-        public VisualElement ObjectGroupSection    { get; private set; }
+        public VisualElement ModifierStackSection    { get; private set; }
         public VisualElement NormalExcludeSetSection { get; private set; }
         public VisualElement NormalEditSection     { get; private set; }
         public VisualElement NormalTransplantSection { get; private set; }
@@ -563,7 +563,7 @@ namespace Poly_Ling.Player
             ScenarioGuideSection       = AddSection(visible: false, kind: RightPanelKind.EditSpace, topBorder: false);
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
-            ObjectGroupSection         = AddSection(visible: false, kind: RightPanelKind.General);
+            ModifierStackSection         = AddSection(visible: false, kind: RightPanelKind.General);
             NormalExcludeSetSection    = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalEditSection          = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalTransplantSection    = AddSection(visible: false, kind: RightPanelKind.General);

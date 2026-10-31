@@ -274,6 +274,7 @@ namespace Poly_Ling.Player
 #pragma warning disable CS0618
             var adapter = _renderer?.GetAdapter(0);
             var model   = project?.CurrentModel;
+            long tv = System.Diagnostics.Stopwatch.GetTimestamp();   // 計測（モディファイア高速化計画 段 13）
 
             // バッファに載せる集合が変わったか。変わっていればインデックス空間が
             // ずれるので、フラグ書き戻しでは済まない。
@@ -281,6 +282,7 @@ namespace Poly_Ling.Player
                 adapter?.BufferManager != null &&
                 model != null &&
                 adapter.BufferManager.NeedsRebuildForMembership(model);
+            tv = AddViewTiming("属性:集合の判定", tv);
 
             if (needsRebuild)
             {
@@ -298,16 +300,26 @@ namespace Poly_Ling.Player
             }
             else
             {
-                adapter?.BufferManager?.UpdateAllVisibilityFlags();
+                // 可視フラグは続く PresentAll（その場か、コマンドの中ならコマンドの終わり）が
+                // 面ごとのカリングの前に写す（SyncSelectionFlags。モディファイア高速化計画 段 14）。
+                // ここで写すと、コマンド 1 回で同じ全走査が 3 回走っていた。
+                _visibilityPending = true;
             }
+            tv = AddViewTiming("属性:可視フラグ", tv);
 
             MarkAllSlotsDirty();
-            PresentAll(project);
+            // 作り直しを伴わないときは、コマンドの中なら描画準備をコマンドの終わりへ回す（段 9）。
+            if (needsRebuild || !DeferPresent()) PresentAll(project);
 #pragma warning restore CS0618
+            tv = System.Diagnostics.Stopwatch.GetTimestamp();
             OnRefreshSelectedFacesOverlay?.Invoke();
+            tv = AddViewTiming("重ね描き:選択面", tv);
             OnRefreshGizmoOverlay?.Invoke();
+            tv = AddViewTiming("重ね描き:ギズモ", tv);
             OnRefreshBoneOverlay?.Invoke();
+            tv = AddViewTiming("重ね描き:ボーン", tv);
             RefreshToolOverlays();
+            AddViewTiming("重ね描き:ツール", tv);
         }
 
         public void EnterSelectionChanged(ProjectContext project)
@@ -447,7 +459,7 @@ namespace Poly_Ling.Player
         /// </param>
         /// <summary>
         /// 頂点ドラッグ中か（DragBegin から DragEnd まで）。
-        /// オブジェクトグループの項目のうち重いもの（ModifierEvaluator.EvaluatePending）は、
+        /// モディファイアスタックの項目のうち重いもの（ModifierEvaluator.EvaluatePending）は、
         /// この間は流さず、離したときに流す（PolyLing_作り直し整備計画.md 段 4）。
         /// </summary>
         public bool IsVerticesDragging { get; private set; }
@@ -509,7 +521,8 @@ namespace Poly_Ling.Player
                     // Phase 2a-2g-3 Fix: ドラッグ終了時は全 viewport のカリング再計算が必要。
                     MarkAllSlotsDirty();
                     ApplyAllViewportCameraTransforms();
-                    PresentAll(project);
+                    // コマンドの中なら描画準備はコマンドの終わりへ回す（段 9）。
+                    if (!DeferPresent()) PresentAll(project);
                     break;
             }
 #pragma warning restore CS0618
@@ -728,30 +741,95 @@ namespace Poly_Ling.Player
         ///   呼ぶ約束で、書き手が呼び忘れると GPU が古いまま残った。
         ///
         /// 【頂点ドラッグの最中は何もしない】ドラッグは EnterVerticesMoved の軽い経路が受け持つ。
+        ///
+        /// 【頂点属性の予約】（モディファイア高速化計画 段 1・段 2）
+        ///   中身を入れ替えたが面の構成は同じ描画オブジェクト（モディファイアの書き戻し）は、
+        ///   位置に加えてウェイトと法線も変わっている。QueueVertexAttributesUpload で予約しておくと、
+        ///   バッファが合っているときにその範囲だけ部分転送する。合っていなければ作り直しが全部を送る。
         /// </summary>
-        public void SettleWorldPositions(ProjectContext project)
+        public void SettleWorldPositions(ProjectContext project) => SettleWorldPositions(project, present: true);
+
+        /// <param name="present">
+        /// false なら、合っているときの描画準備（PresentAll と重ね描き）をしない。
+        /// 描画準備を後へ回す区間の中（コマンドの終わり）から呼ぶときだけ使う。区間を閉じるときに 1 回行う（段 9）。
+        /// </param>
+        public void SettleWorldPositions(ProjectContext project, bool present)
         {
+            LastMatchMs = 0;
             if (IsVerticesDragging) return;
             var model = project?.CurrentModel;
-            if (model == null || _renderer == null) return;
+            if (model == null || _renderer == null) { _pendingAttributeUploads.Clear(); return; }
 
-            if (!BuffersMatchModel(model))
+            long tm0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool matches = BuffersMatchModel(model);
+            LastMatchMs = (System.Diagnostics.Stopwatch.GetTimestamp() - tm0) * 1000.0
+                          / System.Diagnostics.Stopwatch.Frequency;
+            if (!matches)
             {
+                _pendingAttributeUploads.Clear();
                 EnterTopologyChanged(project);
                 return;
             }
 
             var adapter = _renderer.GetAdapter(0);
-            if (adapter == null || !adapter.IsInitialized) return;
+            if (adapter == null || !adapter.IsInitialized) { _pendingAttributeUploads.Clear(); return; }
             var bm = adapter.BufferManager;
-            if (bm == null) return;
+            if (bm == null) { _pendingAttributeUploads.Clear(); return; }
 
+            long tv = AddViewTiming("Settle:照合", tm0);   // 計測（段 13）
+            UploadPendingVertexAttributes(model, adapter, bm);
+            tv = AddViewTiming("Settle:ウェイト・法線の部分転送", tv);
             bm.UpdateAllPositions(model.MeshContextList);
             bm.UpdateMirrorPositions();
+            tv = AddViewTiming("Settle:位置の転送", tv);
 #pragma warning disable CS0618
             UpdateTransform();
+            tv = AddViewTiming("Settle:変換（UpdateTransform）", tv);
+            if (!present && DeferPresent()) return;
             PresentAll(project);
 #pragma warning restore CS0618
+            tv = System.Diagnostics.Stopwatch.GetTimestamp();
+            // 位置・ボーンの行列が変わったので、位置に依る重ね描きも描き直す
+            // （作り直しの分岐は EnterTopologyChanged が行う。モディファイア高速化計画 段 7）。
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            AddViewTiming("Settle:重ね描き", tv);
+        }
+
+        /// <summary>直近の SettleWorldPositions の照合（BuffersMatchModel）にかかった時間 [ms]。計測用（段 7）。</summary>
+        public double LastMatchMs { get; private set; }
+
+        /// <summary>次の SettleWorldPositions でウェイト・法線を部分転送する描画オブジェクト。</summary>
+        private readonly HashSet<Poly_Ling.Data.MeshContext> _pendingAttributeUploads
+            = new HashSet<Poly_Ling.Data.MeshContext>();
+
+        /// <summary>
+        /// 面の構成を変えずに中身（位置・ウェイト・法線）を書き換えた描画オブジェクトを予約する
+        /// （モディファイアの書き戻し。モディファイア高速化計画 段 2）。
+        /// 転送は次の SettleWorldPositions（書き込みのあるコマンドの終わり・評価のパスの終わり）が行う。
+        /// 面の構成が変わったものは予約しなくてよい（バッファが合わなくなり、作り直しが全部を送る）。
+        /// </summary>
+        public void QueueVertexAttributesUpload(Poly_Ling.Data.MeshContext mc)
+        {
+            if (mc?.MeshObject != null) _pendingAttributeUploads.Add(mc);
+        }
+
+        private void UploadPendingVertexAttributes(
+            Poly_Ling.Context.ModelContext model, UnifiedSystemAdapter adapter, UnifiedBufferManager bm)
+        {
+            if (_pendingAttributeUploads.Count == 0) return;
+            foreach (var mc in _pendingAttributeUploads)
+            {
+                if (mc?.MeshObject == null) continue;
+                int ctxIdx = model.MeshContextList.IndexOf(mc);
+                if (ctxIdx < 0) continue;
+                int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+                if (unifiedIdx < 0) continue;
+                bm.UpdateBoneWeights(mc.MeshObject, unifiedIdx);
+                bm.UpdateNormals(mc.MeshObject, unifiedIdx);
+            }
+            _pendingAttributeUploads.Clear();
         }
 
         public void EnterUndoApplied(ProjectContext project, Poly_Ling.Context.ModelContext model)

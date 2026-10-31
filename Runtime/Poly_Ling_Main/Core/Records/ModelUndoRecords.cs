@@ -264,7 +264,7 @@ namespace Poly_Ling.UndoSystem
         // Add/Remove用
         //   追加・削除したモデルの実体そのもの（作り直し整備計画 6 章）。Undo・Redo で同じ実体を
         //   外し・入れ直す（ProjectContext.DetachModelAt は Clear しない）。以前は ModelContextSnapshot
-        //   （名前・メッシュ・材質・選択だけ）から作り直していたので、オブジェクトグループ・表情・
+        //   （名前・メッシュ・材質・選択だけ）から作り直していたので、モディファイアスタック・表情・
         //   Humanoid などが落ち、頂点編集の記録・評価器の控えも古い実体を指していた。
         public ModelContext Model;
 

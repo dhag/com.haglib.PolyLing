@@ -2,10 +2,10 @@
 // コマンドディスパッチャ：頂点へ藤壺（CreateVertexBillboardPlaceCommand）。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
-// 【グループとして残すとき】
-//   辞書名が空なら選択頂点を辞書へ保存し、その名前を控えたコマンドで実行してグループに残す。
+// 【モディファイアスタックとして残すとき】
+//   辞書名が空なら選択頂点を辞書へ保存し、その名前を控えたコマンドで実行してスタックに残す。
 //   選択頂点のままでは作り直しのときに同じ頂点を読めないため。
-//   辞書の追加・生成・グループの追加を Undo 1 件にまとめる（辺から帯面と同じ形）。
+//   辞書の追加・生成・スタックの追加を Undo 1 件にまとめる（辺から帯面と同じ形）。
 
 using System.Collections.Generic;
 using Poly_Ling.Context;
@@ -33,18 +33,18 @@ namespace Poly_Ling.Player
                         ? c.Placement.AddTargetIndex
                         : -1;
 
-                    // 辞書を作らない経路（グループに残さない／辞書名が指定済み／ボーン・原点）。
+                    // 辞書を作らない経路（スタックに残さない／辞書名が指定済み／ボーン・原点）。
                     // ボーン・原点は位置が MasterIndices だけで決まるので、辞書は要らない。
-                    if (!c.Placement.KeepAsGroup || !string.IsNullOrEmpty(c.VertexSetName)
+                    if (!c.Placement.KeepAsModifierStack || !string.IsNullOrEmpty(c.VertexSetName)
                         || c.Target != Poly_Ling.PlaceObject.BillboardPlaceTarget.Vertices)
                     {
-                        var vbBeforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
+                        var vbBeforeIds = c.Placement.KeepAsModifierStack ? SnapshotObjectIds() : null;
 
                         string vbReason = OnCreateVertexBillboardPlace.Invoke(c);
                         if (vbReason != null) { Fail(vbReason); return true; }
 
-                        if (c.Placement.KeepAsGroup)
-                            CaptureObjectGroup(c, vbBeforeIds, vbFallback);
+                        if (c.Placement.KeepAsModifierStack)
+                            CaptureModifierStack(c, vbBeforeIds, vbFallback);
                         return true;
                     }
 
@@ -55,7 +55,7 @@ namespace Poly_Ling.Player
 
                     _undoController?.SetModelContext(model);
                     var vbListBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
-                    int vbGroupsBefore = model.ObjectGroupCount;
+                    int vbGroupsBefore = model.ModifierStackCount;
 
                     string vbFail = null;
                     bool   vbSetFailed = false;
@@ -75,7 +75,7 @@ namespace Poly_Ling.Player
 
                             vbFail = OnCreateVertexBillboardPlace.Invoke(vbCmd);
                             if (vbFail == null)
-                                CaptureObjectGroup(vbCmd, vbBeforeId, vbFallback);
+                                CaptureModifierStack(vbCmd, vbBeforeId, vbFallback);
                         }
                     }
                     finally

@@ -259,7 +259,7 @@ namespace Poly_Ling.Diagnostics
             CheckRestPoseDisplacement(model, list);
             CheckMirrorPairWeights(model, list);
             CheckBranchMirrorCoverage(model, list);
-            CheckObjectGroupReferences(model, list);
+            CheckModifierStackReferences(model, list);
 
             return list;
         }
@@ -357,10 +357,10 @@ namespace Poly_Ling.Diagnostics
         }
 
         /// <summary>
-        /// オブジェクトグループの参照が生きているか。
+        /// モディファイアスタックの参照が生きているか。
         ///
         /// 【索引ではなく ObjectId を見る】
-        ///   ObjectGroup の参照はリスト位置に依存しないので、範囲検査ではなく
+        ///   ModifierStack の参照はリスト位置に依存しないので、範囲検査ではなく
         ///   「その ID を持つオブジェクトが居るか」を見る。
         ///   同じモデル内に限らないので、居ないと言い切れるのは
         ///   ProjectContext まで辿れる場合だけ。ここではモデル内で引けたかどうかを
@@ -368,14 +368,14 @@ namespace Poly_Ling.Diagnostics
         ///
         /// 【引けない参照があっても壊れてはいない】
         ///   部分読み込みの途中や、出力先だけ消した状態でも起こる。
-        ///   ここは報告だけで、片づけは ObjectGroupOps.PurgeMissing が行う。
+        ///   ここは報告だけで、片づけは ModifierStackOps.PurgeMissing が行う。
         /// </summary>
-        private static void CheckObjectGroupReferences(ModelContext model, List<InvariantViolation> list)
+        private static void CheckModifierStackReferences(ModelContext model, List<InvariantViolation> list)
         {
-            if (model?.ObjectGroups == null || model.ObjectGroups.Count == 0) return;
+            if (model?.ModifierStacks == null || model.ModifierStacks.Count == 0) return;
 
-            // ID → 居るか。1 回だけ作る（グループごとに全走査すると
-            // グループ数 × オブジェクト数になる）。
+            // ID → 居るか。1 回だけ作る（スタックごとに全走査すると
+            // スタック数 × オブジェクト数になる）。
             var alive = new HashSet<ulong>();
             for (int i = 0; i < model.MeshContextCount; i++)
             {
@@ -385,14 +385,14 @@ namespace Poly_Ling.Diagnostics
 
             var names = new HashSet<string>(StringComparer.Ordinal);
 
-            for (int gi = 0; gi < model.ObjectGroups.Count; gi++)
+            for (int gi = 0; gi < model.ModifierStacks.Count; gi++)
             {
-                var g = model.ObjectGroups[gi];
+                var g = model.ModifierStacks[gi];
                 if (g == null)
                 {
                     list.Add(new InvariantViolation
                     {
-                        Rule   = "オブジェクトグループ",
+                        Rule   = "モディファイアスタック",
                         Detail = $"要素 {gi} が null",
                     });
                     continue;
@@ -402,8 +402,8 @@ namespace Poly_Ling.Diagnostics
                 {
                     list.Add(new InvariantViolation
                     {
-                        Rule   = "オブジェクトグループ名の一意性",
-                        Detail = $"グループ名 \"{g.Name}\" が重複している",
+                        Rule   = "モディファイアスタック名の一意性",
+                        Detail = $"スタック名 \"{g.Name}\" が重複している",
                     });
                 }
 
@@ -411,7 +411,7 @@ namespace Poly_Ling.Diagnostics
                 {
                     list.Add(new InvariantViolation
                     {
-                        Rule   = "オブジェクトグループ",
+                        Rule   = "モディファイアスタック",
                         Detail = $"\"{g.Name}\" に生成コマンドが記録されていない",
                     });
                 }
@@ -423,7 +423,7 @@ namespace Poly_Ling.Diagnostics
 
                     list.Add(new InvariantViolation
                     {
-                        Rule   = "オブジェクトグループの出力先",
+                        Rule   = "モディファイアスタックの出力先",
                         Detail = $"\"{g.Name}\" の出力先 (ObjectId={outId}) がこのモデルに無い",
                     });
                 }
@@ -432,7 +432,7 @@ namespace Poly_Ling.Diagnostics
                 {
                     list.Add(new InvariantViolation
                     {
-                        Rule   = "オブジェクトグループの退避",
+                        Rule   = "モディファイアスタックの退避",
                         Detail = $"\"{g.Name}\" の退避 (ObjectId={g.StashObjectId}) がこのモデルに無い",
                     });
                 }

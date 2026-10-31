@@ -300,7 +300,7 @@ namespace Poly_Ling.Player
             _modelBlendSubPanel.Build(_layoutRoot.ModelBlendSection);
         }
 
-        /// <summary>BuildLayout の段：ボーン・UV・マテリアル・選択辞書・法線・面の表示・オブジェクトグループ・マージ・ブーリアン・モーフ・Tポーズ・Humanoid・揺れもの・VRM 設定・ミラー・Quad減面のパネル。</summary>
+        /// <summary>BuildLayout の段：ボーン・UV・マテリアル・選択辞書・法線・面の表示・モディファイアスタック・マージ・ブーリアン・モーフ・Tポーズ・Humanoid・揺れもの・VRM 設定・ミラー・Quad減面のパネル。</summary>
         private void BuildEditPanels()
         {
             _boneEditorSubPanel = new PlayerBoneEditorSubPanel();
@@ -433,14 +433,14 @@ namespace Poly_Ling.Player
             };
             _meshSelSetSubPanel.Build(_layoutRoot.MeshSelectionSetSection);
 
-            // オブジェクトグループ。参照の解決がモデルをまたぐので
+            // モディファイアスタック。参照の解決がモデルをまたぐので
             // ModelContext ではなく ProjectContext を渡す。
-            _objectGroupSubPanel = new PlayerObjectGroupSubPanel
+            _modifierStackSubPanel = new PlayerModifierStackSubPanel
             {
                 GetProject  = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
-            _objectGroupSubPanel.Build(_layoutRoot.ObjectGroupSection);
+            _modifierStackSubPanel.Build(_layoutRoot.ModifierStackSection);
 
             _mergeMeshesSubPanel = new PlayerMergeMeshesSubPanel
             {

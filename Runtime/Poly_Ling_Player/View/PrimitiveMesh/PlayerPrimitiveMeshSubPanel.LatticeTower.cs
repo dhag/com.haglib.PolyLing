@@ -4,13 +4,13 @@
 //
 // 【作るもの】
 //   空の親の下に、塔体（createLatticeTower）とデッキ（createTowerDeck）を子として作る
-//   （CreateTowerAssemblyCommand）。並びは 1 件のオブジェクトグループとして残る。
+//   （CreateTowerAssemblyCommand）。並びは 1 件のモディファイアスタックとして残る。
 //   共通の配置欄（位置・回転・拡大）は親の姿勢になる。
 //
 // 【既存の鉄塔】
 //   一覧で選んだ鉄塔（塔体・デッキ・親のどれか）へ、選んでいるデッキの設定でデッキを足す
 //   （AddTowerDeckCommand）。デッキを選んでいれば、その配置元を選んでいるデッキの配置元へ
-//   差し替える（ReplaceObjectGroupSourceCommand）。
+//   差し替える（ReplaceModifierStackSourceCommand）。
 //
 // 【プリセット】
 //   送電用（四角・矩形・えぼし・回転・MC・門形）と、すそ野の広がる塔（東京タワー型・
@@ -608,7 +608,7 @@ namespace Poly_Ling.Player
             var src = SelectedTowerDeck?.Pick.SelectedMasterIndices();
             if (src == null || src.Count == 0) { _statusLabel.text = T("TowerNeedDeckSource"); return; }
 
-            SendCommand(new ReplaceObjectGroupSourceCommand(ModelIndex(), _ltTargetIndex, src.ToArray()));
+            SendCommand(new ReplaceModifierStackSourceCommand(ModelIndex(), _ltTargetIndex, src.ToArray()));
             _statusLabel.text = T("TowerDeckReplaced");
         }
 

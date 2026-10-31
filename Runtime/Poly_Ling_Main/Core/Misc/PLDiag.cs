@@ -112,9 +112,20 @@ namespace Poly_Ling.Diagnostics
         /// </summary>
         public static bool ListSel = true;
 
+        /// <summary>
+        /// 時間の計測（モディファイア高速化計画 段 10〜13 の区間の計測）。既定 false。
+        ///
+        /// true の間、モディファイアの作り直しの区間（ModifierStepProfiler）、描画準備・通知・コマンドの外枠の
+        /// 区間（PlayerViewportManager.AddViewTiming / Poly_Ling.Core.RenderTiming）、照合の取り分けを集計し、
+        /// queryModifierGraph の lastPass に「区間:」「区間の累計」「描画層の累計」として出す。
+        /// Debug.Log は使わない。ログパネルのトグルか setDiagnosticTiming で切り替える。起動をまたいで覚えない。
+        /// </summary>
+        public static bool Timing = false;
+
         /// <summary>全カテゴリをまとめて切り替える。</summary>
         public static void SetAll(bool on)
         {
+            Timing       = on;
             Enabled      = on;
             Command      = on;
             Notify       = on;

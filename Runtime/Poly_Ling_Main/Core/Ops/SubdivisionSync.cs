@@ -3,10 +3,10 @@
 // 評価器（ModifierEvaluator）に載る、subdivideMesh の処理器。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
-// 【つながりの正本は ObjectGroup】
-//   subdivideMesh コマンドが作ったオブジェクトグループの項目が、
+// 【つながりの正本は ModifierStack】
+//   subdivideMesh コマンドが作ったモディファイアスタックの項目が、
 //   親（cageMasterIndex の ObjectId）・回数（level）・子（出力先）を持つ。
-//   保存・転送・Undo はグループの既存の仕組みに乗る。ここが持つのは
+//   保存・転送・Undo はスタックの既存の仕組みに乗る。ここが持つのは
 //   計算済みのステンシルの控えだけで、保存しない。
 //   項目を集めるのは評価器（ModifierEvaluator.CollectEntries）。親は入力のキー cageMasterIndex で引く。
 //
@@ -36,7 +36,7 @@ namespace Poly_Ling.Ops
     {
         /// <summary>サブディビジョンの項目の action 名（SubdivideMeshCommand）。</summary>
         public const string Action   = "subdivideMesh";
-        /// <summary>親を指す引数のキー（ObjectGroupStep.MeshRefIds のキー）。</summary>
+        /// <summary>親を指す引数のキー（ModifierStackStep.MeshRefIds のキー）。</summary>
         public const string CageKey  = "cageMasterIndex";
         /// <summary>回数の引数のキー。</summary>
         public const string LevelKey = "level";
@@ -47,8 +47,8 @@ namespace Poly_Ling.Ops
         /// <summary>親 1 つと子 1 つのつながり。</summary>
         public sealed class Link
         {
-            public ObjectGroup     Group;
-            public ObjectGroupStep Step;
+            public ModifierStack     Group;
+            public ModifierStackStep Step;
             public MeshContext     Cage;
             public MeshContext     Child;
             public int             Level;
@@ -61,6 +61,8 @@ namespace Poly_Ling.Ops
             public int                Level;
             public ulong              Signature;
             public SubdivisionStencil Stencil;
+            /// <summary>子を最後に書いたときの親の位置の署名（MeshSignature.Positions）。段 4。</summary>
+            public ulong              PositionSig;
         }
 
         private static readonly ConditionalWeakTable<MeshContext, Cache> _cache
@@ -88,7 +90,7 @@ namespace Poly_Ling.Ops
             return new Link { Group = e.Group, Step = e.Step, Cage = cage, Child = child, Level = level };
         }
 
-        /// <summary>モデルのグループから、親と子のつながりを全部引く。</summary>
+        /// <summary>モデルのスタックから、親と子のつながりを全部引く。</summary>
         public static List<Link> CollectLinks(ModelContext model)
         {
             var list = new List<Link>();
@@ -131,6 +133,7 @@ namespace Poly_Ling.Ops
                 Level     = level,
                 Signature = SubdivisionOps.TopologySignature(cage.MeshObject),
                 Stencil   = stencil,
+                PositionSig = MeshSignature.Positions(cage),
             });
             // 評価器の入力の署名も今の値で控える（控えのキーは出力の先頭＝子）。
             ModifierEvaluator.Prime(child, new[] { cage });
@@ -154,7 +157,13 @@ namespace Poly_Ling.Ops
 
             /// <summary>
             /// 子を親に合わせる。面構成が変わっていれば作り直し、
-            /// 変わっていなければ位置と法線だけ書き直す（入力の署名の変化に関わらず毎回）。
+            /// 変わっていなければ位置と法線だけ書き直す。
+            /// 控えが今の親・回数・面構成と合っていて、親の位置（作業中オフセット込み）も前回子を書いたとき
+            /// と同じなら何もしない（モディファイア高速化計画 段 4）。この入口は GPU バッファを作り直す
+            /// たびに呼ばれるので、毎回書き直すと親と関係の無い作り直しのたびに全部の子を作り直していた。
+            /// 判定は評価器の inputsChanged ではなく、子を書いたときの親の位置の署名（Cache.PositionSig）で行う。
+            /// 評価器の控えは下流の印立て（MarkIfChanged）やスキンド化の後の取り直し（PrimeAll）でも
+            /// 更新されるので、それで判定すると子が古いまま残る。
             /// </summary>
             public void Refresh(ModelContext model, ModifierEvaluator.Entry entry, bool inputsChanged)
             {
@@ -163,7 +172,7 @@ namespace Poly_Ling.Ops
 
                 // 子は親の編集にいつも追随しているので、「ソースが変わったのに出力が古い」
                 // 状態は残らない。ダイジェストを持たせると親を動かすたびに要更新と出るため、
-                // 空（ObjectGroupOps.IsStale が「変わっていない」と扱う値）にしておく。
+                // 空（ModifierStackOps.IsStale が「変わっていない」と扱う値）にしておく。
                 if (!string.IsNullOrEmpty(l.Group.SourceDigest)) l.Group.SourceDigest = "";
 
                 ulong sig = SubdivisionOps.TopologySignature(l.Cage.MeshObject);
@@ -175,6 +184,12 @@ namespace Poly_Ling.Ops
                             || c.Level != l.Level
                             || c.Signature != sig
                             || c.Stencil.OutputCount != l.Child.MeshObject.VertexCount;
+
+                // 親の位置が子を書いたときと同じなら、子はもう合っている（作った直後は Prime が、
+                // それ以降は前回の Refresh が控えた）。ドラッグ中の SyncDrag は位置だけ書いて法線を
+                // 直さず控えも更新しないので、離したあとの作り直しではここを抜けて法線まで書き直す。
+                ulong posSig = MeshSignature.Positions(l.Cage);
+                if (!rebuild && c.PositionSig == posSig) return;
 
                 if (rebuild)
                 {
@@ -189,6 +204,7 @@ namespace Poly_Ling.Ops
                     _cache.Add(l.Child, new Cache
                     {
                         Cage = l.Cage, Level = l.Level, Signature = sig, Stencil = stencil,
+                        PositionSig = posSig,
                     });
                 }
                 else
@@ -199,6 +215,7 @@ namespace Poly_Ling.Ops
                     for (int i = 0; i < pos.Length; i++) verts[i].Position = pos[i];
                     l.Child.MeshObject.RecalculateSmoothNormals();
                     l.Child.MeshObject.InvalidatePositionCache();
+                    c.PositionSig = posSig;
                 }
 
                 // 面は UnityMesh から描かれる。中身・法線を変えたので作り直す。

@@ -139,8 +139,11 @@ namespace Poly_Ling.Core
             }
 
             // ライン・面フラグも更新
+            long tsel = RenderTiming.Now();   // 計測（段 13）
             UpdateAllLineSelectionFlags();
+            tsel = RenderTiming.Add("選択:線分", tsel);
             UpdateAllFaceSelectionFlags();
+            RenderTiming.Add("選択:面", tsel);
 
             // Hidden / Locked も同じ場で立て直す。
             // この関数は PrepareWireframeAndVertices（MeshSceneRenderer）からも呼ばれ、

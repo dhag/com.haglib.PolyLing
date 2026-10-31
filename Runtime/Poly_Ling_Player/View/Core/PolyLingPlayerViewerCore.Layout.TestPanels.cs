@@ -121,7 +121,7 @@ namespace Poly_Ling.Player
             };
             _springBoneTestSubPanel.Build(_layoutRoot.SpringBoneTestSection);
 
-            // フリルスカート自動検証。オブジェクトグループの使い方が UI からは
+            // フリルスカート自動検証。モディファイアスタックの使い方が UI からは
             // 追いにくいので、同じ手順をコマンドだけで通してログに残す。
             // 参照の解決がモデルをまたぐため ProjectContext を渡す。
             _frillSkirtTestSubPanel = new PlayerFrillSkirtTestSubPanel
@@ -327,6 +327,8 @@ namespace Poly_Ling.Player
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
                 GetPmxUnityRatio  = () => _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f,
+                // 編集の口の取り消しの記録を積む先（サブウインドウスタック）。
+                GetUndoController = () => _editOps?.UndoController,
                 // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる（モーフの試し表示と同じ経路）。
                 // GetCurrentToolContext の文脈は SyncMeshContextPositionsOnly を持たないので、それを経由しない。
                 SyncMeshPositions = ctx => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, ctx),
@@ -395,12 +397,16 @@ namespace Poly_Ling.Player
                 GetModel          = () => ActiveProjectView?.CurrentModel,
                 GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand       = cmd => _panelContext?.SendCommand(cmd),
+                RunCommand        = DispatchFromPanel,
+                GetClip           = () => _motionClipHandler?.Clip,
                 Surface           = ToolSurface,
             };
             _motionClipTestSubPanel.Build(_layoutRoot.MotionClipTestSection);
-            // パネルを通さずに読み込んだクリップ（loadMotionClipJson。Blender ブリッジの送信）に表示を合わせる。
-            _motionClipHandler.OnClipLoadedFromJson = t => _motionClipTestSubPanel?.AdoptExternalClip(t);
+            // 窓口でクリップを入れ替えたら（load・loadMotionClipJson・createLipSyncFromVoicevox。パネルを通さないものを含む）表示を合わせる。
+            _motionClipHandler.OnClipReplaced = t => _motionClipTestSubPanel?.AdoptReplacedClip(t);
             _motionClipHandler.OnSourceChanged      = () => _motionClipTestSubPanel?.Refresh();
+            // 編集の口・その取り消しでクリップが変わったら、長さと表示を合わせる。
+            _motionClipHandler.OnClipEdited         = () => _motionClipTestSubPanel?.AdoptEditedClip();
         }
     }
 }

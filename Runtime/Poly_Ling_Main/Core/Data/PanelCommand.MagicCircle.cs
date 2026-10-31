@@ -10,8 +10,8 @@
 //
 // 【魔法陣（CreateMagicCircleCommand）】
 //   頂点を持たない空の親オブジェクトを 1 つ作り、部品を 1 つずつその子として作る。
-//   部品の並びはそのままオブジェクトグループの項目になる（グループ 1 件）。
-//   部品のパラメータを直したら、そのグループを作り直せば子の中身だけが入れ替わる。
+//   部品の並びはそのままモディファイアスタックの項目になる（スタック 1 件）。
+//   部品のパラメータを直したら、そのスタックを作り直せば子の中身だけが入れ替わる。
 //   全体の位置・向き・大きさは親の姿勢が持ち、子のローカル姿勢は単位のまま。
 //
 // 【部品の渡し方（elements）】
@@ -19,7 +19,7 @@
 //   action とキーは、その部品のコマンドを単独で送るときと同じもの
 //   （例: createEmblem;params.kind=Hexagram;params.size=0.9）。
 //   キーと値は URL エンコード（%XX）してよく、値に ; = , " を含むときは必ずエンコードする。
-//   配置（placement.*）のうち位置・回転・拡大・追加先・グループ化は受け口が上書きする
+//   配置（placement.*）のうち位置・回転・拡大・追加先・スタック化は受け口が上書きする
 //   （子は親の原点に単位の姿勢で置く）。材質番号と重複頂点の結合は部品の指定を使う。
 
 using System;
@@ -74,7 +74,7 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets,
         Description = "配置元オブジェクトを円周上に等分に並べる（藤壺のように複製する）。外向き・内向き（上下反転）・正立を選べる。魔法陣の部品。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.RadialPlace,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.RadialPlace,
         InverseKeeps = "個数・回る向き・向きの決め方・配置元・割り当て",
         InverseLoses = "部品ごとのずれ・回転・歪み、間隔の不揃い、円の中心のずれ、面の傾き")]
     public sealed class CreateRadialPlaceCommand : CreatePrimitiveMeshCommand
@@ -108,8 +108,8 @@ namespace Poly_Ling.Data
 
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
-        Description = "魔法陣を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品（リング・紋章図形・円形の文字・星座の円周配置・オブジェクトの円周配置など図形生成コマンド）を順にその子として作る。部品の並びは 1 件のオブジェクトグループとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createEmblem;params.kind=Hexagram;params.size=0.9）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・グループ化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
-    [PLModifier(Capture = PLGroupCapture.Assembly)]   // PlayerCommandDispatcher.MagicCircle.cs ExecuteEmptyParentAssembly
+        Description = "魔法陣を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品（リング・紋章図形・円形の文字・星座の円周配置・オブジェクトの円周配置など図形生成コマンド）を順にその子として作る。部品の並びは 1 件のモディファイアスタックとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createEmblem;params.kind=Hexagram;params.size=0.9）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・スタック化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
+    [PLModifier(Capture = PLStackCapture.Assembly)]   // PlayerCommandDispatcher.MagicCircle.cs ExecuteEmptyParentAssembly
     public sealed class CreateMagicCircleCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshName", Description = "親オブジェクトの名前。重なるときは番号を付ける", Required = true)]
@@ -161,7 +161,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 1 要素を部品のコマンドへ戻す。配置は「親の原点・単位の姿勢・新しいオブジェクト・グループ化なし」へ上書きする。
+        /// 1 要素を部品のコマンドへ戻す。配置は「親の原点・単位の姿勢・新しいオブジェクト・スタック化なし」へ上書きする。
         /// </summary>
         public static bool TryDecode(
             string spec, int modelIndex, out CreatePrimitiveMeshCommand cmd, out string error)
@@ -207,7 +207,7 @@ namespace Poly_Ling.Data
             nameof(PrimitivePlacement.IgnorePoseInArmature),
             nameof(PrimitivePlacement.AddMode),
             nameof(PrimitivePlacement.AddTargetIndex),
-            nameof(PrimitivePlacement.KeepAsGroup),
+            nameof(PrimitivePlacement.KeepAsModifierStack),
         };
 
         private static Dictionary<string, string> _forced;
@@ -229,7 +229,7 @@ namespace Poly_Ling.Data
             pl.IgnorePoseInArmature = false;
             pl.AddMode              = Poly_Ling.Player.PrimitiveAddMode.NewObject;
             pl.AddTargetIndex       = -1;
-            pl.KeepAsGroup          = false;
+            pl.KeepAsModifierStack          = false;
 
             var probe = PanelCommandFactory.ToArgs(
                 new CreateMagicRingCommand(0, MagicRingMeshGenerator.MagicRingParams.Default, pl));
@@ -268,7 +268,7 @@ namespace Poly_Ling.Data
             pl.IgnorePoseInArmature   = false;
             pl.AddMode                = Poly_Ling.Player.PrimitiveAddMode.NewObject;
             pl.AddTargetIndex         = -1;
-            pl.KeepAsGroup            = false;
+            pl.KeepAsModifierStack            = false;
             pl.MaterialIndex          = materialIndex;
             pl.MergeDuplicateVertices = mergeDuplicateVertices;
             return pl;

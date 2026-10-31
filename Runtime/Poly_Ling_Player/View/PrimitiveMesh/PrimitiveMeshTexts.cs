@@ -49,7 +49,7 @@ namespace Poly_Ling.Player
             ["SBLadderCheck"]   = new() { ["en"] = "Check Ladders",  ["ja"] = "取り込みを試す",   ["hi"] = "とりこみをためす" },
             ["SBLadderReverse"] = new() { ["en"] = "Flip Root/Tip",  ["ja"] = "根元と先を入れ替える", ["hi"] = "ねもととさきをいれかえ" },
             ["SBLadderPaint"]   = new() { ["en"] = "Paint Weights",  ["ja"] = "はしごへウェイトを塗る", ["hi"] = "はしごにおもみをぬる" },
-            ["SBLadderKeepAsGroup"] = new() { ["en"] = "Keep As Object Group", ["ja"] = "オブジェクトグループとして残す", ["hi"] = "グループとしてのこす" },
+            ["SBLadderKeepAsModifierStack"] = new() { ["en"] = "Keep As Modifier Stack", ["ja"] = "モディファイアスタックとして残す", ["hi"] = "スタックとしてのこす" },
             ["SBLadderMakeMirror"]  = new() { ["en"] = "Make Mirror Chains", ["ja"] = "ミラー側にも鎖を作る", ["hi"] = "ミラーがわにもくさりをつくる" },
             ["SBLadderAutoAttach"]  = new() { ["en"] = "Attach To Source's Parent", ["ja"] = "取り付け先を取り込み元の親から決める", ["hi"] = "つけるさきをおやからきめる" },
             ["SBAttach"]        = new() { ["en"] = "Attach To",     ["ja"] = "取り付け先",       ["hi"] = "つけるさき" },
@@ -299,8 +299,8 @@ namespace Poly_Ling.Player
             ["PlacePreviewOrigin"]   = new() { ["en"] = "Preview Origin Marker", ["ja"] = "原点マーカーを仮表示",   ["hi"] = "げんてんをかりにだす" },
             ["PlacePreviewWedge"]    = new() { ["en"] = "Preview Wedge",         ["ja"] = "くさびを仮表示",         ["hi"] = "くさびをかりにだす" },
             ["MergeDuplicates"] = new() { ["en"] = "Merge Duplicate Vertices", ["ja"] = "重複頂点をマージ", ["hi"] = "てんをまとめる" },
-            ["KeepAsGroup"] = new() { ["en"] = "Keep as Object Group", ["ja"] = "オブジェクトグループとして残す", ["hi"] = "あとでなおせるようにする" },
-            ["KeepAsGroupWarn"] = new() {
+            ["KeepAsModifierStack"] = new() { ["en"] = "Keep as Modifier Stack", ["ja"] = "モディファイアスタックとして残す", ["hi"] = "あとでなおせるようにする" },
+            ["KeepAsModifierStackWarn"] = new() {
                 ["en"] = "Off: the belt, profile and parameters are discarded after generation. Rebuilding means redoing the whole setup.",
                 ["ja"] = "オフのとき、帯・断面・パラメータは生成後に破棄されます。作り直すには同じ操作をやり直すことになります。",
                 ["hi"] = "オフだと、あとからつくりなおせません。" },
@@ -743,8 +743,8 @@ namespace Poly_Ling.Player
 
             // ── 魔法陣 ──
             ["MagicCircle"]          = new() { ["en"] = "Magic Circle",     ["ja"] = "魔法陣",       ["hi"] = "まほうじん" },
-            ["MagicCircleHint"]      = new() { ["en"] = "Combines rings, emblems, circular text, zodiac signs and objects placed around a circle. An empty parent object is created and each part becomes its child, so moving the parent moves the whole circle. The parts are kept as one object group and can be rebuilt after editing.",
-                                               ["ja"] = "リング・紋章図形・円形の文字・星座・円周に並べたオブジェクトを組み合わせます。空の親オブジェクトを 1 つ作り、部品はその子になります（親を動かすと全体が動きます）。部品の並びは 1 件のオブジェクトグループとして残り、あとから作り直せます。",
+            ["MagicCircleHint"]      = new() { ["en"] = "Combines rings, emblems, circular text, zodiac signs and objects placed around a circle. An empty parent object is created and each part becomes its child, so moving the parent moves the whole circle. The parts are kept as one modifier stack and can be rebuilt after editing.",
+                                               ["ja"] = "リング・紋章図形・円形の文字・星座・円周に並べたオブジェクトを組み合わせます。空の親オブジェクトを 1 つ作り、部品はその子になります（親を動かすと全体が動きます）。部品の並びは 1 件のモディファイアスタックとして残り、あとから作り直せます。",
                                                ["hi"] = "いろいろな かたちを まるく ならべて まほうじんを つくります。" },
             ["MagicCircleParts"]     = new() { ["en"] = "Parts",            ["ja"] = "部品",         ["hi"] = "ぶひん" },
             ["MagicCircleAdd"]       = new() { ["en"] = "Add",              ["ja"] = "追加",         ["hi"] = "ふやす" },
@@ -767,8 +767,8 @@ namespace Poly_Ling.Player
 
             // ── 鉄塔 ──
             ["LatticeTower"]         = new() { ["en"] = "Lattice Tower",    ["ja"] = "鉄塔",         ["hi"] = "てっとう" },
-            ["LatticeTowerHint"]     = new() { ["en"] = "Builds a lattice tower from a leg profile (height and widths). Transmission towers, and towers whose feet spread like a mountain foot (Tokyo Tower, Eiffel Tower). An empty parent is created; the body and the decks become its children and are kept as one object group. Decks are objects you choose, placed on the tower axis; they can be added or swapped later.",
-                                               ["ja"] = "脚線（高さと幅の点列）からラチス構造の塔を作ります。送電用の鉄塔のほか、東京タワー・エッフェル塔のように足元がすそ野状に広がる塔も作れます。空の親を 1 つ作り、塔体とデッキはその子になり、1 件のオブジェクトグループとして残ります。デッキは選んだオブジェクトを塔の軸上に置くもので、あとから足したり取り替えたりできます。",
+            ["LatticeTowerHint"]     = new() { ["en"] = "Builds a lattice tower from a leg profile (height and widths). Transmission towers, and towers whose feet spread like a mountain foot (Tokyo Tower, Eiffel Tower). An empty parent is created; the body and the decks become its children and are kept as one modifier stack. Decks are objects you choose, placed on the tower axis; they can be added or swapped later.",
+                                               ["ja"] = "脚線（高さと幅の点列）からラチス構造の塔を作ります。送電用の鉄塔のほか、東京タワー・エッフェル塔のように足元がすそ野状に広がる塔も作れます。空の親を 1 つ作り、塔体とデッキはその子になり、1 件のモディファイアスタックとして残ります。デッキは選んだオブジェクトを塔の軸上に置くもので、あとから足したり取り替えたりできます。",
                                                ["hi"] = "てつの とうを つくります。" },
             ["TowerPresets"]         = new() { ["en"] = "Presets",          ["ja"] = "プリセット",   ["hi"] = "ひながた" },
             ["TowerPresetSquare"]    = new() { ["en"] = "Square",           ["ja"] = "四角",         ["hi"] = "しかく" },

@@ -67,6 +67,12 @@ namespace Poly_Ling.Player
         public Action OnLassoSelectEnd;
         public Action OnEnterTransformDragging;
         public Action OnExitTransformDragging;
+        /// <summary>
+        /// 画面がまだドラッグ状態か（PlayerViewportManager.IsVerticesDragging）。
+        /// 確定のコマンドを送ったあと、コマンドが拒否されてドラッグ状態が残ったときだけ抜けるために使う
+        /// （モディファイア高速化計画 段 9）。未結線なら従来どおり必ず抜ける。
+        /// </summary>
+        public Func<bool> IsTransformDragging;
 
         /// <summary>
         /// 選択確定を GPU まで同期させる（移動開始時に 1 回だけ使う）。

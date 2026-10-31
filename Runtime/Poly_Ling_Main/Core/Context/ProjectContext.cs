@@ -70,6 +70,17 @@ namespace Poly_Ling.Context
         public WorkAxisLibrary WorkAxes { get; set; } = new WorkAxisLibrary();
 
         // ================================================================
+        // 選択部分のクリップボード
+        // ================================================================
+
+        /// <summary>
+        /// 選択部分のコピー（Ctrl+C / Ctrl+X）の写し。プロジェクトに 1 つで、モデルをまたいで貼れる。
+        /// 実行中だけ持ち、保存しない（3 形式のどれにも書かない）。無ければ null。
+        /// 中身と貼り方は SelectionClipboardOps.cs。
+        /// </summary>
+        public Poly_Ling.Ops.SelectionClipboard SelectionClipboard { get; set; }
+
+        // ================================================================
         // 姿勢の表示切替
         // ================================================================
 

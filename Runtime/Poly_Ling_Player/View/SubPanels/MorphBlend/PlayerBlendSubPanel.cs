@@ -66,11 +66,11 @@ namespace Poly_Ling.Player
         private bool _createNewObject      = false;
 
         /// <summary>
-        /// ソースと重みをオブジェクトグループとして残すか。既定 false。
+        /// ソースと重みをモディファイアスタックとして残すか。既定 false。
         /// false のときは確定した時点でソース指定も重みも残らない
         /// （＝ソースを直しても出力先は古いまま。混ぜ直すには同じ操作をやり直す）。
         /// </summary>
-        private bool _keepAsGroup          = false;
+        private bool _keepAsModifierStack          = false;
         private bool _recalculateNormals   = true;
         private bool _selectedVerticesOnly = false;
 
@@ -138,7 +138,7 @@ namespace Poly_Ling.Player
         private DropdownField _dropdownMatchMode;
         [UiControl("matchModeHint", Safety = UiSafety.ReadOnly, Description = "対応方式についての注意（出ていないときは非表示）")]
         private Label         _matchModeHintLabel;
-        [UiControl("keepAsGroup", Description = "オブジェクトグループとして残す（オフのときソース指定と重みは確定後に破棄）")]
+        [UiControl("keepAsModifierStack", Description = "モディファイアスタックとして残す（オフのときソース指定と重みは確定後に破棄）")]
         private Toggle        _toggleKeepGroup;
 
         [UiControl("hideSources", Description = "ソースを隠す（面のみ・頂点/辺は残る）")]
@@ -369,29 +369,29 @@ namespace Poly_Ling.Player
             _mainContent.Add(_toggleRecalcNormals);
             _mainContent.Add(_toggleSelectedOnly);
 
-            // ── グループとして残すか
+            // ── モディファイアスタックとして残すか
             //    毎回ダイアログを出すと確定の操作が重くなるので、
             //    警告は常設のラベルにする。off のときだけ出す。
-            var toggleKeepGroup = new Toggle("オブジェクトグループとして残す")
-            { value = _keepAsGroup };
+            var toggleKeepGroup = new Toggle("モディファイアスタックとして残す")
+            { value = _keepAsModifierStack };
             toggleKeepGroup.style.fontSize = 10;
             _mainContent.Add(toggleKeepGroup);
             _toggleKeepGroup = toggleKeepGroup;
 
-            var keepGroupWarn = new Label(
+            var keepStackWarn = new Label(
                 "オフのとき、ソース指定と重みは確定後に破棄されます。混ぜ直すには同じ操作をやり直すことになります。");
-            keepGroupWarn.style.whiteSpace   = WhiteSpace.Normal;
-            keepGroupWarn.style.fontSize     = 9;
-            keepGroupWarn.style.marginLeft   = 16;
-            keepGroupWarn.style.marginBottom = 2;
-            keepGroupWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
-            keepGroupWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
-            _mainContent.Add(keepGroupWarn);
+            keepStackWarn.style.whiteSpace   = WhiteSpace.Normal;
+            keepStackWarn.style.fontSize     = 9;
+            keepStackWarn.style.marginLeft   = 16;
+            keepStackWarn.style.marginBottom = 2;
+            keepStackWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
+            keepStackWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
+            _mainContent.Add(keepStackWarn);
 
             toggleKeepGroup.RegisterValueChangedCallback(e =>
             {
-                _keepAsGroup = e.newValue;
-                keepGroupWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+                _keepAsModifierStack = e.newValue;
+                keepStackWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
             });
 
             _dropdownMatchMode = new DropdownField("対応方式", MatchModeChoices, (int)_matchMode);
@@ -810,7 +810,7 @@ namespace Poly_Ling.Player
                 _getModelIndex?.Invoke() ?? 0,
                 srcModels, srcMasters, srcWeights, _destMasterIndex,
                 _createNewObject, _recalculateNormals,
-                _selectedVerticesOnly, _matchMode, _keepAsGroup));
+                _selectedVerticesOnly, _matchMode, _keepAsModifierStack));
 
             ClearAllSlots(applyPreview: false);
             Refresh();

@@ -19,15 +19,15 @@
 //
 // 【masterIndex の印】
 //   SourceMasterIndex / AttachMasterIndex には IsMeshRef を付ける。
-//   ObjectGroup は索引を保存せず、控えた ObjectId から今の索引へ引き直す
-//   （ObjectGroupOps.Capture / RewriteMeshRefs）。付けないと控えた時点の索引が
+//   ModifierStack は索引を保存せず、控えた ObjectId から今の索引へ引き直す
+//   （ModifierStackOps.Capture / RewriteMeshRefs）。付けないと控えた時点の索引が
 //   そのまま残り、リストの挿入・削除・並べ替えでずれたまま別のオブジェクトを指す。
 //
 //   AttachMasterIndex = -1（親を付けない）は控えでは 0 になり、引き直しで -1 に戻る
-//   （ObjectGroupOps.cs:322-328）。参照が無い状態はそのまま往復する。
+//   （ModifierStackOps.cs:322-328）。参照が無い状態はそのまま往復する。
 //
 //   どちらも自分のモデル内を指すので MeshRefModelKey は要らない。
-//   IsMeshRef を読むのは ObjectGroupOps だけで、スキーマ生成・ToArgs・Create の
+//   IsMeshRef を読むのは ModifierStackOps だけで、スキーマ生成・ToArgs・Create の
 //   扱いは変わらない（PLParamAttribute.cs:111-113）。実行経路には影響しない。
 
 using Poly_Ling.PrimitiveMesh;
@@ -36,7 +36,7 @@ using Poly_Ling.Tools.SpringBoneRig;
 namespace Poly_Ling.Data
 {
     [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup)]   // PlayerCommandDispatcher.SpringBone.cs
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]   // PlayerCommandDispatcher.SpringBone.cs
     public class PlaceSpringBoneLadderChainsCommand : PanelCommand
     {
         [PLParam(Description = "はしごの取り込み元になる描画オブジェクトの masterIndex",
@@ -89,7 +89,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 既にある鎖の根元ボーンの masterIndex 列。空でボーンを新しく作る。
         ///
-        /// RebuildRole=TargetIndex … オブジェクトグループの作り直しでは、
+        /// RebuildRole=TargetIndex … モディファイアスタックの作り直しでは、
         /// 控えた出力先（＝前に作った鎖の根元）の索引がここへ書き戻される。
         /// これがあるとボーンを作らず位置だけ流し込むので、ObjectId が保たれ、
         /// 揺れ方の設定・選択辞書・はしごのウェイトが切れない。
@@ -98,8 +98,8 @@ namespace Poly_Ling.Data
                  IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, RebuildRole = PLRebuildRole.TargetIndex)]
         public int[] ChainRootMasterIndices { get; }
 
-        [PLParam(Description = "取り込み元とパラメータをオブジェクトグループとして残す。出力は鎖の根元ボーン")]
-        public bool KeepAsGroup { get; }
+        [PLParam(Description = "取り込み元とパラメータをモディファイアスタックとして残す。出力は鎖の根元ボーン")]
+        public bool KeepAsModifierStack { get; }
 
         /// <summary>
         /// ミラー側にも鎖を作り、左右のボーンを対にする。
@@ -143,7 +143,7 @@ namespace Poly_Ling.Data
             int chainStride = 1,
             SpringBoneLadderBundleMode bundleMode = SpringBoneLadderBundleMode.Thin,
             int[] chainRootMasterIndices = null,
-            bool keepAsGroup = false,
+            bool keepAsModifierStack = false,
             bool makeMirrorChains = false,
             bool attachToSourceParent = false,
             string attachNearestPrefix = "")
@@ -166,7 +166,7 @@ namespace Poly_Ling.Data
             BundleMode        = bundleMode;
 
             ChainRootMasterIndices = chainRootMasterIndices ?? System.Array.Empty<int>();
-            KeepAsGroup            = keepAsGroup;
+            KeepAsModifierStack            = keepAsModifierStack;
             MakeMirrorChains       = makeMirrorChains;
         }
     }

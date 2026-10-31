@@ -126,10 +126,18 @@ namespace Poly_Ling.PrimitiveMesh
                 var src = sources[si];
                 if (src == null) continue;
 
+                long tSplit = Poly_Ling.Ops.ModifierStepProfiler.Now();   // 計測（段 11）
                 var comps = SplitComponents(src);
+                Poly_Ling.Ops.ModifierStepProfiler.Add("取り出し:成分への分割", tSplit);
+
+                // 扇の要の判定に使う表（段 12）。面を 1 回だけ走査する。
+                long tFanTable = Poly_Ling.Ops.ModifierStepProfiler.Now();
+                var fan = new FanTable(src);
+                Poly_Ling.Ops.ModifierStepProfiler.Add("取り出し:端の確かめ", tFanTable);
+
                 for (int ci = 0; ci < comps.Count; ci++)
                 {
-                    string why = AppendBelt(result, src, comps[ci], p);
+                    string why = AppendBelt(result, src, fan, comps[ci], p);
                     if (why == null) { LastBeltCount++; continue; }
 
                     skipped++;
@@ -213,7 +221,7 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
 
         /// <summary>1 本ぶんを梯子にして dst へ足す。足せないときは理由を返す。</summary>
-        private static string AppendBelt(MeshObject dst, MeshObject src, List<int> verts, PipeBeltExtractParams p)
+        private static string AppendBelt(MeshObject dst, MeshObject src, FanTable fan, List<int> verts, PipeBeltExtractParams p)
         {
             int k     = p.RingVertexCount;
             int inner = verts.Count - 2;
@@ -225,8 +233,13 @@ namespace Poly_Ling.PrimitiveMesh
             int end   = verts[verts.Count - 1];
 
             // 両端が扇の要かを確かめる（並びの前提が崩れているものを黙って通さない）。
-            if (!IsFanApex(src, start, k)) return "先頭の頂点が根元の扇の要になっていない";
-            if (!IsFanApex(src, end,   k)) return "末尾の頂点が毛先の扇の要になっていない";
+            long tFan = Poly_Ling.Ops.ModifierStepProfiler.Now();   // 計測（段 11）
+            bool fanStart = fan.IsFanApex(start, k);
+            bool fanEnd   = fanStart && fan.IsFanApex(end, k);
+            Poly_Ling.Ops.ModifierStepProfiler.Add("取り出し:端の確かめ", tFan);
+            if (!fanStart) return "先頭の頂点が根元の扇の要になっていない";
+            if (!fanEnd)   return "末尾の頂点が毛先の扇の要になっていない";
+            long tBuild = Poly_Ling.Ops.ModifierStepProfiler.Now();
 
             // 取り出す段を決める。
             var pick = PickRungs(rungs, p);
@@ -287,21 +300,53 @@ namespace Poly_Ling.PrimitiveMesh
                 AddQuad(dst, L(i), L(i + 1), R(i + 1), R(i), rev);
             AddTri (dst, R(last), L(last), iE, rev);
 
+            Poly_Ling.Ops.ModifierStepProfiler.Add("取り出し:梯子の組み立て", tBuild);
             return null;
         }
 
-        /// <summary>頂点 v が三角形 k 枚だけの扇の要か。</summary>
-        private static bool IsFanApex(MeshObject mo, int v, int k)
+        /// <summary>
+        /// 扇の要の判定の表（モディファイア高速化計画 段 12）。
+        /// 頂点ごとに「含む面の数」と「三角形でない面を含むか」を、面を 1 回だけ走査して作る。
+        /// 以前は梯子の両端ごとに全部の面を走査していた（梯子の本数 × 面の数 × 2。髪で 110 ms）。
+        /// 判定の規則は以前の IsFanApex と同じ：v を含む面がすべて三角形で、ちょうど k 枚。
+        /// 1 つの面に同じ頂点が 2 回現れても 1 枚と数える（以前の Contains と同じ）。
+        /// </summary>
+        private sealed class FanTable
         {
-            int tri = 0;
-            for (int f = 0; f < mo.FaceCount; f++)
+            private readonly int[]  _faceCount;
+            private readonly bool[] _hasNonTri;
+
+            public FanTable(MeshObject mo)
             {
-                var face = mo.Faces[f];
-                if (face?.VertexIndices == null || !face.VertexIndices.Contains(v)) continue;
-                if (face.VertexIndices.Count != 3) return false;
-                tri++;
+                int n = mo.VertexCount;
+                _faceCount = new int[n];
+                _hasNonTri = new bool[n];
+
+                for (int f = 0; f < mo.FaceCount; f++)
+                {
+                    var vi = mo.Faces[f]?.VertexIndices;
+                    if (vi == null) continue;
+                    bool tri = vi.Count == 3;
+                    for (int j = 0; j < vi.Count; j++)
+                    {
+                        int v = vi[j];
+                        if (v < 0 || v >= n) continue;
+                        bool dup = false;
+                        for (int q = 0; q < j; q++) if (vi[q] == v) { dup = true; break; }
+                        if (dup) continue;
+                        _faceCount[v]++;
+                        if (!tri) _hasNonTri[v] = true;
+                    }
+                }
             }
-            return tri == k;
+
+            /// <summary>頂点 v が三角形 k 枚だけの扇の要か。</summary>
+            public bool IsFanApex(int v, int k)
+            {
+                if (v < 0 || v >= _faceCount.Length) return k == 0;
+                if (_hasNonTri[v]) return false;
+                return _faceCount[v] == k;
+            }
         }
 
         /// <summary>取り出す段の番号を昇順で返す。</summary>

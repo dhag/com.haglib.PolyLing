@@ -38,8 +38,8 @@
 //   MirrorBoneIndex からしか対応表を作らない）。
 //   ウェイトを塗るのは実体側だけで、ミラー側へは MirrorPair.SyncBoneWeights が写す。
 //
-// 【オブジェクトグループ】
-//   「残す」を立てると、取り込み元とパラメータがグループに控えられ、
+// 【モディファイアスタック】
+//   「残す」を立てると、取り込み元とパラメータがスタックに控えられ、
 //   出力として鎖の根元ボーンが記録される。あとからはしごを直して作り直すと、
 //   ボーンを作らず位置だけが流し込まれる（ObjectId が保たれるので、
 //   揺れ方の設定・選択辞書・はしごのウェイトが切れない）。
@@ -70,8 +70,8 @@ namespace Poly_Ling.Player
         private bool   _sbLadderReverse;
         private bool   _sbLadderPaint = true;
 
-        /// <summary>取り込み元とパラメータをオブジェクトグループとして残すか。</summary>
-        private bool   _sbLadderKeepAsGroup;
+        /// <summary>取り込み元とパラメータをモディファイアスタックとして残すか。</summary>
+        private bool   _sbLadderKeepAsModifierStack;
 
         /// <summary>ミラー側にも鎖を作るか。</summary>
         private bool   _sbLadderMakeMirror;
@@ -197,9 +197,9 @@ namespace Poly_Ling.Player
                    + "ウェイトを塗るのは実体側だけで、ミラー側へはミラーの機構が写します。"
                    + "取り込み元がミラーペアの実体側のときだけ使えます。"));
 
-            // ── オブジェクトグループ ──────────────────────────────────
-            c.Add(TR(T("SBLadderKeepAsGroup"),
-                () => _sbLadderKeepAsGroup, v => _sbLadderKeepAsGroup = v));
+            // ── モディファイアスタック ──────────────────────────────────
+            c.Add(TR(T("SBLadderKeepAsModifierStack"),
+                () => _sbLadderKeepAsModifierStack, v => _sbLadderKeepAsModifierStack = v));
             c.Add(SL("取り込み元とパラメータを残します。出力は鎖の根元ボーンです。"
                    + "あとからはしごを直して作り直すと、ボーンを作らず位置だけが入ります。"
                    + "鎖の本数や段数が変わるほど直したときは新しく作り直され、"
@@ -396,7 +396,7 @@ namespace Poly_Ling.Player
                 attach, prefix, _sbLadderSetName,
                 _sbLadderReverse, _sbAddTail, _sbTailLength, _sbLadderPaint,
                 _sbLadderRungStride, _sbLadderChainStride, _sbLadderBundle,
-                null, _sbLadderKeepAsGroup, _sbLadderMakeMirror));
+                null, _sbLadderKeepAsModifierStack, _sbLadderMakeMirror));
 
             // 作ったボーンは名前で引き直す。名前の規則は数値から作る経路と同じ。
             var chains = SpringBoneChainPlacer.CollectByPrefix(GetModelContext?.Invoke(), prefix);

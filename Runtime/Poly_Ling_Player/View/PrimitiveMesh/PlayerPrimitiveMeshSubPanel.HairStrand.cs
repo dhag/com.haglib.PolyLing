@@ -47,7 +47,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// パネルの初期値。幅のつなぎ方だけ SmoothHermite にする（パネルからの新規作成は新方式）。
-        /// HairStrandParams.Default は LegacyPower のまま。保存済みの ObjectGroup を
+        /// HairStrandParams.Default は LegacyPower のまま。保存済みの ModifierStack を
         /// 組み直すとき、無いキーが Default で埋まるため。
         /// </summary>
         private static HairStrandParams NewHairParams()

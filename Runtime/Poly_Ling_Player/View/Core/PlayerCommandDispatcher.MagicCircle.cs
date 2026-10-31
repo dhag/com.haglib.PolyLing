@@ -14,12 +14,12 @@
 //   子の姿勢は単位のまま（部品の配置は MagicCircleElementCodec が原点・単位へ上書き済み）なので、
 //   子のワールド姿勢は親の姿勢そのものになる。
 //
-// 【オブジェクトグループ】
-//   部品 1 つが項目 1 つ、出力先はその子。作り直し（RebuildObjectGroupCommand）は
+// 【モディファイアスタック】
+//   部品 1 つが項目 1 つ、出力先はその子。作り直し（RebuildModifierStackCommand）は
 //   項目ごとに子の中身だけを入れ替える（PrimitiveMeshReplaceExisting）。親子・名前は残る。
 //
 // 【Undo】
-//   サブディビジョンと同じく、オブジェクト一覧のスナップショットとグループの追加を 1 件にまとめる。
+//   サブディビジョンと同じく、オブジェクト一覧のスナップショットとスタックの追加を 1 件にまとめる。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -69,7 +69,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 空の親を 1 つ作り、elements の部品を順にその子として作る。部品の並びは 1 件のグループになる。
+        /// 空の親を 1 つ作り、elements の部品を順にその子として作る。部品の並びは 1 件のスタックになる。
         /// 戻り値は失敗理由（途中で落ちたときも、そこまでの変更は Undo に積む）。成功時は null。
         /// </summary>
         private string ExecuteEmptyParentAssembly(
@@ -94,10 +94,10 @@ namespace Poly_Ling.Player
 
             _undoController?.SetModelContext(model);
             var listBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
-            int groupsBefore = model.ObjectGroupCount;
+            int groupsBefore = model.ModifierStackCount;
 
             string fail = null;
-            Poly_Ling.Data.ObjectGroup group = null;
+            Poly_Ling.Data.ModifierStack group = null;
 
             _undoController?.SuspendRecording();
             try
@@ -141,16 +141,16 @@ namespace Poly_Ling.Player
 
                     var outIds = new List<ulong> { child.ObjectId };
                     if (group == null)
-                        group = ObjectGroupOps.Capture(
-                            project, modelIndex, ec, outIds, model.GenerateUniqueObjectGroupName(name));
+                        group = ModifierStackOps.Capture(
+                            project, modelIndex, ec, outIds, model.GenerateUniqueModifierStackName(name));
                     else
-                        ObjectGroupOps.AppendStep(project, modelIndex, group, ec, outIds);
+                        ModifierStackOps.AppendStep(project, modelIndex, group, ec, outIds);
                 }
 
                 if (group != null)
                 {
-                    model.AddObjectGroup(group);
-                    // 作った直後の入力・出力を控える（作り直し整備計画 段 9。CaptureObjectGroup を通らないため）。
+                    model.AddModifierStack(group);
+                    // 作った直後の入力・出力を控える（作り直し整備計画 段 9。CaptureModifierStack を通らないため）。
                     ModifierEvaluator.PrimeGroup(model, group);
                 }
             }
@@ -206,7 +206,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 実行前に控えた ObjectId に無いもののうち、最も新しいもの。
-        /// ObjectId は単調増加なので最大値が最後に作られたもの（CaptureObjectGroup と同じ考え方）。
+        /// ObjectId は単調増加なので最大値が最後に作られたもの（CaptureModifierStack と同じ考え方）。
         /// </summary>
         private static MeshContext NewestCreated(ModelContext model, HashSet<ulong> before)
         {

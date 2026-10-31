@@ -61,8 +61,8 @@ namespace Poly_Ling.View
             return null;
         }
 
-        /// <summary>オブジェクトグループはスナップショットに載せていない。空。</summary>
-        public IReadOnlyList<ObjectGroupView> ObjectGroups => System.Array.Empty<ObjectGroupView>();
+        /// <summary>モディファイアスタックはスナップショットに載せていない。空。</summary>
+        public IReadOnlyList<ModifierStackView> ModifierStacks => System.Array.Empty<ModifierStackView>();
 
         /// <summary>マテリアルはスナップショットに載せていない。</summary>
         public int MaterialCount        => 0;

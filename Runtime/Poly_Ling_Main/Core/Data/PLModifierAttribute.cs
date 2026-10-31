@@ -1,16 +1,16 @@
 // PLModifierAttribute.cs
-// 生成コマンドがオブジェクトグループ（モディファイア）としてどう残るかの宣言。
+// 生成コマンドがモディファイアスタック（モディファイア）としてどう残るかの宣言。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【なぜ要るか】
-//   「グループに記録されるか」は型からは導けない。記録しているのは受け口
+//   「スタックに記録されるか」は型からは導けない。記録しているのは受け口
 //   （PlayerCommandDispatcher の各区画）のコードで、型やパラメータには何も現れない。
 //   作り直し整備計画（PolyLing_作り直し整備計画.md）の棚卸しで全件を機械的に
 //   出すために、記録のされ方と逆方向をコマンド型に宣言しておく。
 //   型から導けるもの（読む入力・書き戻せるか）はここに書かない（ModifierInventory が導く）。
 //
 // 【記録のされ方の根拠（2026-10-29 時点）】
-//   OnKeepAsGroup … PlayerCommandDispatcher.MeshAttributes.cs（図形生成）、.EditTools.cs（帯面）、
+//   OnKeepAsModifierStack … PlayerCommandDispatcher.MeshAttributes.cs（図形生成）、.EditTools.cs（帯面）、
 //                    .VertexBillboard.cs（頂点藤壺）、.Blend.cs（ブレンド）、.SpringBone.cs（揺れ鎖）
 //   Always        … PlayerCommandDispatcher.Subdivision.cs（新しく子を作るとき）
 //   ViaSteps      … PlayerCommandDispatcher.EdgePipe.cs（帯面＋パイプ）、.LatticeTower.cs（デッキ追加）
@@ -22,14 +22,14 @@ using System;
 
 namespace Poly_Ling.Data
 {
-    /// <summary>生成コマンドがオブジェクトグループへどう記録されるか。</summary>
-    public enum PLGroupCapture
+    /// <summary>生成コマンドがモディファイアスタックへどう記録されるか。</summary>
+    public enum PLStackCapture
     {
         /// <summary>記録しない。</summary>
         None = 0,
 
-        /// <summary>「グループとして残す」（KeepAsGroup）が立っているときだけ、自身を項目 1 つとして記録する。</summary>
-        OnKeepAsGroup = 1,
+        /// <summary>「モディファイアスタックとして残す」（KeepAsModifierStack）が立っているときだけ、自身を項目 1 つとして記録する。</summary>
+        OnKeepAsModifierStack = 1,
 
         /// <summary>常に自身を項目 1 つとして記録する。</summary>
         Always = 2,
@@ -37,7 +37,7 @@ namespace Poly_Ling.Data
         /// <summary>自身は記録せず、内部で流した別のコマンドを項目として記録する。</summary>
         ViaSteps = 3,
 
-        /// <summary>組立。空の親を作り、部品（図形生成コマンド）を項目として並べたグループを作る。自身は記録しない。</summary>
+        /// <summary>組立。空の親を作り、部品（図形生成コマンド）を項目として並べたスタックを作る。自身は記録しない。</summary>
         Assembly = 4,
     }
 
@@ -71,8 +71,8 @@ namespace Poly_Ling.Data
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
     public sealed class PLModifierAttribute : Attribute
     {
-        /// <summary>グループへの記録のされ方。</summary>
-        public PLGroupCapture Capture { get; set; } = PLGroupCapture.None;
+        /// <summary>スタックへの記録のされ方。</summary>
+        public PLStackCapture Capture { get; set; } = PLStackCapture.None;
 
         /// <summary>
         /// 逆方向（出力の編集を入力へ戻す）の方法の名前。空＝逆方向を持たない。

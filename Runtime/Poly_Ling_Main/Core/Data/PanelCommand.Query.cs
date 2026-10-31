@@ -127,27 +127,27 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// オブジェクトグループの状態を結果辞書へ書く。モデルは変えない。
+    /// モディファイアスタックの状態を結果辞書へ書く。モデルは変えない。
     ///
     /// 【何のためにあるか】
-    ///   自動更新が流れなかった理由は、グループ側の 3 つで決まる
+    ///   自動更新が流れなかった理由は、スタック側の 3 つで決まる
     ///   （自動更新が立っているか / ソースを引けるか / 要更新か）。
     ///   外から読めないと、パネルの画面を見るしか確かめる手が無い。
     /// </summary>
-    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "オブジェクトグループの状態（自動更新・要更新・参照の生死）を結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "モディファイアスタックの状態（自動更新・要更新・参照の生死）を結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",  PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
-    [PLResult("groups", PLResultKind.Integer, Description = "グループの数")]
-    [PLResult("stale",  PLResultKind.Integer, Description = "要更新のグループの数")]
-    [PLResult("names",      PLResultKind.TextArray,    Description = "グループの名前。rebuildObjectGroup や saveScenarioFromGroup へ渡す", Optional = true)]
-    [PLResult("actions",    PLResultKind.TextArray,    Description = "各グループの先頭の項目のコマンド名。names と同じ並び", Optional = true)]
-    [PLResult("staleFlags", PLResultKind.IntegerArray, Description = "各グループが要更新か。1 = 要更新。names と同じ並び", Optional = true)]
-    public class QueryObjectGroupsCommand : PanelCommand
+    [PLResult("stacks", PLResultKind.Integer, Description = "スタックの数")]
+    [PLResult("stale",  PLResultKind.Integer, Description = "要更新のスタックの数")]
+    [PLResult("names",      PLResultKind.TextArray,    Description = "スタックの名前。rebuildModifierStack や saveScenarioFromModifierStack へ渡す", Optional = true)]
+    [PLResult("actions",    PLResultKind.TextArray,    Description = "各スタックの先頭の項目のコマンド名。names と同じ並び", Optional = true)]
+    [PLResult("staleFlags", PLResultKind.IntegerArray, Description = "各スタックが要更新か。1 = 要更新。names と同じ並び", Optional = true)]
+    public class QueryModifierStacksCommand : PanelCommand
     {
         [PLParam(TextKey = "QueryResultName",
                  Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
         public string ResultName { get; }
 
-        public QueryObjectGroupsCommand(int modelIndex, string resultName = null)
+        public QueryModifierStacksCommand(int modelIndex, string resultName = null)
             : base(modelIndex)
         {
             ResultName = resultName;
@@ -155,34 +155,34 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// オブジェクトグループの項目 1 つの引数（キーと今の値、書けるか）を返す。モデルは変えない。
-    /// 書けないキーの理由は ObjectGroupOps.ArgWriteBlockReason（setObjectGroupStepArgs と同じ判定）。
+    /// モディファイアスタックの項目 1 つの引数（キーと今の値、書けるか）を返す。モデルは変えない。
+    /// 書けないキーの理由は ModifierStackOps.ArgWriteBlockReason（setModifierStackStepArgs と同じ判定）。
     /// </summary>
-    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目 1 つの引数（キー・今の値・書けるか）を返す。setObjectGroupStepArgs で書くキーを探すのに使う。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "モディファイアスタックの項目 1 つの引数（キー・今の値・書けるか）を返す。setModifierStackStepArgs で書くキーを探すのに使う。モデルは変えない。")]
     [PLResult("entry",        PLResultKind.Entry,        Description = "書き込んだ結果辞書の見出し")]
     [PLResult("action",       PLResultKind.Text,         Description = "項目のコマンド名")]
-    [PLResult("steps",        PLResultKind.Integer,      Description = "グループの項目数")]
+    [PLResult("steps",        PLResultKind.Integer,      Description = "スタックの項目数")]
     [PLResult("keys",         PLResultKind.TextArray,    Description = "引数のキー（キー順）")]
     [PLResult("values",       PLResultKind.TextArray,    Description = "今の値。keys と同じ並び")]
     [PLResult("writable",     PLResultKind.IntegerArray, Description = "書けるか。1 = 書ける。keys と同じ並び")]
     [PLResult("blockReasons", PLResultKind.TextArray,    Description = "書けない理由。書けるキーは空。keys と同じ並び")]
     [PLResult("outputObjectIds", PLResultKind.TextArray, Description = "項目の出力の ObjectId")]
-    public class QueryObjectGroupStepArgsCommand : PanelCommand
+    public class QueryModifierStackStepArgsCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
         [PLParam(TextKey = "QueryResultName",
                  Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
         public string ResultName { get; }
 
-        public QueryObjectGroupStepArgsCommand(int modelIndex, string groupName, int stepIndex, string resultName = null)
+        public QueryModifierStackStepArgsCommand(int modelIndex, string stackName, int stepIndex, string resultName = null)
             : base(modelIndex)
         {
-            GroupName  = groupName;
+            StackName  = stackName;
             StepIndex  = stepIndex;
             ResultName = resultName;
         }
@@ -407,14 +407,14 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// 生成コマンドを全件、モディファイアとしての型（A 単発・B 入力あり・C 組立）に分けて返す。
-    /// 各コマンドについて、グループに記録されるか・書き戻せるか・読む入力・逆方向を返す。
+    /// 各コマンドについて、スタックに記録されるか・書き戻せるか・読む入力・逆方向を返す。
     /// 型と属性だけを見る（ModifierInventory）。モデルもプロジェクトも見ない。
     /// </summary>
-    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "生成コマンドを全件、A（単発）・B（入力あり）・C（組立）に分類し、グループに記録されるか・作り直しで出力先へ書き戻せるか・読む入力・逆方向を返す。モデルもプロジェクトも見ない。")]
+    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "生成コマンドを全件、A（単発）・B（入力あり）・C（組立）に分類し、スタックに記録されるか・作り直しで出力先へ書き戻せるか・読む入力・逆方向を返す。モデルもプロジェクトも見ない。")]
     [PLResult("report",    PLResultKind.Text,      Description = "一覧の全文（タブ区切り、1 行 1 コマンド）")]
     [PLResult("actions",   PLResultKind.TextArray, Description = "action 名")]
     [PLResult("kinds",     PLResultKind.TextArray, Description = "型 A / B / C。actions と同じ並び")]
-    [PLResult("captures",  PLResultKind.TextArray, Description = "グループへの記録のされ方（None / OnKeepAsGroup / Always / ViaSteps / Assembly）")]
+    [PLResult("captures",  PLResultKind.TextArray, Description = "スタックへの記録のされ方（None / OnKeepAsModifierStack / Always / ViaSteps / Assembly）")]
     [PLResult("rebuilds",  PLResultKind.TextArray, Description = "作り直しで書き戻すキー。書き戻せないものは空")]
     [PLResult("inputs",    PLResultKind.TextArray, Description = "読む入力のキー（読み書きの別）。カンマ区切り")]
     [PLResult("profiles",  PLResultKind.TextArray, Description = "プロファイル本体のキー。カンマ区切り")]
@@ -425,13 +425,13 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// オブジェクトグループの項目（モディファイア）の依存のグラフを照会する（PolyLing_作り直し整備計画.md 段 4）。
+    /// モディファイアスタックの項目（モディファイア）の依存のグラフを照会する（PolyLing_作り直し整備計画.md 段 4）。
     /// 依存の順に、項目・入力・出力・下流・状態（流すか・外した理由・循環）・要評価の印・
     /// 最後の評価の結果を返す。モデルは変えない。
     /// </summary>
-    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目の依存のグラフを照会する。依存の順に、項目（グループ名#項目番号）・action・入力・出力・下流・状態（Evaluate=評価器が流す / Handler=処理器が流す / Excluded=外した / Cycle=循環）・外した理由・要評価の印・最後の評価の結果と理由、最後の流しの記録を返す。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "モディファイアスタックの項目の依存のグラフを照会する。依存の順に、項目（スタック名#項目番号）・action・入力・出力・下流・状態（Evaluate=評価器が流す / Handler=処理器が流す / Excluded=外した / Cycle=循環）・外した理由・要評価の印・最後の評価の結果と理由、最後の流しの記録を返す。モデルは変えない。")]
     [PLResult("entries",    PLResultKind.Integer,      Description = "項目の数")]
-    [PLResult("labels",     PLResultKind.TextArray,    Description = "項目（グループ名#項目番号）。依存の順。循環の項目は末尾")]
+    [PLResult("labels",     PLResultKind.TextArray,    Description = "項目（スタック名#項目番号）。依存の順。循環の項目は末尾")]
     [PLResult("actions",    PLResultKind.TextArray,    Description = "項目のコマンド名。labels と同じ並び")]
     [PLResult("inputs",     PLResultKind.TextArray,    Description = "入力（名前(ObjectId) のカンマ区切り）")]
     [PLResult("outputs",    PLResultKind.TextArray,    Description = "出力（名前(ObjectId) のカンマ区切り）")]
@@ -478,10 +478,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// オブジェクトグループの項目 1 つの逆方向（出力の編集 → 入力）を照会する（作り直し整備計画 段 6）。
+    /// モディファイアスタックの項目 1 つの逆方向（出力の編集 → 入力）を照会する（作り直し整備計画 段 6）。
     /// 確定したら何が保たれ何が失われるか、今の編集がどれだけ丸められるかを、書かずに試して返す。
     /// </summary>
-    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "オブジェクトグループの項目 1 つの逆方向（出力の頂点の位置の編集を入力へ戻す）を照会する。逆方向の方法・保つもの・失うもの、出力の編集が未確定か、確定したときに書き直す入力と、確定後の出力と今の出力のずれ（編集が丸められる量）を、モデルを変えずに試して返す。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "モディファイアスタックの項目 1 つの逆方向（出力の頂点の位置の編集を入力へ戻す）を照会する。逆方向の方法・保つもの・失うもの、出力の編集が未確定か、確定したときに書き直す入力と、確定後の出力と今の出力のずれ（編集が丸められる量）を、モデルを変えずに試して返す。")]
     [PLResult("action",      PLResultKind.Text,    Description = "項目のコマンド名")]
     [PLResult("method",      PLResultKind.Text,    Description = "逆方向の方法（beltFrames / vertexFrames / boltPattern / radialPlace / towerDeck / lushFrames / copiedVertices / ribbonCenters / surfacePaste）。空なら逆方向を持たない")]
     [PLResult("chainCount",  PLResultKind.Integer, Description = "連ねた逆方向の段の数（書く入力が別の項目の出力なら、その項目の逆方向へ連ねる。段 14）。組めなければ 0")]
@@ -498,16 +498,16 @@ namespace Poly_Ling.Data
     [PLResult("meanDeviation", PLResultKind.Number, Description = "確定後の出力と今の出力の頂点のずれの平均")]
     public class QueryModifierInverseCommand : PanelCommand
     {
-        [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]
-        public string GroupName { get; }
+        [PLParam(TextKey = "ModifierStackName", Description = "対象のスタック名", Required = true)]
+        public string StackName { get; }
 
-        [PLParam(TextKey = "ObjectGroupStepIndex", Description = "項目番号（0 始まり）", Required = true)]
+        [PLParam(TextKey = "ModifierStackStepIndex", Description = "項目番号（0 始まり）", Required = true)]
         public int StepIndex { get; }
 
-        public QueryModifierInverseCommand(int modelIndex, string groupName, int stepIndex)
+        public QueryModifierInverseCommand(int modelIndex, string stackName, int stepIndex)
             : base(modelIndex)
         {
-            GroupName = groupName;
+            StackName = stackName;
             StepIndex = stepIndex;
         }
     }

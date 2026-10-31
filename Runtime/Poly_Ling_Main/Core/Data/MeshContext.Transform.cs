@@ -124,7 +124,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 頂点をバインド姿勢のワールドへ出すために掛ける行列（ポーズを含まない）。
         /// スキンドは頂点が既にバインド空間なので単位行列、MeshFilter は BindWorldMatrix。
-        /// 作り直し（オブジェクトグループの評価）はこの空間で入力を読む（作り直し整備計画 段 5）。
+        /// 作り直し（モディファイアスタックの評価）はこの空間で入力を読む（作り直し整備計画 段 5）。
         /// </summary>
         public Matrix4x4 VertexToBindWorldMatrix
             => IsSkinned ? Matrix4x4.identity : BindWorldMatrix;

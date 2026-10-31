@@ -129,12 +129,35 @@ namespace Poly_Ling.Core
         /// </summary>
         public bool MatchesModel(ModelContext model)
         {
+            LastMatchMembershipMs = 0;
+            LastMatchTopologyMs   = 0;
             if (model == null) return _meshCount == 0;
             if (_builtContexts.Count != _meshCount) return false;
 
+            // 計測（モディファイア高速化計画 段 13）。診断スイッチ PLDiag.Timing が入のときだけ（段 15）。
+            bool timing = RenderTiming.Enabled;
+            long t0 = timing ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             model.InvalidateTypedIndices();
-            if (NeedsRebuildForMembership(model)) return false;
+            bool membership = NeedsRebuildForMembership(model);
+            long t1 = timing ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            if (timing) LastMatchMembershipMs = (t1 - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (membership) return false;
+            if (!timing) return MatchesModelPerMesh(model);
 
+            try
+            {
+                return MatchesModelPerMesh(model);
+            }
+            finally
+            {
+                LastMatchTopologyMs = (System.Diagnostics.Stopwatch.GetTimestamp() - t1) * 1000.0
+                                      / System.Diagnostics.Stopwatch.Frequency;
+            }
+        }
+
+        /// <summary>MatchesModel のうち、メッシュごとの照合（実体・頂点数・面の構成の署名）。</summary>
+        private bool MatchesModelPerMesh(ModelContext model)
+        {
             for (int u = 0; u < _meshCount; u++)
             {
                 if (!_unifiedToContextMeshIndex.TryGetValue(u, out int mi)) return false;
@@ -147,6 +170,11 @@ namespace Poly_Ling.Core
             }
             return true;
         }
+
+        /// <summary>直近の MatchesModel のうち、載せる集合の判定の時間 [ms]（計測用。段 13）。</summary>
+        public static double LastMatchMembershipMs;
+        /// <summary>直近の MatchesModel のうち、メッシュごとの照合（面の構成の署名を含む）の時間 [ms]（計測用。段 13）。</summary>
+        public static double LastMatchTopologyMs;
 
         /// <summary>
         /// TypedMeshEntryリストからバッファを構築
@@ -998,6 +1026,32 @@ namespace Poly_Ling.Core
             }
 
             _uvBuffer?.SetData(_uvs, (int)baseOffset, (int)baseOffset, count);
+        }
+
+        /// <summary>
+        /// 法線のみを更新する（トポロジー不変）。
+        /// 充填規則は BuildVertexData と同一（頂点あたり Normals[0]、無ければ up）。
+        /// 位置の転送（UpdatePositions）は法線を送らないので、法線も書き換わる
+        /// 中身の入れ替え（モディファイアの書き戻し）で使う（モディファイア高速化計画 段 1）。
+        /// </summary>
+        public void UpdateNormals(MeshObject meshObject, int meshIndex)
+        {
+            if (meshObject == null || meshIndex < 0 || meshIndex >= _meshCount)
+                return;
+            if (_normals == null) return;
+
+            var meshInfo = _meshInfos[meshIndex];
+            uint baseOffset = meshInfo.VertexStart;
+            int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+            if (count <= 0) return;
+
+            for (int v = 0; v < count; v++)
+            {
+                var vertex = meshObject.Vertices[v];
+                _normals[(int)baseOffset + v] = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
+            }
+
+            _normalBuffer?.SetData(_normals, (int)baseOffset, (int)baseOffset, count);
         }
 
         // ============================================================

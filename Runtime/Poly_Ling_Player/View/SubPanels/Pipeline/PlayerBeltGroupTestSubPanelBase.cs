@@ -1,11 +1,11 @@
 // PlayerBeltGroupTestSubPanelBase.cs
-// 「基準ベルト＋断面プロファイル＋出力先」をオブジェクトグループとして残す一連の手順を
+// 「基準ベルト＋断面プロファイル＋出力先」をモディファイアスタックとして残す一連の手順を
 // ボタン 1 回で流す検証パネルの共通部。フリル版・パイプ版が派生する。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
 //
 // 【なぜ要るか】
-//   オブジェクトグループは「入力を直すと出力先も作り直せる」枠組みだが、
-//   使うには 図形生成パネル の梯子取り込み・断面編集・「グループとして残す」
+//   モディファイアスタックは「入力を直すと出力先も作り直せる」枠組みだが、
+//   使うには 図形生成パネル の梯子取り込み・断面編集・「モディファイアスタックとして残す」
 //   の 3 つを順に触る必要があり、初見では手順が分からない。
 //   同じことをコマンドだけで通す経路を置いて、手順そのものをログにする。
 //
@@ -19,7 +19,7 @@
 //   ・生成コマンドの組み立て（CreateFrillCommand / CreatePipeCommand）
 //   ・ソースの編集内容（作り直しの検証用）
 //   共通部が持つのは、段ランナー・ログ・プロファイルのオブジェクト化と取り込み・
-//   グループの検査・要更新の検査・作り直しとその検査。
+//   スタックの検査・要更新の検査・作り直しとその検査。
 
 using System;
 using System.Collections.Generic;
@@ -35,7 +35,7 @@ using Poly_Ling.PrimitiveMesh;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 帯グループ検証の共通部。人間の操作は「実行」を押すだけ。
+    /// 帯スタック検証の共通部。人間の操作は「実行」を押すだけ。
     /// 段ランナーと 3 行ログは PlayerStagedTestSubPanelBase が持つ。
     /// </summary>
     public abstract class PlayerBeltGroupTestSubPanelBase : PlayerStagedTestSubPanelBase
@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
         // 外部依存（Viewer から設定）
         // ================================================================
 
-        /// <summary>プロジェクト。グループの参照解決がモデルをまたぐため要る。</summary>
+        /// <summary>プロジェクト。スタックの参照解決がモデルをまたぐため要る。</summary>
         public Func<ProjectContext> GetProject;
 
         /// <summary>現在のモデル。</summary>
@@ -108,7 +108,7 @@ namespace Poly_Ling.Player
         /// <summary>作り直す前の出力先の頂点数。空になっていないかの検査に使う。</summary>
         protected int OutputVertsBefore;
 
-        /// <summary>出来たグループの名前。</summary>
+        /// <summary>出来たスタックの名前。</summary>
         protected string GroupName;
 
         /// <summary>直前に控えたオブジェクト数。完了待ちの判定に使う。</summary>
@@ -169,7 +169,7 @@ namespace Poly_Ling.Player
 
             var pl = PrimitivePlacement.Default;
             pl.AddMode     = PrimitiveAddMode.NewObject;
-            pl.KeepAsGroup = false;
+            pl.KeepAsModifierStack = false;
 
             SendCommand(new AddGeneratedMeshCommand(
                 ModelIndex, mo, ProfileObjectName, pl, poseAlreadyBaked: true));
@@ -259,7 +259,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 共通段: グループの検査 → ソース編集 → 作り直し
+        // 共通段: スタックの検査 → ソース編集 → 作り直し
         // ================================================================
 
         protected StageResult StageVerifyGroup()
@@ -267,20 +267,20 @@ namespace Poly_Ling.Player
             var project = GetProject();
             var model   = GetModel();
             if (model == null) return StageResult.Retry;
-            if (model.ObjectGroupCount == 0) return StageResult.Retry;
+            if (model.ModifierStackCount == 0) return StageResult.Retry;
 
-            ObjectGroup g = null;
-            foreach (var cand in model.ObjectGroups)
+            ModifierStack g = null;
+            foreach (var cand in model.ModifierStacks)
                 if (cand != null && cand.Action == ExpectedAction) g = cand;
             if (g == null) return StageResult.Retry;
 
-            var outCtx = ObjectGroupOps.Resolve(project, g.OutputObjectId);
+            var outCtx = ModifierStackOps.Resolve(project, g.OutputObjectId);
             if (outCtx == null) return StageResult.Retry;
 
             GroupName      = g.Name;
             OutputIdBefore = g.OutputObjectId;
 
-            if (ObjectGroupOps.IsStale(project, g))
+            if (ModifierStackOps.IsStale(project, g))
                 return Ng("作った直後なのに『要更新』になっている", null,
                     "ダイジェストは記録のときに取る。直後に食い違うなら、"
                   + "取ったあとにソースを触る経路があるということ。");
@@ -288,32 +288,32 @@ namespace Poly_Ling.Player
             var srcIds = g.GetMeshRefIds("beltSourceIndex");
 
             return Ok(
-                $"グループ「{g.Name}」が出来た。出力先「{outCtx.Name}」（ObjectId={g.OutputObjectId} / "
+                $"スタック「{g.Name}」が出来た。出力先「{outCtx.Name}」（ObjectId={g.OutputObjectId} / "
               + $"頂点 {outCtx.MeshObject?.VertexCount ?? 0}）、入力 {g.SourceCount} 件、"
               + $"パラメータ {g.Args.Count} 件、beltSourceIndex の控え {srcIds.Count} 件、要更新=いいえ",
-                "右ペイン → 「オブジェクトグループ」ボタンで同じ内容が見られる",
-                "グループが持つのは 3 つ。(1) 生成コマンドの action と全パラメータ（文字列）、"
+                "右ペイン → 「モディファイアスタック」ボタンで同じ内容が見られる",
+                "スタックが持つのは 3 つ。(1) 生成コマンドの action と全パラメータ（文字列）、"
               + "(2) 索引で指していたオブジェクトの ObjectId、(3) 出力先の ObjectId。"
               + "索引ではなく ObjectId で控えるので、並べ替えや追加削除をしても"
               + "同じオブジェクトを指し続ける。複製したものには新しい ID が振られるので、"
-              + "複製物がグループのメンバーになることもない。");
+              + "複製物がスタックのメンバーになることもない。");
         }
 
         protected StageResult StageVerifyStale()
         {
             var project = GetProject();
             var model   = GetModel();
-            var g       = model?.FindObjectGroupByName(GroupName);
-            if (g == null) return Ng("グループが見つからない", null, null);
+            var g       = model?.FindModifierStackByName(GroupName);
+            if (g == null) return Ng("スタックが見つからない", null, null);
 
-            if (!ObjectGroupOps.IsStale(project, g))
+            if (!ModifierStackOps.IsStale(project, g))
                 return Ng("ソースを動かしたのに『要更新』にならない", null,
                     "ダイジェストは頂点ID と位置（1e-5 丸め）から作る。"
                   + "動かした量が丸めより小さいと検出できない。");
 
             return Ok(
                 "『要更新』になった",
-                "右ペイン → 「オブジェクトグループ」を開くと、その行が橙色で [要更新] と出る",
+                "右ペイン → 「モディファイアスタック」を開くと、その行が橙色で [要更新] と出る",
                 "判定はソースの現在の中身から取り直したダイジェストと、"
               + "前回ビルド時に控えたダイジェストの比較。"
               + "全頂点を走査するので、毎フレームではなくパネルを開いたときと"
@@ -324,20 +324,20 @@ namespace Poly_Ling.Player
         {
             var project = GetProject();
             var model   = GetModel();
-            var gBefore = model?.FindObjectGroupByName(GroupName);
-            var outBefore = gBefore != null ? ObjectGroupOps.Resolve(project, gBefore.OutputObjectId) : null;
+            var gBefore = model?.FindModifierStackByName(GroupName);
+            var outBefore = gBefore != null ? ModifierStackOps.Resolve(project, gBefore.OutputObjectId) : null;
 
             OutputIdBefore    = gBefore?.OutputObjectId ?? 0UL;
             OutputVertsBefore = outBefore?.MeshObject?.VertexCount ?? 0;
 
             bool keepStash = KeepStashToggle != null && KeepStashToggle.value;
-            SendCommand(new RebuildObjectGroupCommand(ModelIndex, GroupName, keepStash));
+            SendCommand(new RebuildModifierStackCommand(ModelIndex, GroupName, keepStash));
 
             return Ok(
-                $"RebuildObjectGroupCommand を送った（退避={(keepStash ? "する" : "しない")} / "
+                $"RebuildModifierStackCommand を送った（退避={(keepStash ? "する" : "しない")} / "
               + $"作り直す前の出力先の頂点数 {OutputVertsBefore}）。"
-              + $"梯子の扱い: {ObjectGroupOps.LastBeltMessage ?? "(記録なし)"}",
-                "右ペイン → 「オブジェクトグループ」→ 行を選んで「作り直す」",
+              + $"梯子の扱い: {ModifierStackOps.LastBeltMessage ?? "(記録なし)"}",
+                "右ペイン → 「モディファイアスタック」→ 行を選んで「作り直す」",
                 "作り直しは 4 段階。(1) 控えた Args を複製、(2) ObjectId から今の索引へ引き直す、"
               + "(3) 記録した取り込み方をソースへ掛け直して梯子の点列を差し替える、"
               + "(4) 組み直したコマンドを実行。"
@@ -346,17 +346,17 @@ namespace Poly_Ling.Player
               + "出力先は新しく作らず、既存のオブジェクトの中身だけ入れ替える"
               + "（ObjectId・名前・階層・姿勢・材質割当がそのまま残る）。"
               + "退避は入れ替える前の複製。出力先へ手で振った頂点IDは総入れ替えで消えるので、"
-              + "出力先にIDを振るなら先にグループを解除すること。");
+              + "出力先にIDを振るなら先にスタックを解除すること。");
         }
 
         protected StageResult StageVerifyRebuild()
         {
             var project = GetProject();
             var model   = GetModel();
-            var g       = model?.FindObjectGroupByName(GroupName);
-            if (g == null) return Ng("グループが見つからない", null, null);
+            var g       = model?.FindModifierStackByName(GroupName);
+            if (g == null) return Ng("スタックが見つからない", null, null);
 
-            var outCtx = ObjectGroupOps.Resolve(project, g.OutputObjectId);
+            var outCtx = ModifierStackOps.Resolve(project, g.OutputObjectId);
             if (outCtx?.MeshObject == null)
                 return Ng("出力先を引けない", null,
                     "作り直しは出力先の中身だけを入れ替えるので、ObjectId は変わらないはず。"
@@ -373,7 +373,7 @@ namespace Poly_Ling.Player
                     "梯子の取り直しが失敗しているか、断面が壊れている。"
                   + "この段の 1 つ前のログに梯子の扱いが出ている。");
 
-            if (ObjectGroupOps.IsStale(project, g))
+            if (ModifierStackOps.IsStale(project, g))
                 return Ng("作り直したのに『要更新』のまま", null,
                     "作り直しの最後にダイジェストを取り直している。残るなら"
                   + "取り直しの前にソースがまた変わったということ。");
@@ -381,7 +381,7 @@ namespace Poly_Ling.Player
             string stashText = "なし";
             if (g.HasStash)
             {
-                var stash = ObjectGroupOps.Resolve(project, g.StashObjectId);
+                var stash = ModifierStackOps.Resolve(project, g.StashObjectId);
                 stashText = stash != null
                     ? $"「{stash.Name}」（頂点 {stash.MeshObject?.VertexCount ?? 0}）"
                     : "参照切れ";
@@ -394,8 +394,8 @@ namespace Poly_Ling.Player
                 "出力先を作り直さないので、名前・階層・姿勢・材質割当と、"
               + "出力先を指している参照がそのまま残る。"
               + "退避は入れ替える前の複製で、頂点ID・パーツID・サブIDを保つ。"
-              + "出力先へ手でIDを振るなら、先にグループを解除すること"
-              + "（グループがある間は作り直しで総入れ替えされる）。");
+              + "出力先へ手でIDを振るなら、先にスタックを解除すること"
+              + "（スタックがある間は作り直しで総入れ替えされる）。");
         }
 
         // ================================================================

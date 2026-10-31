@@ -507,7 +507,12 @@ namespace Poly_Ling.Player
                     { Fail("取り込み元のメッシュが見つかりません"); return true; }
 
                     _undoController?.SetModelContext(model);
-                    var sblBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+                    // 一覧の控え（全描画オブジェクトの深い複製）は記録するときだけ取る。記録を止めているとき
+                    // （モディファイアの作り直し・依存の評価）は積まれずに捨てられるので取らない
+                    // （作り直しのたびに全体を 2 回複製していた。モディファイア高速化計画 段 10）。
+                    bool sblRecord = _undoController != null && !_undoController.IsRecordingSuspended;
+                    var sblBefore = sblRecord ? MeshFilterToSkinnedRecord.CaptureList(model) : null;
+                    Poly_Ling.Ops.ModifierStepProfiler.Mark("一覧の控え");   // 計測（段 10）
 
                     // ウェイトを塗るときは取り込み元メッシュの before を先に取る。
                     // ボーンの追加はこのメッシュを書き換えないので、Place の前で取ってよい。
@@ -517,7 +522,7 @@ namespace Poly_Ling.Player
                     // （前者は書き込み先が先頭の選択メッシュになる）。
                     const string sblWeightLabel = "Paint Ladder Spring Weights";
                     MeshObjectSnapshot sblMeshBefore = null;
-                    // 記録を止めているとき（オブジェクトグループの作り直し・依存の評価）は書き込み先も設定しない。
+                    // 記録を止めているとき（モディファイアスタックの作り直し・依存の評価）は書き込み先も設定しない。
                     // SetMeshObjectFor は頂点編集の履歴を消す（MeshUndoController.SetMeshObjectFor）ので、
                     // 梯子の編集の直後に評価がこの項目を流すと、その編集の Undo が消える（段 5。段 4 の
                     // PrimitiveMeshReplaceExisting と同じ扱い）。
@@ -553,6 +558,7 @@ namespace Poly_Ling.Player
                         c.ReverseChain, c.AddTailBone, c.TailLength, c.PaintWeights,
                         c.RungStride, c.ChainStride, c.BundleMode,
                         c.ChainRootMasterIndices, sblMirrorMatrix);
+                    Poly_Ling.Ops.ModifierStepProfiler.Mark("鎖の配置");   // 計測（段 10）
 
                     if (sblResult.BoneCount == 0)
                     {
@@ -598,14 +604,20 @@ namespace Poly_Ling.Player
                         }
                     }
                     if (sblMeshBefore != null) _undoController?.ClearTargetMeshContext();
+                    Poly_Ling.Ops.ModifierStepProfiler.Mark("ミラーへ写す");   // 計測（段 10）
 
-                    model.OnListChanged?.Invoke();
-                    RecordMeshListSnapshot(sblBefore, model, sblResult.Message);
+                    // 一覧の変更の通知は、鎖を作ったとき（一覧が変わったとき）だけ出す。既にある鎖へ位置を
+                    // 流し込んだだけ（Updated）なら一覧は変わらない。受け手（RemoteServerCore.OnModelListChanged）は
+                    // 通知のたびにモデル全体の一覧の JSON を作るので、作り直しのたびに無駄に走っていた
+                    // （モディファイア高速化計画 段 13）。
+                    if (!sblResult.Updated) model.OnListChanged?.Invoke();
+                    if (sblRecord) RecordMeshListSnapshot(sblBefore, model, sblResult.Message);
+                    Poly_Ling.Ops.ModifierStepProfiler.Mark("一覧の通知と記録");   // 計測（段 10）
 
-                    // グループの出力は「鎖の根元ボーン」だけ。節点と tail は出力ではない。
+                    // スタックの出力は「鎖の根元ボーン」だけ。節点と tail は出力ではない。
                     // 作り直しではこの ObjectId 列が ChainRootMasterIndices へ書き戻され、
                     // ボーンを作らず位置だけ流し込む経路に入る。
-                    if (c.KeepAsGroup)
+                    if (c.KeepAsModifierStack)
                     {
                         // 並びは「実体側 N 本 → ミラー側 N 本」。作り直しでは
                         // この順のまま ChainRootMasterIndices へ書き戻される。
@@ -627,25 +639,36 @@ namespace Poly_Ling.Player
                         }
 
                         if (sblRootIds.Count > 0)
-                            CaptureObjectGroup(c, null, -1, sblRootIds);
+                            CaptureModifierStack(c, null, -1, sblRootIds);
                         else
-                            Debug.LogWarning("[ObjectGroup] 鎖の根元を引けないためグループを作りませんでした");
-                    }
-
-                    // 書き換えたウェイトを送る。ボーン追加ぶんの EnterTopologyChanged とは
-                    // 別に、対象を明示して部分転送する（ミラー側は別メッシュなので個別に要る）。
-                    if (sblResult.WeightedVertexCount > 0)
-                    {
-                        _viewportManager.EnterVertexAttributesChanged(
-                            project, sblSource, weights: true, uvs: false);
-                        foreach (var sblMirror in sblMirrors)
-                            _viewportManager.EnterVertexAttributesChanged(
-                                project, sblMirror, weights: true, uvs: false);
+                            Debug.LogWarning("[ModifierStack] 鎖の根元を引けないためスタックを作りませんでした");
                     }
 
                     Debug.Log("[PlaceSpringBoneLadderChains] " + sblResult.Message);
-
                     model.IsDirty = true;
+
+                    // 既にある鎖へ位置を流し込んだだけ（Updated）なら、一覧も面の構成も変わらない
+                    // （モディファイアの作り直しはこちら）。作り直しはせず、ボーンの行列を直して
+                    // ウェイトの部分転送を予約し、表示はコマンドの終わり・評価のパスの終わりの
+                    // SettleWorldPositions に任せる（モディファイア高速化計画 段 7）。
+                    // 以前はここで EnterTopologyChanged と ListStructure を無条件に呼び、
+                    // 作り直しのたびに GPU バッファを 2 回作り直していた。
+                    if (sblResult.Updated)
+                    {
+                        model.ComputeWorldMatrices();
+                        if (sblResult.WeightedVertexCount > 0)
+                        {
+                            _viewportManager.QueueVertexAttributesUpload(sblSource);
+                            foreach (var sblMirror in sblMirrors)
+                                _viewportManager.QueueVertexAttributesUpload(sblMirror);
+                        }
+                        // 評価の書き戻しの中ではパスの終わりが 1 回だけ知らせる。
+                        if (_modifierWriteBackDepth == 0) _notifyPanels(ChangeKind.Attributes);
+                        return true;
+                    }
+
+                    // ボーンを作った（Recreated を含む）。一覧が変わるので作り直す。
+                    // ウェイトは作り直しが全部を送る。
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return true;

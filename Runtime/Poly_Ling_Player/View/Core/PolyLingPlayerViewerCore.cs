@@ -295,7 +295,7 @@ namespace Poly_Ling.Player
         private PlayerFaceHideSubPanel          _faceHideSubPanel;
         private PlayerDuplicateSelectionSubPanel _duplicateSelectionSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
-        private PlayerObjectGroupSubPanel       _objectGroupSubPanel;
+        private PlayerModifierStackSubPanel       _modifierStackSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
         private PlayerBooleanSubPanel        _booleanSubPanel;
         private PlayerMorphSubPanel          _morphSubPanel;

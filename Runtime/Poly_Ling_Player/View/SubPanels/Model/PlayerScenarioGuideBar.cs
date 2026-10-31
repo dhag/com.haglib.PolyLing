@@ -393,7 +393,7 @@ namespace Poly_Ling.Player
             else switch (run.Stop)
             {
                 case ScenarioRunStop.Judgment:
-                    stop = run.StopStepKind == ObjectGroupStepKind.Observe
+                    stop = run.StopStepKind == ModifierStackStepKind.Observe
                         ? $"確認の項目で止まっています: {run.StopMessage}"
                         : $"指示の項目で止まっています: {run.StopMessage}";
                     break;

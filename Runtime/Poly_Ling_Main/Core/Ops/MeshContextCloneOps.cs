@@ -58,7 +58,7 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 別オブジェクトとしての複製。ObjectId と EditorName は引き継がない。
-        /// ObjectId で参照している枠組み（ObjectGroup など）から見て、
+        /// ObjectId で参照している枠組み（ModifierStack など）から見て、
         /// 複製物は非メンバーになる。
         /// </summary>
         NewObject = 1,

@@ -33,7 +33,7 @@ namespace Poly_Ling.Player
 
             var placement = PrimitivePlacement.Default;
             placement.AddMode                = PrimitiveAddMode.NewObject;
-            placement.KeepAsGroup            = false;
+            placement.KeepAsModifierStack            = false;
             placement.MergeDuplicateVertices = false;
             placement.WorldPosition          = Vector3.zero;
 

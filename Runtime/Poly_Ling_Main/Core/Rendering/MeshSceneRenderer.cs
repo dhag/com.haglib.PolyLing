@@ -416,7 +416,7 @@ namespace Poly_Ling.Core
         {
             Poly_Ling.Diagnostics.PLResStat.Report("RebuildAdapter.enter mi=" + mi);
 
-            // オブジェクトグループの項目（モディファイア）を入力に合わせる（評価器のきっかけ 1）。
+            // モディファイアスタックの項目（モディファイア）を入力に合わせる（評価器のきっかけ 1）。
             // サブディビジョンの子のような派生物は、バッファを組む前に中身が揃っていなければ
             // ならない（面の追加・削除・Undo・読み込みはどれもこの入口を通る）。差し替えた旧 Mesh は
             // 遅延破棄に積まれ、直後の FlushRetiredMeshes で解放される。
@@ -674,6 +674,58 @@ namespace Poly_Ling.Core
         /// </summary>
         public void PrepareWireframeAndVertices(Camera cam, ProjectContext project = null, int cullingSlot = 0)
         {
+            // 旧来の単独呼び（DrawWireframeAndVertices）は描画準備の外なので、ここで同期する。
+            if (!_inPresent) SyncSelectionFlags(project, visibilityPending: false);
+            PrepareWireframeAndVerticesCore(cam, cullingSlot);
+        }
+
+        /// <summary>PlayerViewportManager.PresentAll の中か（SyncSelectionFlags を先に済ませている）。段 14。</summary>
+        private bool _inPresent;
+
+        /// <summary>描画準備の始めに呼ぶ。以後の PrepareWireframeAndVertices は同期をしない（段 14）。</summary>
+        public void BeginPresent() => _inPresent = true;
+
+        /// <summary>描画準備の終わりに呼ぶ（段 14）。</summary>
+        public void EndPresent() => _inPresent = false;
+
+        /// <summary>
+        /// 選択・可視フラグを今のモデルから GPU へ写す（モディファイア高速化計画 段 14）。
+        /// slot に依らないので、描画準備 1 回につき 1 回、面ごとのカリングより前に呼ぶ。
+        /// 以前は PrepareWireframeAndVertices の中（最初の slot のカリングの後）で行っていた。
+        ///
+        /// 走る条件は従来どおり profile.AllowSelectedDrawableMeshSync（Normal など）。
+        /// 走らないモードでも visibilityPending なら可視（Hidden / Locked）だけは写す
+        /// （EnterMeshAttributesChanged が直接呼んでいた UpdateAllVisibilityFlags の受け皿）。
+        /// </summary>
+        public void SyncSelectionFlags(ProjectContext project, bool visibilityPending)
+        {
+            for (int mi = 0; mi < _adapters.Count; mi++)
+            {
+                var adapter = _adapters[mi];
+                if (adapter == null || !adapter.IsInitialized) continue;
+                var bufMgr = adapter.BufferManager;
+                if (bufMgr == null) continue;
+
+                var adapterModel = ModelForAdapter(mi, project);
+                if (adapter.CurrentProfile.AllowSelectedDrawableMeshSync && adapterModel != null)
+                {
+                    long tsel = Poly_Ling.Core.RenderTiming.Now();   // 計測（段 13）
+                    int selIdx = (mi < _selectedMeshIndexForDraw.Count)
+                        ? _selectedMeshIndexForDraw[mi] : -1;
+                    bufMgr.SyncSelectionFromModel(adapterModel);
+                    if (selIdx >= 0) bufMgr.SetActiveMesh(0, selIdx);
+                    bufMgr.UpdateAllSelectionFlags();   // 可視（Hidden / Locked）も含む
+                    Poly_Ling.Core.RenderTiming.Add("W:選択フラグ（可視を含む）", tsel);
+                }
+                else if (visibilityPending)
+                {
+                    bufMgr.UpdateAllVisibilityFlags();
+                }
+            }
+        }
+
+        private void PrepareWireframeAndVerticesCore(Camera cam, int cullingSlot)
+        {
             if (cam == null) return;
             float pointSize = ShaderColorSettings.Default.VertexPointScale;
 
@@ -690,19 +742,9 @@ namespace Poly_Ling.Core
                 int selIdx = (mi < _selectedMeshIndexForDraw.Count)
                     ? _selectedMeshIndexForDraw[mi] : -1;
 
-                // ---- AllowSelectedDrawableMeshSync ----
-                var adapterModel = ModelForAdapter(mi, project);
-                if (profile.AllowSelectedDrawableMeshSync && adapterModel != null)
-                {
-                    var bufMgr = adapter.BufferManager;
-                    if (bufMgr != null)
-                    {
-                        var model = adapterModel;
-                        bufMgr.SyncSelectionFromModel(model);
-                        if (selIdx >= 0) bufMgr.SetActiveMesh(0, selIdx);
-                        bufMgr.UpdateAllSelectionFlags();
-                    }
-                }
+                // 選択・可視フラグの同期はここでは行わない。slot に依らないので、描画準備
+                // （PlayerViewportManager.PresentAll）の始めに SyncSelectionFlags が 1 回だけ、
+                // 面ごとのカリングより前に行う（モディファイア高速化計画 段 14）。
 
                 // ---- カリングはここで発行しない（旧 cullSubmit ブロックを撤去） 2026-08-28 ----
                 //
@@ -740,6 +782,7 @@ namespace Poly_Ling.Core
                 //   カリング入力（スクリーン座標 / FLAG_HIDDEN / FLAG_MESH_SELECTED /
                 //   ミラー表示設定）を変えたら、必ず該当 slot を dirty にすること。
 
+                long tpd = Poly_Ling.Core.RenderTiming.Now();   // 計測（段 13）
                 adapter.PrepareDrawing(
                     cam,
                     showWireframe:           ShowSelectedWireframe,
@@ -749,6 +792,8 @@ namespace Poly_Ling.Core
                     selectedMeshIndex:       selIdx,
                     pointSize:               pointSize,
                     cullingSlot:             cullingSlot);
+                if (Poly_Ling.Core.RenderTiming.Enabled)   // 文字列は計測するときだけ作る（段 15）
+                    Poly_Ling.Core.RenderTiming.Add("W:PrepareDrawing slot" + cullingSlot, tpd);
                 adapter.ConsumeNormalMode();
             }
         }

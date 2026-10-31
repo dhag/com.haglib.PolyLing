@@ -32,7 +32,7 @@ namespace Poly_Ling.Player
             {
                 case OpenUvEditSpaceCommand _:
                 case OpenProfileEditSpaceCommand _:
-                case OpenGroupProfileEditSpaceCommand _:
+                case OpenModifierStackProfileEditSpaceCommand _:
                 case SetEditSpacePlaneConstraintCommand _:
                 case SetEditSpacePlateUnderlayCommand _:
                 case ClearEditSpacePlateUnderlayCommand _:

@@ -4,7 +4,7 @@
 //
 // 【partial の分担】
 //   Shapes.cs         図形種別・カテゴリの登録、図形の選択、諸元 UI の切り替え（RebuildSettings）
-//   Placement.cs      生成物の置き方（位置・回転・拡大・焼き込み・追加先・材質・頂点結合・グループ保持）
+//   Placement.cs      生成物の置き方（位置・回転・拡大・焼き込み・追加先・材質・頂点結合・モディファイアスタック保持）
 //   Naming.cs         名前欄（重複しない名前の候補）と追加先の選択、Name() / SetName()
 //   Generate.cs       プレビュー用メッシュの生成、生成ボタンとその有効条件
 //   Command.cs        パネル状態 → 生成コマンド（BuildCreateCommand）
@@ -43,7 +43,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 既存の描画オブジェクトの中身を捨てて、生成物で置き換える。
         ///
-        /// オブジェクトグループの作り直し専用。新しいオブジェクトを作らないので
+        /// モディファイアスタックの作り直し専用。新しいオブジェクトを作らないので
         /// ObjectId・名前・階層・姿勢・材質割当がそのまま残り、
         /// 出力先を指している参照が切れない。
         ///
@@ -97,8 +97,8 @@ namespace Poly_Ling.Player
         private Label              _statusLabel;
         [UiControl("mergeDuplicateVertices", Description = "重複頂点をマージする")]
         private Toggle             _mergeToggle;
-        [UiControl("keepAsGroup", Description = "オブジェクトグループとして残す（オフだと作り直せない）")]
-        private Toggle             _keepAsGroupToggle;
+        [UiControl("keepAsModifierStack", Description = "モディファイアスタックとして残す（オフだと作り直せない）")]
+        private Toggle             _keepAsModifierStackToggle;
 
         // ================================================================
         // Build
@@ -374,7 +374,7 @@ namespace Poly_Ling.Player
 
             parent.Add(poseFold);
 
-            // ── グループとして残すか
+            // ── モディファイアスタックとして残すか
             //    毎回ダイアログを出すと「ちょっと作るだけ」の操作が重くなるので、
             //    警告は常設のラベルにする。off のときだけ出す。
             //
@@ -382,26 +382,26 @@ namespace Poly_Ling.Player
             //    （折りたたみは既定で閉じており、中に置くと見えない）。
             //    値を使う図形でだけ出す。どれが使うかは RefreshCommonUiVisibility。
             var keepRow = new VisualElement();
-            _keepAsGroupRow = keepRow;
+            _keepAsModifierStackRow = keepRow;
 
-            var keepToggle = new Toggle(T("KeepAsGroup")) { value = _keepAsGroup };
+            var keepToggle = new Toggle(T("KeepAsModifierStack")) { value = _keepAsModifierStack };
             keepToggle.style.color = new StyleColor(Color.white);
             keepRow.Add(keepToggle);
-            _keepAsGroupToggle = keepToggle;
+            _keepAsModifierStackToggle = keepToggle;
 
-            var keepWarn = new Label(T("KeepAsGroupWarn"));
+            var keepWarn = new Label(T("KeepAsModifierStackWarn"));
             keepWarn.style.whiteSpace  = WhiteSpace.Normal;
             keepWarn.style.fontSize    = 10;
             keepWarn.style.marginLeft  = 16;
             keepWarn.style.marginBottom = 2;
             keepWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
-            keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+            keepWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
             keepRow.Add(keepWarn);
 
             keepToggle.RegisterValueChangedCallback(e =>
             {
-                _keepAsGroup = e.newValue;
-                keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+                _keepAsModifierStack = e.newValue;
+                keepWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
             });
 
             parent.Add(keepRow);

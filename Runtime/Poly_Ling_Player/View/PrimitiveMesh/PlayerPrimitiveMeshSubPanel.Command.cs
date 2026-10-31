@@ -63,7 +63,7 @@ namespace Poly_Ling.Player
                 AddTargetIndex         = _addTargetIndex,
                 MaterialIndex          = EffectiveMaterialIndex,
                 MergeDuplicateVertices = _mergeDuplicateVertices,
-                KeepAsGroup            = _keepAsGroup,
+                KeepAsModifierStack            = _keepAsModifierStack,
             };
 
         /// <summary>
@@ -238,7 +238,7 @@ namespace Poly_Ling.Player
             }
 
             // 平坦な列も必ず埋める。Loops は PLParam(Ignore) なので ToArgs に出ず、
-            // ここを埋めないとオブジェクトグループが輪郭を控えられない
+            // ここを埋めないとモディファイアスタックが輪郭を控えられない
             // （作り直しで空になる）。生成側は ResolveLoops で Loops を優先するので、
             // 両方入っていても結果は変わらない。
             Profile2DParams.SplitLoops(

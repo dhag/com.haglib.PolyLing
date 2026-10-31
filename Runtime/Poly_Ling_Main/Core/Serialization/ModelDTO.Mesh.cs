@@ -104,7 +104,7 @@ namespace Poly_Ling.Serialization
         public bool isFolding = false;
 
         /// <summary>
-        /// オブジェクトグループの項目の出力で、手の編集が確定も破棄もされていない（未確定）か（段 F）。
+        /// モディファイアスタックの項目の出力で、手の編集が確定も破棄もされていない（未確定）か（段 F）。
         /// 読み込みでは true のとき MeshContext.ModifierForwardSig を未確定の印（1）、false のとき 0 にする。
         /// </summary>
         public bool modifierOutputEdited = false;
@@ -117,7 +117,7 @@ namespace Poly_Ling.Serialization
         //   MeshDTO 経由で往復させる（CsvMeshSerializer.cs の注記）。
         //   ここに欄が無いと往復で 0 に落ち、objectId 行は常に 0 になる。
         //   .mfproj も MeshDTO をそのまま直列化するので同じく落ちる。
-        //   ObjectGroup の参照は ObjectId なので、落ちると保存を跨いだ
+        //   ModifierStack の参照は ObjectId なので、落ちると保存を跨いだ
         //   作り直しが必ず失敗する。
         // ================================================================
 

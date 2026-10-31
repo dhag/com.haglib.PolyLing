@@ -561,6 +561,7 @@ namespace Poly_Ling.Player
             var view = new PlayerProjectView(project);
             if (kind == ChangeKind.ListStructure || kind == ChangeKind.ModelSwitch)
                 _structureNotifyCount++;
+            long tPanels = System.Diagnostics.Stopwatch.GetTimestamp();   // 計測（段 8）
             _panelContext.Notify(view, kind);
 
             // モデル切替は左ペイン上部のモデル選択と見出しにも写す（switchModel コマンドなど
@@ -610,6 +611,10 @@ namespace Poly_Ling.Player
             if (_layoutRoot?.ModelBlendSection != null &&
                 _layoutRoot.ModelBlendSection.style.display == DisplayStyle.Flex)
                 _modelBlendSubPanel?.OnViewChanged(view, kind);
+
+            PlayerViewportManager.PanelNotifyMs +=
+                (System.Diagnostics.Stopwatch.GetTimestamp() - tPanels) * 1000.0
+                / System.Diagnostics.Stopwatch.Frequency;
 
             // 描画準備の再実行（OnRenderObject 経路の Submit 用データ更新）。
             // kind で入口を分ける。EnterTopologyChanged は RebuildAdapter を通り、

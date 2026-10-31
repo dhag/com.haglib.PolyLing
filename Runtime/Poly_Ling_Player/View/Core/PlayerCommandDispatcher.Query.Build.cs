@@ -25,18 +25,18 @@ namespace Poly_Ling.Player
     public partial class PlayerCommandDispatcher
     {
         /// <summary>
-        /// オブジェクトグループの状態。
+        /// モディファイアスタックの状態。
         /// 自動更新が流れなかったときの判定材料だけを並べる。
         /// </summary>
-        private static string BuildObjectGroupsData(
-            ProjectContext project, ModelContext model, QueryObjectGroupsCommand cmd)
+        private static string BuildModifierStacksData(
+            ProjectContext project, ModelContext model, QueryModifierStacksCommand cmd)
         {
-            var groups = model.ObjectGroups ?? new List<Poly_Ling.Data.ObjectGroup>();
+            var groups = model.ModifierStacks ?? new List<Poly_Ling.Data.ModifierStack>();
 
             var values = new List<PLDataValue>
             {
                 PLDataValue.Num("modelIndex", cmd.ModelIndex),
-                PLDataValue.Num("groups",     groups.Count),
+                PLDataValue.Num("stacks",     groups.Count),
             };
 
             var names       = new List<string>(groups.Count);
@@ -64,13 +64,13 @@ namespace Poly_Ling.Player
 
                 int srcAlive = 0;
                 foreach (ulong id in src)
-                    if (ObjectGroupOps.Resolve(project, id) != null) srcAlive++;
+                    if (ModifierStackOps.Resolve(project, id) != null) srcAlive++;
 
                 int outAlive = 0;
                 foreach (ulong id in outs)
-                    if (ObjectGroupOps.Resolve(project, id) != null) outAlive++;
+                    if (ModifierStackOps.Resolve(project, id) != null) outAlive++;
 
-                bool stale = ObjectGroupOps.IsStale(project, g);
+                bool stale = ModifierStackOps.IsStale(project, g);
                 if (stale) staleCount++;
 
                 values.Add(PLDataValue.Str(key + ".name",        g.Name ?? ""));
@@ -84,8 +84,8 @@ namespace Poly_Ling.Player
                 values.Add(PLDataValue.Num(key + ".outputs",     outs.Count));
                 values.Add(PLDataValue.Num(key + ".outputsAlive", outAlive));
 
-                // 名前は戻り値にも載せる。グループを名前で指すコマンド
-                // （rebuildObjectGroup / saveScenarioFromGroup）を撃つのに要るが、
+                // 名前は戻り値にも載せる。スタックを名前で指すコマンド
+                // （rebuildModifierStack / saveScenarioFromModifierStack）を撃つのに要るが、
                 // 結果辞書を読む口が無いため、ここに無いと名前を知る術がない。
                 names.Add(g.Name ?? "");
                 actions.Add(g.Steps != null && g.Steps.Count > 0 ? (g.Steps[0].Action ?? "") : "");
@@ -94,13 +94,13 @@ namespace Poly_Ling.Player
 
             var store = model.DataStore;
             var entry = store.Put(PLDataEntry.FromValues(
-                ResolveResultName(store, cmd.ResultName, "objectGroups"), values,
+                ResolveResultName(store, cmd.ResultName, "modifierStacks"), values,
                 masterIndex: -1, objectId: 0UL,
-                source: PanelCommandFactory.ActionOf(typeof(QueryObjectGroupsCommand))));
+                source: PanelCommandFactory.ActionOf(typeof(QueryModifierStacksCommand))));
 
             return CommandDataJson.New()
                 .Entry("entry",   entry)
-                .Int("groups",    groups.Count)
+                .Int("stacks",    groups.Count)
                 .Int("stale",     staleCount)
                 .Texts("names",   names)
                 .Texts("actions", actions)
@@ -109,15 +109,15 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// オブジェクトグループの項目 1 つの引数（キー順）と、書けるか。
-        /// 書けるかは setObjectGroupStepArgs と同じ ObjectGroupOps.ArgWriteBlockReason で決める。
+        /// モディファイアスタックの項目 1 つの引数（キー順）と、書けるか。
+        /// 書けるかは setModifierStackStepArgs と同じ ModifierStackOps.ArgWriteBlockReason で決める。
         /// </summary>
-        private static string BuildObjectGroupStepArgsData(
-            ProjectContext project, ModelContext model, QueryObjectGroupStepArgsCommand cmd, out string error)
+        private static string BuildModifierStackStepArgsData(
+            ProjectContext project, ModelContext model, QueryModifierStackStepArgsCommand cmd, out string error)
         {
             error = null;
-            var g = model.FindObjectGroupByName(cmd.GroupName);
-            if (g == null) { error = $"グループが見つかりません: {cmd.GroupName}"; return null; }
+            var g = model.FindModifierStackByName(cmd.StackName);
+            if (g == null) { error = $"スタックが見つかりません: {cmd.StackName}"; return null; }
 
             var step = g.GetStep(cmd.StepIndex);
             if (step == null) { error = $"項目 {cmd.StepIndex} がありません（項目数 {g.StepCount}）"; return null; }
@@ -131,14 +131,14 @@ namespace Poly_Ling.Player
 
             var values = new List<PLDataValue>
             {
-                PLDataValue.Str("group",  g.Name ?? ""),
+                PLDataValue.Str("stack",  g.Name ?? ""),
                 PLDataValue.Num("step",   cmd.StepIndex),
                 PLDataValue.Str("action", step.Action ?? ""),
             };
 
             foreach (var kv in step.SortedArgs())
             {
-                string why = step.IsExecutable ? ObjectGroupOps.ArgWriteBlockReason(t, kv.Key) : "実行しない項目です";
+                string why = step.IsExecutable ? ModifierStackOps.ArgWriteBlockReason(t, kv.Key) : "実行しない項目です";
                 keys.Add(kv.Key);
                 vals.Add(kv.Value ?? "");
                 writable.Add(why == null ? 1 : 0);
@@ -152,9 +152,9 @@ namespace Poly_Ling.Player
 
             var store = model.DataStore;
             var entry = store.Put(PLDataEntry.FromValues(
-                ResolveResultName(store, cmd.ResultName, "objectGroupStepArgs"), values,
+                ResolveResultName(store, cmd.ResultName, "modifierStackStepArgs"), values,
                 masterIndex: -1, objectId: 0UL,
-                source: PanelCommandFactory.ActionOf(typeof(QueryObjectGroupStepArgsCommand))));
+                source: PanelCommandFactory.ActionOf(typeof(QueryModifierStackStepArgsCommand))));
 
             return CommandDataJson.New()
                 .Entry("entry",          entry)

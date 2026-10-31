@@ -74,7 +74,113 @@ namespace Poly_Ling.Player
         public void PresentAll(ProjectContext project)
         {
             if (_renderer == null) return;
+            // 計測（モディファイア高速化計画 段 8）。回数と累計時間。差分で使う。
+            long tPresent = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { PresentAllCore(project); }
+            finally
+            {
+                // 描画準備をしたので、後へ回した分は済んだ（段 9）。
+                _presentDeferred = false;
+                PresentCount++;
+                PresentMs += (System.Diagnostics.Stopwatch.GetTimestamp() - tPresent) * 1000.0
+                             / System.Diagnostics.Stopwatch.Frequency;
+            }
+        }
+
+        // ================================================================
+        // 描画準備を後へ回す区間（モディファイア高速化計画 段 9）
+        // ================================================================
+        //
+        // 一番外側の書き込みのあるコマンドの間、ドラッグ終了（EnterVerticesMoved(DragEnd)）と
+        // 作り直しを伴わない属性の変更（EnterMeshAttributesChanged）の PresentAll を呼ばずに印だけ立て、
+        // 区間を閉じるときに 1 回だけ行う。頂点ドラッグを離すと 1 コマンドで PresentAll が 4 回走っていた。
+        // 回すのはこの 2 か所と、コマンドの終わりの SettleWorldPositions(present: false) だけ。
+        // ほかの入口（作り直し・カメラ・選択など）とコマンドの途中の Settle は従来どおりその場で行う。
+
+        private int  _presentDeferDepth;
+        private bool _presentDeferred;
+
+        /// <summary>
+        /// 可視（Hidden / Locked）を GPU へ写す必要がある（段 14）。EnterMeshAttributesChanged が立て、
+        /// 次の PresentAll の SyncSelectionFlags が降ろす（選択の同期が走らないモードでも可視だけは写す）。
+        /// </summary>
+        private bool _visibilityPending;
+
+        /// <summary>描画準備を後へ回す区間を開く（入れ子可）。</summary>
+        public void BeginDeferPresent() => _presentDeferDepth++;
+
+        /// <summary>
+        /// 区間を閉じる。一番外側を閉じたとき、後へ回した描画準備があれば
+        /// PresentAll と重ね描きの更新を 1 回だけ行う。
+        /// </summary>
+        public void EndDeferPresent(ProjectContext project)
+        {
+            if (_presentDeferDepth > 0) _presentDeferDepth--;
+            if (_presentDeferDepth > 0 || !_presentDeferred) return;
+#pragma warning disable CS0618
+            PresentAll(project);
+#pragma warning restore CS0618
+            long tv = System.Diagnostics.Stopwatch.GetTimestamp();   // 計測（段 13）
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+            AddViewTiming("区間の終わり:重ね描き", tv);
+        }
+
+        /// <summary>区間の中なら印を立てて true（呼び出し側は PresentAll を呼ばない）。</summary>
+        private bool DeferPresent()
+        {
+            if (_presentDeferDepth <= 0) return false;
+            _presentDeferred = true;
+            return true;
+        }
+
+        /// <summary>PresentAll の回数の累計（計測用。段 8）。</summary>
+        public static int    PresentCount;
+        /// <summary>PresentAll の時間の累計 [ms]（計測用。段 8）。</summary>
+        public static double PresentMs;
+        /// <summary>パネルへの通知のうちパネル側（_panelContext.Notify と区画の更新）の時間の累計 [ms]（計測用。段 8）。</summary>
+        public static double PanelNotifyMs;
+
+        // ── 描画準備まわりの区間の累計（計測用。モディファイア高速化計画 段 13）。
+        //    コマンドの始めに ResetViewTiming し、終わりに ViewTimingText で読む。
+        private static readonly System.Collections.Generic.List<string> _viewTimingOrder
+            = new System.Collections.Generic.List<string>();
+        private static readonly System.Collections.Generic.Dictionary<string, long> _viewTiming
+            = new System.Collections.Generic.Dictionary<string, long>();
+
+        /// <summary>区間の累計を空にする（計測用。段 13）。</summary>
+        public static void ResetViewTiming() { _viewTiming.Clear(); _viewTimingOrder.Clear(); Poly_Ling.Core.RenderTiming.Reset(); }
+
+        /// <summary>start（Stopwatch.GetTimestamp の値）からここまでを label の累計へ足し、今の時刻を返す（計測用。段 13）。</summary>
+        public static long AddViewTiming(string label, long start)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (!Poly_Ling.Diagnostics.PLDiag.Timing) return now;   // 診断スイッチが切なら集計しない（段 15）
+            if (_viewTiming.TryGetValue(label, out long cur)) _viewTiming[label] = cur + (now - start);
+            else { _viewTiming[label] = now - start; _viewTimingOrder.Add(label); }
+            return now;
+        }
+
+        /// <summary>区間の累計を「名前 ms / …」で返す（計測用。段 13）。</summary>
+        public static string ViewTimingText()
+        {
+            var parts = new System.Collections.Generic.List<string>(_viewTimingOrder.Count);
+            foreach (var label in _viewTimingOrder)
+            {
+                double ms = _viewTiming[label] * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                parts.Add(label + " " + ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            string render = Poly_Ling.Core.RenderTiming.Text();
+            return string.Join(" / ", parts) + (render.Length > 0 ? "\n描画層の累計: " + render : "");
+        }
+
+        private void PresentAllCore(ProjectContext project)
+        {
             _lastProjectForPresent = project;
+            long tv = System.Diagnostics.Stopwatch.GetTimestamp();   // 計測（段 13）
 
             // 作業空間の下絵の四角形（ロック解除中）。代理の姿勢・画像・ロックのどれかが
             // 変わると何らかの Enter* を通るので、ここで決め直す。
@@ -119,16 +225,34 @@ namespace Poly_Ling.Player
                 }
             }
 
+            tv = AddViewTiming("P:下絵・ホバー", tv);
+
+            // 選択・可視フラグを GPU へ写す（モディファイア高速化計画 段 14）。slot に依らないので
+            // ここで 1 回だけ、面ごとのカリング（PrepareViewport）より前に行う。以前は
+            // PrepareWireframeAndVertices の中（最初の slot のカリングの後）で行い、さらに
+            // EnterMeshAttributesChanged が可視フラグだけを別に写していた（コマンド 1 回で 3 回）。
+            _renderer.SyncSelectionFlags(project, _visibilityPending);
+            _visibilityPending = false;
+            tv = AddViewTiming("P:選択・可視フラグ", tv);
+
             // ウェイト可視化の頂点カラーは slot に依存しない。
             // PrepareViewport 内に置くと 1 回の PresentAll で 4 回走り、
             // 対象メッシュぶんの Color 配列確保と mesh.colors 代入を毎回繰り返す。
             // 4 slot の Prepare より前に 1 回だけ実行する。
             _renderer.PrepareWeightVisualization(project);
+            AddViewTiming("P:ウェイトの色", tv);
 
-            PrepareViewport(project, PerspectiveViewport, SlotPerspective);
-            PrepareViewport(project, TopViewport,         SlotTop);
-            PrepareViewport(project, FrontViewport,       SlotFront);
-            PrepareViewport(project, SideViewport,        SlotSide);
+            // 同期は済ませたので、PrepareWireframeAndVertices に同期をさせない（段 14）。
+            _renderer.BeginPresent();
+            try
+            {
+                PrepareViewport(project, PerspectiveViewport, SlotPerspective);
+                PrepareViewport(project, TopViewport,         SlotTop);
+                PrepareViewport(project, FrontViewport,       SlotFront);
+                PrepareViewport(project, SideViewport,        SlotSide);
+            }
+            finally { _renderer.EndPresent(); }
+            tv = System.Diagnostics.Stopwatch.GetTimestamp();
 
             // アクティブビューポートのスクリーン座標を最終確定させる。
             //
@@ -156,6 +280,7 @@ namespace Poly_Ling.Player
                     }
                 }
             }
+            AddViewTiming("P:読み戻し", tv);
         }
 
         /// <summary>

@@ -2,7 +2,7 @@
 // PLDataStore のシリアライズ用データ構造。
 // Runtime/Poly_Ling_Main/Core/Serialization/ に配置
 //
-// 【形は ObjectGroupDTO に合わせる】
+// 【形は ModifierStackDTO に合わせる】
 //   JsonUtility が扱える形（配列は List、Dictionary は使えない、
 //   入れ子の配列は持てない）に落とす。
 //
@@ -17,7 +17,7 @@
 //
 // 【ObjectId は文字列で持つ】
 //   ulong は JsonUtility が扱えない。10 進の文字列にして往復させる
-//   （ObjectGroupDTO と同じ）。
+//   （ModifierStackDTO と同じ）。
 
 using System;
 using System.Collections.Generic;

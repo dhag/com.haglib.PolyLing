@@ -1,5 +1,5 @@
 // ModelSerializer_Data.cs
-// マテリアル参照・選択セット・モーフ・ミラーペア・データストア・オブジェクトグループ・BonePose の変換。
+// マテリアル参照・選択セット・モーフ・ミラーペア・データストア・モディファイアスタック・BonePose の変換。
 // Runtime/Poly_Ling_Main/Core/Serialization/ に配置
 
 using System;
@@ -633,7 +633,7 @@ namespace Poly_Ling.Serialization
         // DataStore シリアライズ
         //
         // 【索引の付け替えが要らない】
-        //   項目は対象を MasterIndex と ObjectId の両方で持つ。ObjectGroups と
+        //   項目は対象を MasterIndex と ObjectId の両方で持つ。ModifierStacks と
         //   同じく、読み込み後の索引補正を掛けない。
         //
         // 【差し替えではなく中身の入れ替え】
@@ -682,55 +682,55 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
-        // ObjectGroups シリアライズ
+        // ModifierStacks シリアライズ
         //
         // 【索引の付け替えが要らない】
-        //   ObjectGroup の参照は ObjectId で、保存往復でも値が変わらない。
+        //   ModifierStack の参照は ObjectId で、保存往復でも値が変わらない。
         //   MorphExpressions（索引参照）のように読み込み後の補正が要らない。
         //
         // 【引けない参照は残す】
-        //   参照先が保存に含まれていなくてもグループは捨てない。
+        //   参照先が保存に含まれていなくてもスタックは捨てない。
         //   部分書き出し／部分読み込みで一時的に引けないことがあるため。
         //   参照切れは ModelInvariantChecker が報告し、片づけは
-        //   ObjectGroupOps.PurgeMissing（明示操作）で行う。
+        //   ModifierStackOps.PurgeMissing（明示操作）で行う。
         // ================================================================
 
         /// <summary>
-        /// ModelContextのオブジェクトグループをModelDTOに保存
+        /// ModelContextのモディファイアスタックをModelDTOに保存
         /// </summary>
-        public static void SaveObjectGroupsToDTO(ModelContext model, ModelDTO modelDTO)
+        public static void SaveModifierStacksToDTO(ModelContext model, ModelDTO modelDTO)
         {
             if (model == null || modelDTO == null) return;
 
-            modelDTO.objectGroups = new List<ObjectGroupDTO>();
+            modelDTO.modifierStacks = new List<ModifierStackDTO>();
 
-            if (model.ObjectGroups != null)
+            if (model.ModifierStacks != null)
             {
-                foreach (var g in model.ObjectGroups)
+                foreach (var g in model.ModifierStacks)
                 {
-                    var dto = ObjectGroupDTO.FromObjectGroup(g);
+                    var dto = ModifierStackDTO.FromModifierStack(g);
                     if (dto != null)
-                        modelDTO.objectGroups.Add(dto);
+                        modelDTO.modifierStacks.Add(dto);
                 }
             }
         }
 
         /// <summary>
-        /// ModelDTOのオブジェクトグループをModelContextに復元
+        /// ModelDTOのモディファイアスタックをModelContextに復元
         /// </summary>
-        public static void LoadObjectGroupsFromDTO(ModelDTO modelDTO, ModelContext model)
+        public static void LoadModifierStacksFromDTO(ModelDTO modelDTO, ModelContext model)
         {
             if (modelDTO == null || model == null) return;
 
-            model.ObjectGroups = new List<Data.ObjectGroup>();
+            model.ModifierStacks = new List<Data.ModifierStack>();
 
-            if (modelDTO.objectGroups != null)
+            if (modelDTO.modifierStacks != null)
             {
-                foreach (var dto in modelDTO.objectGroups)
+                foreach (var dto in modelDTO.modifierStacks)
                 {
-                    var g = dto?.ToObjectGroup();
+                    var g = dto?.ToModifierStack();
                     if (g != null)
-                        model.ObjectGroups.Add(g);
+                        model.ModifierStacks.Add(g);
                 }
             }
         }

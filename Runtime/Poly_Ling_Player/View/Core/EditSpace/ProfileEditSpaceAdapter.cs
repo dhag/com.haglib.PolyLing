@@ -22,7 +22,7 @@ namespace Poly_Ling.Player
         /// <summary>断面の種類。</summary>
         public ProfileEditKind ProfileKind { get; }
 
-        /// <summary>取り込み元として控える代理の索引を引く口（オブジェクトグループの作り直し用）。</summary>
+        /// <summary>取り込み元として控える代理の索引を引く口（モディファイアスタックの作り直し用）。</summary>
         private readonly System.Func<MeshContext, int> _indexOf;
 
         public ProfileEditSpaceAdapter(PlayerPrimitiveMeshSubPanel panel, ProfileEditKind kind,

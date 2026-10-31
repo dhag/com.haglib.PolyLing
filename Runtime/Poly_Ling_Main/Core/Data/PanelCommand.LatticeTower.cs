@@ -1,19 +1,19 @@
 // PanelCommand.LatticeTower.cs
 // 鉄塔：塔体・デッキの図形生成コマンドと、空の親の下へ塔体とデッキを子として作るコマンド、
-// 既存の鉄塔へデッキを足すコマンド、グループの項目の配置元を差し替えるコマンド。
+// 既存の鉄塔へデッキを足すコマンド、スタックの項目の配置元を差し替えるコマンド。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置（PanelCommand.cs と同じ名前空間）
 //
 // 【鉄塔（CreateTowerAssemblyCommand）】
 //   魔法陣（CreateMagicCircleCommand）と同じ形。頂点を持たない空の親を 1 つ作り、
 //   elements の部品（先頭は塔体 createLatticeTower、続いてデッキ createTowerDeck）を
-//   順にその子として作る。部品の並びは 1 件のオブジェクトグループになる。
+//   順にその子として作る。部品の並びは 1 件のモディファイアスタックになる。
 //   elements の書き方・配置の上書きは MagicCircleElementCodec と同じ。
 //
 // 【デッキの後付け（AddTowerDeckCommand）】
-//   鉄塔の塔体・デッキ・親のどれか 1 つを指すと、その鉄塔のグループを探し、
-//   デッキを親の子として作ってグループの末尾へ項目を足す。
+//   鉄塔の塔体・デッキ・親のどれか 1 つを指すと、その鉄塔のスタックを探し、
+//   デッキを親の子として作ってスタックの末尾へ項目を足す。
 //
-// 【配置元の差し替え（ReplaceObjectGroupSourceCommand）】
+// 【配置元の差し替え（ReplaceModifierStackSourceCommand）】
 //   出力先のオブジェクトを指すと、それを作った項目を探し、その項目が控えている配置元
 //   （placement 以外で、ObjectId を控えている索引の引数がちょうど 1 つ）を差し替えて、
 //   その項目だけ作り直す。デッキの取り替えに使う。魔法陣の円周配置にも効く。
@@ -50,7 +50,7 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets,
         Description = "配置元オブジェクトを塔の軸（原点を通る Y 軸）上の指定の高さへ置く。複数なら結合して置く。鉄塔のデッキに使う。")]
-    [PLModifier(Capture = PLGroupCapture.OnKeepAsGroup, Inverse = ModifierInverseMethod.TowerDeck,
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.TowerDeck,
         InverseKeeps = "配置元・中心の合わせ方",
         InverseLoses = "XZ のずれ、Y 軸以外の回転、歪み")]
     public sealed class CreateTowerDeckCommand : CreatePrimitiveMeshCommand
@@ -84,8 +84,8 @@ namespace Poly_Ling.Data
 
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
-        Description = "鉄塔を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品を順にその子として作る。先頭は塔体（createLatticeTower）、続いてデッキ（createTowerDeck）を任意の数。部品の並びは 1 件のオブジェクトグループとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createTowerDeck;params.height=1.5;sourceMasterIndices=3）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・グループ化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
-    [PLModifier(Capture = PLGroupCapture.Assembly)]   // PlayerCommandDispatcher.LatticeTower.cs → ExecuteEmptyParentAssembly
+        Description = "鉄塔を作る。頂点を持たない空の親オブジェクトを 1 つ作り、elements の部品を順にその子として作る。先頭は塔体（createLatticeTower）、続いてデッキ（createTowerDeck）を任意の数。部品の並びは 1 件のモディファイアスタックとして残り、作り直せる。全体の位置・回転・大きさは親が持つ。elements の 1 要素は「action;キー=値;…」（例: createTowerDeck;params.height=1.5;sourceMasterIndices=3）。値に ; = , \" を含むときは URL エンコードする。部品の placement の位置・回転・拡大・追加先・スタック化は無視される。モデルが無ければ図形生成と同じくプロジェクトとモデルを作る。")]
+    [PLModifier(Capture = PLStackCapture.Assembly)]   // PlayerCommandDispatcher.LatticeTower.cs → ExecuteEmptyParentAssembly
     public sealed class CreateTowerAssemblyCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshName", Description = "親オブジェクトの名前。重なるときは番号を付ける", Required = true)]
@@ -117,8 +117,8 @@ namespace Poly_Ling.Data
 
     [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.AddOnly,
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
-        Description = "既存の鉄塔へデッキを足す。towerIndex は鉄塔の塔体・デッキ・親のどれか。デッキは鉄塔の親の子として作り、鉄塔のオブジェクトグループの末尾へ項目を足す。")]
-    [PLModifier(Capture = PLGroupCapture.ViaSteps)]   // createTowerDeck を鉄塔のグループへ足す（PlayerCommandDispatcher.LatticeTower.cs）
+        Description = "既存の鉄塔へデッキを足す。towerIndex は鉄塔の塔体・デッキ・親のどれか。デッキは鉄塔の親の子として作り、鉄塔のモディファイアスタックの末尾へ項目を足す。")]
+    [PLModifier(Capture = PLStackCapture.ViaSteps)]   // createTowerDeck を鉄塔のスタックへ足す（PlayerCommandDispatcher.LatticeTower.cs）
     public sealed class AddTowerDeckCommand : PanelCommand
     {
         [PLParam(TextKey = "TowerTarget", Description = "鉄塔の塔体・デッキ・親のどれかの索引", Required = true,
@@ -149,13 +149,13 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
-    // オブジェクトグループ
+    // モディファイアスタック
     // ================================================================
 
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.Targets,
+    [PLCommand(Category = "object.modifier", Writes = PLWriteScope.Targets,
         Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Visual,
-        Description = "オブジェクトグループの項目の配置元を差し替えて、その項目だけ作り直す。outputIndex はその項目が作ったオブジェクト（鉄塔のデッキ、魔法陣の円周配置など）。差し替えるのは、その項目が控えている配置元（placement 以外の索引の引数）で、ちょうど 1 つのときだけ。")]
-    public sealed class ReplaceObjectGroupSourceCommand : PanelCommand
+        Description = "モディファイアスタックの項目の配置元を差し替えて、その項目だけ作り直す。outputIndex はその項目が作ったオブジェクト（鉄塔のデッキ、魔法陣の円周配置など）。差し替えるのは、その項目が控えている配置元（placement 以外の索引の引数）で、ちょうど 1 つのときだけ。")]
+    public sealed class ReplaceModifierStackSourceCommand : PanelCommand
     {
         [PLParam(TextKey = "GroupOutputTarget", Description = "差し替える項目が作ったオブジェクトの索引", Required = true,
                  IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write)]
@@ -165,7 +165,7 @@ namespace Poly_Ling.Data
                  IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
         public int[] SourceMasterIndices { get; }
 
-        public ReplaceObjectGroupSourceCommand(int modelIndex, int outputIndex, int[] sourceMasterIndices)
+        public ReplaceModifierStackSourceCommand(int modelIndex, int outputIndex, int[] sourceMasterIndices)
             : base(modelIndex)
         {
             OutputIndex         = outputIndex;

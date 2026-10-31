@@ -62,6 +62,16 @@ namespace Poly_Ling.Player
         public const string CmdMergeVerticesCentroid  = "edit.mergeVerticesCentroid";
         public const string CmdMergeVerticesThreshold = "edit.mergeVerticesThreshold";
 
+        // 選択部分のコピー・カット・貼り付け・その場で複製（Blender の操作に合わせる）。
+        //   paste          … 編集対象のオブジェクトの末尾へ貼る
+        //   pasteNewObject … 新しいオブジェクトとして貼る
+        //   duplicate      … 同じオブジェクトへその場で複製し、頂点移動ツールへ切り替える
+        public const string CmdCopy           = "edit.copy";
+        public const string CmdCut            = "edit.cut";
+        public const string CmdPaste          = "edit.paste";
+        public const string CmdPasteNewObject = "edit.pasteNewObject";
+        public const string CmdDuplicate      = "edit.duplicate";
+
         // 右ペインのオブジェクトリストを開く。
         public const string CmdPanelMeshList      = "panel.meshList";
 
@@ -130,6 +140,11 @@ namespace Poly_Ling.Player
             m.Set(KeyCode.J, true,  false, false, CmdMergeVerticesCentroid);  // Ctrl+J       : 選択頂点を重心へ結合
             m.Set(KeyCode.J, true,  true,  false, CmdMergeVerticesThreshold); // Ctrl+Shift+J : しきい値で結合
             m.Set(KeyCode.O, true,  false, false, CmdPanelMeshList);          // Ctrl+O       : オブジェクトリスト
+            m.Set(KeyCode.C, true,  false, false, CmdCopy);                   // Ctrl+C       : 選択部分のコピー
+            m.Set(KeyCode.X, true,  false, false, CmdCut);                    // Ctrl+X       : 選択部分のカット
+            m.Set(KeyCode.V, true,  false, false, CmdPaste);                  // Ctrl+V       : 編集対象へ貼り付け
+            m.Set(KeyCode.V, true,  true,  false, CmdPasteNewObject);         // Ctrl+Shift+V : 新規オブジェクトとして貼り付け
+            m.Set(KeyCode.D, false, true,  false, CmdDuplicate);              // Shift+D      : その場で複製
 
             // 図形生成: プレフィックス P を押してから形状キー (サブメニューを開くだけ)。
             //   例) P → C = 立方体。P の後の 2キー目は上の単発割当とは独立
