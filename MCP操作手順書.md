@@ -159,6 +159,7 @@ JSON の配列をそのまま渡すと断られる。
   例：`argValues` = `"D:/…/PolyLing/SandBox/curve_test/stage4_cmd2.plmotion.json,1,0"`
 - 保存は `saveMotionClipJson`（`filePath`）。作業フォルダの直下には置けないので、`SandBox/…` の下にする
 - `edit` の無いクリップ（version 4 以前など）も編集できる。最初の書き込みで、トラックごとにクリップ 1 本の `edit` が作られる。
+  照会は作られる形で答え、クリップは変えない（結果の `editHeld` が false）
 - 派生のトラック（`rotationSource` が `"bakedBones"` のときの muscles・body、そうでないときの bakedBones）は `edit` に入らず、書き込みはエラーになる。
   照会の `trackDerived` と `uncoveredFlat` で分かる
 
