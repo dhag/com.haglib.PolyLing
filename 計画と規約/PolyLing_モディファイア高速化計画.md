@@ -70,11 +70,11 @@
   切のときは lastPass に「区間:」「内訳（合計）」「区間の累計」「描画層の累計」「〔集合の判定…〕」が出ない。
   段 0〜9 の行（作り直しの数・Settle・通知・コマンド全体・PresentAll の回数）は常に出る。
 
-### D. 評価に出す前の確認で残っているもの（段 15）
+### D. 監査で 0 でない既存の項目（段 15 の確認で見えたもの。段 15 の変更によるものではない）
 
-- D1：段 15 の変更は dotnet build（Runtime・Editor・Assembly-CSharp）でエラー 0。Unity 上での確認（コンパイル、
-  `queryCommandAudit` が全項目 0、切のまま区間の行が出ない・入れると出る、表示の切り替えの前後でキャプチャが一致）は未実施。
-  作業の終わりに Unity が MCP に応答しなかった（unity_state・unity_validate_changes が時間内に返らなかった）ため。
+- D1：`queryCommandAudit` の「Category が正典に無い 10」（scenario.log 4 本・external.comfyui 4 本・geometry.create.profile 2 本）と
+  「スキーマに出せない 3」（AddGeneratedMesh・AddModelBundle・ReplaceModelBundle。Ignore 指定で既定値が無い）。
+  `setDiagnosticTiming` はどちらにも入っていない。
 
 
 2026-10-31 段 0〜6 を実施。
@@ -284,19 +284,20 @@
 - 切り替える口：ログパネル「診断ログ」の「時間の計測 (Timing)」（`PlayerLogSubPanel`。Refresh で値を写し直す）と、
   コマンド `setDiagnosticTiming`（`SetDiagnosticTimingCommand`、分類 verify、Writes None、NoUi。戻り値 enabled。
   `PlayerCommandDispatcher.Scenario.cs` で受け、`RemoteOwnership.IsScenario` に足した＝リモート接続からは実行できない）。
-- 確認：dotnet build（PolyLing.Runtime / PolyLing.Editor / Assembly-CSharp）でエラー 0。Unity 上の確認は未実施（残件 D1）。
+- 確認：
+  - dotnet build（PolyLing.Runtime / PolyLing.Editor / Assembly-CSharp）と unity_validate_changes でエラー 0。
+  - `queryCommandAudit`：`setDiagnosticTiming` に当たる項目は無い（0 でない項目は既存のものだけ。残件 D1）。
+  - 髪の同じドラッグ：切のまま（既定）は lastPass に「区間:」「区間の累計」「描画層の累計」「〔集合の判定…〕」が出ない
+    （コマンド全体 966.1 ms）。`setDiagnosticTiming enabled=true` の後は出る（コマンド全体 1119.6 ms。この回は HairBelt の
+    実行の残りが 48.2 ms で、段 13・14 と同じ振れ）。
+  - 切に戻して表示の切り替えの前後でキャプチャが一致（speed15/PolyLingCapture_0002 / 0003、238250 バイト）。
+    この回から Unity の窓の大きさが変わり、MainView は 616×625（以前は 276×625）。
 
 ## 次の会話へのプロンプト
 
 ```
 PolyLing モディファイア高速化の続き。正本は Packages/com.haglib.polyling/計画と規約/PolyLing_モディファイア高速化計画.md
 （段 0〜15 は 2026-10-31〜11-01 に実施済み。先に「残件」の節と「経過」の段 13〜15 を読むこと）。
-
-最初に残件 D1（段 15 の Unity 上の確認）を済ませる：
-- unity_validate_changes でコンパイルを確かめ、polyling_call queryCommandAudit が全項目 0 であること。
-- 時間の計測は既定で切。切のまま下の手順でドラッグし、lastPass に「区間:」「区間の累計」「描画層の累計」が出ないこと。
-  setDiagnosticTiming enabled=true にして同じドラッグをし、出ること。
-- 表示の切り替え（setBatchVisibility false→true）の前後でキャプチャが一致すること。
 
 計測の手順（前回と同じ条件で測る）：
 - 計測の前に setDiagnosticTiming enabled=true を入れる（既定は切。起動をまたいで覚えない）。
@@ -310,7 +311,8 @@ PolyLing モディファイア高速化の続き。正本は Packages/com.haglib
   効かないことがあるので、querySelectionState の modelRevision が増えたかで確かめる。効かないまま次のドラッグをすると
   空いた所をクリックして選択が消える。
 - ギズモの位置は querySelectionState の origin（MainView のキャプチャ座標）で読み、unity_capture target=MainView で
-  確かめてから画面座標へ直す。Unity の窓の位置は動くことがある。
+  確かめてから画面座標へ直す。Unity の窓の位置と大きさは変わることがある（段 15 で MainView が 616×625 になった）。
+  計測の値を前の段と比べるときは、窓の大きさが同じかも確かめる。
 - queryModifierGraph の lastPass の「内訳」を読む。項目ごとの区間、「内訳（合計）」、コマンド全体の PresentAll、
   「区間の累計」（P: PresentAll の中 / C: コマンドの外枠 / 属性: / Settle:）、「描画層の累計」が出る。
 - 表示の確認は表示の切り替え（setBatchVisibility を false→true）の前後でキャプチャを撮り、一致を見る。
