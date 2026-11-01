@@ -7,6 +7,7 @@
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Remote;
 
 namespace Poly_Ling.Player
 {
@@ -65,31 +66,40 @@ namespace Poly_Ling.Player
                 });
         }
 
-        /// <summary>起動引数でリモートモードを指定する引数名。値は client / server / none。</summary>
-        public const string RemoteModeArg = "--polyling-remote=";
-
         /// <summary>
-        /// 起動引数 --polyling-remote=client|server|none があれば、シーンの設定より優先する。
-        /// 同じビルドをクライアントにもサーバにもして起動するため（MCP の player_launch が渡す）。
-        /// 引数が無い・値が不明なら、シーンの設定のまま。
+        /// 起動引数 --polyling-remote=<役割>（PolyLingLaunchArgs.cs）があれば、シーンの設定より優先する。
+        /// 同じビルドをサーバにもクライアントにもして起動するため（MCP の player_launch が渡す）。
+        ///   server → サーバ、separate → クライアント（本体ビューアのクライアントは個別作業で登録する）、none → リモートなし。
+        ///   host / collaborator は本体ビューアでは扱えないので、エラーを出してリモートなし。
+        ///   値が不明なときもエラーを出してリモートなし（指定を黙って取り違えないため）。
+        /// 引数が無ければシーンの設定のまま。
         /// </summary>
         private static PolyLingPlayerViewerCore.RemoteMode ResolveRemoteMode(PolyLingPlayerViewerCore.RemoteMode sceneMode)
         {
-            foreach (var arg in System.Environment.GetCommandLineArgs())
+            const string tag = "[PolyLingPlayerViewer]";
+            if (!PolyLingLaunchArgs.TryGetRemoteRole(out bool present, out LaunchRemoteRole role, out string error))
             {
-                if (arg == null || !arg.StartsWith(RemoteModeArg, System.StringComparison.OrdinalIgnoreCase)) continue;
-                string v = arg.Substring(RemoteModeArg.Length).Trim().ToLowerInvariant();
-                switch (v)
-                {
-                    case "client": Debug.Log("[PolyLingPlayerViewer] 起動引数でクライアント"); return PolyLingPlayerViewerCore.RemoteMode.Client;
-                    case "server": Debug.Log("[PolyLingPlayerViewer] 起動引数でサーバ");       return PolyLingPlayerViewerCore.RemoteMode.Server;
-                    case "none":   Debug.Log("[PolyLingPlayerViewer] 起動引数でリモートなし"); return PolyLingPlayerViewerCore.RemoteMode.None;
-                    default:
-                        Debug.LogWarning($"[PolyLingPlayerViewer] 起動引数の値が不明です: {arg}（シーンの設定を使う）");
-                        return sceneMode;
-                }
+                if (!present) return sceneMode;
+                Debug.LogError($"{tag} {error}。リモートなしで起動します");
+                return PolyLingPlayerViewerCore.RemoteMode.None;
             }
-            return sceneMode;
+
+            switch (role)
+            {
+                case LaunchRemoteRole.Server:
+                    Debug.Log($"{tag} 起動引数でサーバ");
+                    return PolyLingPlayerViewerCore.RemoteMode.Server;
+                case LaunchRemoteRole.Separate:
+                    Debug.Log($"{tag} 起動引数でクライアント（個別作業）");
+                    return PolyLingPlayerViewerCore.RemoteMode.Client;
+                case LaunchRemoteRole.None:
+                    Debug.Log($"{tag} 起動引数でリモートなし");
+                    return PolyLingPlayerViewerCore.RemoteMode.None;
+                default:
+                    Debug.LogError($"{tag} {PolyLingLaunchArgs.RemoteArg}{role.ToString().ToLowerInvariant()} は本体ビューアでは扱えません"
+                                 + "（本体ビューアのクライアントは separate 固定。host / collaborator はリストクライアントのシーンで使う）。リモートなしで起動します");
+                    return PolyLingPlayerViewerCore.RemoteMode.None;
+            }
         }
 
         // Phase 2a-2f: MonoBehaviour.Update / LateUpdate はイベント駆動規約に違反するため削除。

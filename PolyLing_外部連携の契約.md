@@ -26,10 +26,20 @@ PLR 系バイナリ（`project_header`・`mesh_data` など）・CSV・ProjectDT
 | ポート | 方式 | 役割 | 受け口（C#） |
 |---|---|---|---|
 | 8770 | TCP・1 行 JSON | MCP（Editor）。`ping` / `tools*` / `scenes` / `call` ほか Editor 操作 | `Editor/EditorControl/PolyLingEditorControlServer.cs` |
-| 8772 | TCP・1 行 JSON | MCP（ビルド版）。8770 と同じ共通部 | `Runtime/Poly_Ling_Player/Remote/PolyLingPlayerControlServer.cs` |
+| 8772（既定） | TCP・1 行 JSON | MCP（ビルド版）。8770 と同じ共通部。起動引数 `--polyling-control-port=N` で変える。本体ビューアのシーンだけが立てる（リストクライアントだけのシーンには無い） | `Runtime/Poly_Ling_Player/Remote/PolyLingPlayerControlServer.cs` |
 | 8760 | TCP | リモートのサーバ一覧（マスター）。問い合わせと登録 | `Runtime/Poly_Ling_Remote/RemoteDirectory.cs` |
 | 一覧で公開 | WebSocket（Duplex 封筒） | リモート（パネル・Python など）。query / command / push、PolyLing → クライアントの要求 | `Runtime/Poly_Ling_Remote/RemoteServerCore*.cs` |
 | 12361（既定） | WebSocket（Duplex 封筒） | ライブ（マッスル・MediaPipe・detectImage） | `Runtime/Poly_Ling_Player/View/ToolHandlers/MotionLiveHandler.cs` |
+
+### ビルド版の起動引数（`Runtime/Poly_Ling_Remote/PolyLingLaunchArgs.cs`）
+
+| 引数 | 値 | 効き方 |
+|---|---|---|
+| `--polyling-remote=` | `server` / `host` / `collaborator` / `separate` / `none`（ビルド構成の `role` と同じ） | シーン・インスペクタの設定より優先。本体ビューア：server＝サーバ、separate＝クライアント（個別作業で登録）、none＝リモートなし、host / collaborator と不明な値はエラーでリモートなし。リストクライアント（`ListClientBase`）：host / collaborator / separate をその種別で登録、server / none と不明な値はエラーで接続しない |
+| `--polyling-user=` | 名前 | リストクライアントが登録するユーザー名（インスペクタより優先）。同じ PC の collaborator はホスト名（端末名）と別の名前が要る |
+| `--polyling-control-port=` | 1〜65535 | MCP の受付ポート（無ければ 8772）。不正な値なら受付を立てない |
+
+旧値 `--polyling-remote=client` は廃止（`separate` を使う）。
 
 ### Duplex 封筒（WebSocket の Text フレーム・Binary フレーム）
 
@@ -104,9 +114,21 @@ MCP の `call` はこれらを応答の直下に、リモートの `command` は
 ### 3.4 登録と版（リモート）
 
 ```
-{"type":"command","action":"register","params":{"clientType":"…","userName":"…","capabilities":"action1,action2"}}
+{"type":"command","action":"register","params":{"clientType":"…","userName":"…","role":"host|collaborator|separate","capabilities":"action1,action2"}}
 ```
-- ack の `data` に `protocolVersion`（現在 1）が入る。`server_info` にも入る。
+- `role`（種別）は必須。選択の振り分けと操作者（担当ロック）はユーザー名ではなく role だけで決まる（`Remote/RemoteClientRole.cs`、`PolyLing_クライアント種別とビルド構成計画.md`）。
+
+  | role | 呼び名 | 作業の場所 | 選択 | 操作者 |
+  |---|---|---|---|---|
+  | `host` | 本人連動 | サーバ | ホストの選択そのもの（selectMesh で本体が動き、本体の選択が `selectionChanged` で届く） | ホスト名 |
+  | `collaborator` | 別作業者連動 | サーバ | サーバ上の本人用の枠（本体も他人も動かない） | `userName`（必須・ホスト名と別） |
+  | `separate` | 個別作業 | 手元のコピー | 手元だけ。selectMesh を送ると拒否、`selectionChanged` も届かない | `userName` |
+
+  - role が無い・未知の値、`collaborator` で `userName` が空かホスト名と同じ場合は、登録を拒否して `success:false` と理由を返す。
+  - `separate` のコマンドは本人用の選択の枠を持たないので、「今の選択」を見るコマンドはホストの選択で動く。個別作業からサーバへ上げるときは対象を引数で明示するコマンド（`putModel` など）を使う。
+  - 本人連動の窓が切断しても、ホストの担当ロックは外れない。
+- ack の `data` に `protocolVersion`（現在 1）・`role`・`actorName`（サーバが決めた操作者名）が入る。`protocolVersion` は `server_info` にも入る。
+- クライアント一覧（`BuildClientListJson`）にも `role`・`actorName` が入る。
 - `capabilities` は、PolyLing からの要求（3.5）でそのクライアントが受けられる action の一覧。
 
 ### 3.5 PolyLing → クライアントの要求

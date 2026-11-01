@@ -17,6 +17,7 @@
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Player;
+using Poly_Ling.Remote;
 
 namespace Poly_Ling.ListClient
 {
@@ -110,7 +111,8 @@ namespace Poly_Ling.ListClient
         {
             SetStatus("接続済（probe 登録）");
             // 自タイプを登録してから server_info を取得する。
-            _client.RegisterClientType("probe", _userName);
+            // 状態を見るだけで選択はサーバへ送らないので個別作業。
+            _client.RegisterClientType("probe", RemoteClientRole.Separate, _userName);
             RequestServerInfo();
         }
 

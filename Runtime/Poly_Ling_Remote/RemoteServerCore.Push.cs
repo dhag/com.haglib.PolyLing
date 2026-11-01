@@ -411,28 +411,66 @@ namespace Poly_Ling.Remote
             if (PeekJsonString(json, "action") != "register") return false;
 
             string clientType = PeekJsonString(json, "clientType") ?? "";
-            string userName   = PeekJsonString(json, "userName")   ?? "";
+            string userName   = (PeekJsonString(json, "userName") ?? "").Trim();
+            string roleText   = PeekJsonString(json, RemoteClientRoles.ParamName);
             string id         = PeekJsonString(json, "id");
             string capsCsv    = PeekJsonString(json, "capabilities") ?? "";
             var caps = new List<string>();
             foreach (var c in capsCsv.Split(','))
                 if (!string.IsNullOrWhiteSpace(c)) caps.Add(c.Trim());
 
+            // 種別（role）は必須。振り分けはユーザー名ではなく role で決める（RemoteClientRole.cs）。
+            string refuse = null;
+            if (!RemoteClientRoles.TryParse(roleText, out var role))
+                refuse = $"register には role（{RemoteClientRoles.HostWire} / {RemoteClientRoles.CollaboratorWire} / "
+                       + $"{RemoteClientRoles.SeparateWire}）が要ります: \"{roleText ?? ""}\"";
+            else if (role == RemoteClientRole.Collaborator
+                     && (string.IsNullOrEmpty(userName) || userName == HostUserName))
+                refuse = $"role={RemoteClientRoles.CollaboratorWire} にはホスト（\"{HostUserName}\"）と別のユーザー名が要ります。"
+                       + $"本体と連動させるなら role={RemoteClientRoles.HostWire} にしてください。";
+            if (refuse != null)
+            {
+                Log($"register 拒否: type=\"{clientType}\" user=\"{userName}\" role=\"{roleText}\" — {refuse}");
+                SendReply(channel, request,
+                    new TypedPayload().AddJson(BuildErrorResponse(id, refuse, CommandErrorCodes.InvalidArgs)), isRequest);
+                return true;
+            }
+
             _clientRegistry[channel] = new ClientRegistration
             {
-                ClientType = clientType, UserName = userName, Capabilities = caps.ToArray(),
+                ClientType = clientType, UserName = userName, Role = role, Capabilities = caps.ToArray(),
             };
-            Log($"register: type=\"{clientType}\" user=\"{userName}\" caps=[{string.Join(",", caps)}] (clients={_clientRegistry.Count})");
+            Log($"register: type=\"{clientType}\" user=\"{userName}\" role={RemoteClientRoles.ToWire(role)} "
+              + $"caps=[{string.Join(",", caps)}] (clients={_clientRegistry.Count})");
 
-            // 協働編集: このユーザーの選択スロットを用意する。
-            // 初回はホストの現在選択を種にして、いきなり無選択にならないようにする。
-            // 2枚目以降のパネルは既存スロットを共有する（同じ人の画面は連動）。
+            // 選択：
+            //   host         … ホストの選択を送る（本体と連動）。
+            //   collaborator … 本人用の枠を用意する。初回はホストの現在選択を種にし、いきなり無選択にならないようにする。
+            //                  同じ名前の 2 枚目以降の窓は既存の枠を共有する（同じ人の画面は連動）。
+            //   separate     … 選択は手元で持つので何も送らない。同名の枠が残っていて使う窓が無ければ消す
+            //                  （枠が残ると、その名前のコマンドが枠の選択で動いてしまう）。
+            string actor = ActorNameOf(_clientRegistry[channel]);
             UserSelection slot = null;
-            if (!string.IsNullOrEmpty(userName))
+            switch (role)
             {
-                var model = Context?.Model;
-                int mi    = Context?.Project?.CurrentModelIndex ?? 0;
-                slot = _selectionStore.GetOrCreate(userName, UserSelection.Capture(model, mi));
+                case RemoteClientRole.Host:
+                {
+                    var model = Context?.Model;
+                    int mi    = Context?.Project?.CurrentModelIndex ?? 0;
+                    if (model != null) slot = UserSelection.Capture(model, mi);
+                    break;
+                }
+                case RemoteClientRole.Collaborator:
+                {
+                    var model = Context?.Model;
+                    int mi    = Context?.Project?.CurrentModelIndex ?? 0;
+                    slot = _selectionStore.GetOrCreate(userName, UserSelection.Capture(model, mi));
+                    break;
+                }
+                default:
+                    if (!string.IsNullOrEmpty(userName) && !HasCollaborator(userName))
+                        _selectionStore.Remove(userName);
+                    break;
             }
 
             var data = new JsonBuilder();
@@ -440,15 +478,17 @@ namespace Poly_Ling.Remote
             data.KeyValue("registered",      true);
             data.KeyValue("clientType",      clientType);
             data.KeyValue("userName",        userName);
+            data.KeyValue("role",            RemoteClientRoles.ToWire(role));
+            data.KeyValue("actorName",       actor);
             data.KeyValue("protocolVersion", ProtocolVersion);
             data.EndObject();
 
             var reply = new TypedPayload().AddJson(BuildSuccessResponse(id, data.ToString()));
             SendReply(channel, request, reply, isRequest);
 
-            // ack の直後に、このユーザー自身の選択を返して画面を合わせる。
+            // ack の直後に、この操作者の選択を返して画面を合わせる。
             // 全体 push ではないので他ユーザーの画面は動かない。
-            if (slot != null) SendSelectionToUser(userName, slot);
+            if (slot != null) SendSelectionToUser(actor, slot);
 
             RaiseClientsChanged();
             return true;

@@ -161,7 +161,8 @@ namespace Poly_Ling.EditorIO
                 ? SystemInfo.deviceName
                 : _userName.Trim();
 
-            _client.RegisterClientType(CurrentClientTypeId, name);
+            // 送られてくるヒエラルキーを受けるだけで選択はサーバへ送らないので個別作業。
+            _client.RegisterClientType(CurrentClientTypeId, RemoteClientRole.Separate, name);
         }
 
         private void DrawConnectionSection()

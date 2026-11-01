@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "editor": {
+    "name": "editor",
+    "port": 8770
+  },
+  "builds": [
+    {
+      "name": "player",
+      "scenes": [],
+      "exe": "ビルド用/PolyLing.exe",
+      "role": "server",
+      "port": 8772,
+      "user": ""
+    }
+  ]
+}

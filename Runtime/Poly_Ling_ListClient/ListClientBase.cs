@@ -30,8 +30,22 @@ namespace Poly_Ling.ListClient
         [Tooltip("サーバが見つからない/未接続時に、サーバ一覧を問い合わせ直す間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
-        [Tooltip("サーバへ登録するユーザー名。空欄なら端末名を使う。協働編集の担当者名になる。")]
+        [Tooltip("種別。本人連動＝本体と選択を共有して本体を操作する／別作業者連動＝サーバ上で別の作業者として操作する"
+               + "（ユーザー名はホストと別にする）／個別作業＝選択をサーバへ送らない。RemoteClientRole.cs")]
+        [SerializeField] private RemoteClientRole _role = RemoteClientRole.Host;
+
+        [Tooltip("サーバへ登録するユーザー名。空欄なら端末名を使う。別作業者連動では担当者名になる（本人連動の担当者はホスト）。")]
         [SerializeField] private string _userName = "";
+
+        /// <summary>サーバに登録する種別。</summary>
+        public RemoteClientRole Role => _role;
+
+        /// <summary>
+        /// サーバが決めた操作者名（register の応答の actorName）。担当の取得・解放に使う。
+        /// 本人連動ならホスト名、それ以外は登録したユーザー名。応答が来るまでは UserName。
+        /// </summary>
+        public string ActorName => string.IsNullOrEmpty(_actorName) ? UserName : _actorName;
+        private string _actorName;
 
         /// <summary>
         /// サーバへ登録する実効ユーザー名。
@@ -96,8 +110,52 @@ namespace Poly_Ling.ListClient
         // ライフサイクル
         // ================================================================
 
+        /// <summary>起動引数が使えない値だったときの理由。null でなければ接続しない。</summary>
+        private string _launchError;
+        private bool   _launchErrorShown;
+
+        /// <summary>
+        /// 起動引数（PolyLingLaunchArgs.cs）をインスペクタの値より優先する。
+        ///   --polyling-remote=host|collaborator|separate … その種別で登録する。
+        ///   --polyling-remote=server|none・不明な値 … リストクライアントでは扱えないので、エラーを出して接続しない。
+        ///   --polyling-user=名前 … 登録するユーザー名（空なら無視）。
+        /// </summary>
+        private void ApplyLaunchArgs()
+        {
+            const string tag = "[ListClientBase]";
+
+            if (PolyLingLaunchArgs.TryGet(PolyLingLaunchArgs.UserArg, out string user) && !string.IsNullOrWhiteSpace(user))
+            {
+                _userName = user;
+                Debug.Log($"{tag} 起動引数でユーザー名: {user}");
+            }
+
+            if (!PolyLingLaunchArgs.TryGetRemoteRole(out bool present, out LaunchRemoteRole role, out string error))
+            {
+                if (!present) return;
+                _launchError = error;
+                Debug.LogError($"{tag} {error}。接続しません");
+                return;
+            }
+
+            switch (role)
+            {
+                case LaunchRemoteRole.Host:         _role = RemoteClientRole.Host;         break;
+                case LaunchRemoteRole.Collaborator: _role = RemoteClientRole.Collaborator; break;
+                case LaunchRemoteRole.Separate:     _role = RemoteClientRole.Separate;     break;
+                default:
+                    _launchError = $"{PolyLingLaunchArgs.RemoteArg}{role.ToString().ToLowerInvariant()} はリストクライアントでは扱えません"
+                                 + "（host / collaborator / separate のどれか）";
+                    Debug.LogError($"{tag} {_launchError}。接続しません");
+                    return;
+            }
+            Debug.Log($"{tag} 起動引数で種別: {RemoteClientRoles.ToWire(_role)}");
+        }
+
         protected virtual void Awake()
         {
+            ApplyLaunchArgs();
+
             _doc = GetComponent<UIDocument>();
             if (_doc == null) _doc = gameObject.AddComponent<UIDocument>();
             EnsurePanelSettings();
@@ -137,6 +195,17 @@ namespace Poly_Ling.ListClient
             if (!_chromeBuilt) BuildChrome();
             if (!_chromeBuilt) return;
 
+            // 起動引数が使えない値なら接続しない（理由は画面に出す）。
+            if (_launchError != null)
+            {
+                if (!_launchErrorShown)
+                {
+                    SetStatus("起動引数エラー: " + _launchError);
+                    _launchErrorShown = true;
+                }
+                return;
+            }
+
             // 未接続で何も進行していないときだけ、一定間隔で問い合わせからやり直す。
             // 問い合わせ中・選択待ち・接続待ち・接続中は connector の状態で止まる
             // （接続失敗・切断はコールバックで Idle に戻る）。
@@ -157,8 +226,20 @@ namespace Poly_Ling.ListClient
         private void HandleConnected()
         {
             SetStatus("接続済");
-            // 自分のタイプ（機能）とユーザー名をサーバへ登録してからフェッチする。
-            _client.RegisterClientType(ClientTypeId, UserName);
+            // 自分のタイプ（機能）・種別・ユーザー名をサーバへ登録してからフェッチする。
+            // 応答の actorName（操作者名）を控える。登録を拒否されたら理由を表示する。
+            _actorName = null;
+            _client.RegisterClientType(ClientTypeId, _role, UserName, ack =>
+            {
+                if (string.IsNullOrEmpty(ack)) return;
+                int sv = ValueStart(ack, "success");
+                if (sv >= 0 && string.CompareOrdinal(ack, sv, "false", 0, 5) == 0)
+                {
+                    SetStatus("登録拒否: " + ExtractStr(ack, "error"));
+                    return;
+                }
+                _actorName = ExtractStr(ack, "actorName");
+            });
             RefreshData();
         }
 

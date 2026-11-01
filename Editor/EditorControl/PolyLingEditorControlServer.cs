@@ -346,8 +346,8 @@ namespace Poly_Ling.EditorControl
         //                                  |"tools_generic"|"tools_search"|"tools_describe"
         //                                  |"refresh"|"recompile"
         //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"
-        //                                  |"prefab_add_component"}
-        //       call と prefab_* は "params" を伴う（HandleCall・「プレファブ」節の注記を参照）
+        //                                  |"prefab_add_component"|"build_player"|"build_all"}
+        //       call と prefab_*・build_* は "params" を伴う（HandleCall・「プレファブ」「build_player」節の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
         //
@@ -411,9 +411,10 @@ namespace Poly_Ling.EditorControl
                     return LogResponse(HandlePrefabAddComponent(op, msg));
 
                 case "build_player":
+                case "build_all":
                 {
                     // 検証エラーは即時応答。検証を通ればビルド本体は deferred で実行する。
-                    string error = HandleBuildPlayer(op, msg, out deferred);
+                    string error = HandleBuildPlayer(op, msg, op == "build_all", out deferred);
                     return error != null ? LogResponse(error) : null;
                 }
 
@@ -759,69 +760,161 @@ namespace Poly_Ling.EditorControl
         }
 
         // ================================================================
-        // build_player：Player ビルド（Windows 64bit）
-        //   params.outputPath  … 出力する exe。プロジェクト直下からの相対か絶対。既定 ビルド用/PolyLing.exe
-        //   params.development … 開発ビルドにするか（既定 false）
-        //   シーンは Build Settings で有効なもの。Play 中・コンパイル中は拒否する。
+        // build_player / build_all：Player ビルド（Windows 64bit）
+        //   ビルド構成（PolyLingBuildConfigLoader：Assets/PolyLingBuild/ビルド構成.json、
+        //   無ければパッケージ既定 Editor/Build/既定ビルド構成.json）に従う。
+        //   build_player
+        //     params.config      … 構成名。省略時は builds の先頭。
+        //     params.outputPath  … この回だけ出力 exe を差し替える（プロジェクト直下からの相対か絶対）。
+        //                          省略時は構成の exe。
+        //     params.development … 開発ビルドにするか（既定 false）
+        //   build_all
+        //     builds の並びの順にすべてビルドする。失敗した構成で止め、それまでの結果と失敗を返す。
+        //     params.development だけを受ける（config・outputPath は拒否）。
+        //   シーンは構成の scenes。空なら Build Settings で有効なもの。Play 中・コンパイル中は拒否する。
         //   ビルドはメインスレッドを塞ぐので、応答は終わってから返る（MCP 側は待ち時間を長く取る）。
         //   出力先の exe が起動中だと上書きできずに失敗する（先に player_stop）。
         // ================================================================
 
-        /// <summary>build_player の既定の出力先（プロジェクト直下からの相対）。</summary>
-        public const string DefaultPlayerOutput = "ビルド用/PolyLing.exe";
+        /// <summary>1 つの構成のビルド内容。</summary>
+        private sealed class BuildJob
+        {
+            public string             Name;
+            public BuildPlayerOptions Options;
+            public string             Output;
+            public List<string>       Scenes;
+        }
 
         /// <summary>
-        /// 引数を検証し、ビルド本体を deferred に入れる。
+        /// 引数と構成を検証し、ビルド本体を deferred に入れる。
         /// 検証エラーなら応答 JSON を返し deferred は null。通れば null を返す。
         /// BuildPipeline.BuildPlayer はプレイヤーループ内で呼ぶと
         /// "A player build cannot be executed while inside the player loop." で失敗するため、
         /// 呼び出し側が EditorApplication.delayCall から deferred を実行する。
         /// </summary>
-        private static string HandleBuildPlayer(string op, RemoteMessage msg, out Func<string> deferred)
+        /// <param name="all">true で build_all（全構成）。</param>
+        private static string HandleBuildPlayer(string op, RemoteMessage msg, bool all, out Func<string> deferred)
         {
             deferred = null;
             if (!CheckEditModeIdle(op, out string busy)) return busy;
 
             var raw = msg?.Params;
 
-            string projectRoot = System.IO.Path.GetDirectoryName(Application.dataPath);
-            string output = TryGetParam(raw, "outputPath", out string o) && !string.IsNullOrWhiteSpace(o)
-                ? o : DefaultPlayerOutput;
-            if (!System.IO.Path.IsPathRooted(output))
-                output = System.IO.Path.Combine(projectRoot, output);
-            output = System.IO.Path.GetFullPath(output);
-            if (!output.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                return BuildError(op, "outputPath は .exe を指定してください: " + output);
-
             bool development = false;
             string err = null;
             ReadBool(raw, "development", ref development, ref err);
             if (err != null) return BuildError(op, err);
 
-            var scenes = new List<string>();
-            foreach (var s in EditorBuildSettings.scenes)
-                if (s != null && s.enabled && !string.IsNullOrEmpty(s.path)) scenes.Add(s.path);
-            if (scenes.Count == 0)
-                return BuildError(op, "Build Settings に有効なシーンがありません");
+            if (!PolyLingBuildConfigLoader.TryLoad(out var config, out string source, out string loadError))
+                return BuildError(op, loadError);
 
-            var options = new BuildPlayerOptions
+            var targets = new List<PolyLingBuildConfig>();
+            string outputOverride = null;
+            if (all)
             {
-                scenes           = scenes.ToArray(),
-                locationPathName = output,
-                target           = BuildTarget.StandaloneWindows64,
-                targetGroup      = BuildTargetGroup.Standalone,
-                options          = development ? BuildOptions.Development : BuildOptions.None,
-            };
+                if (TryGetParam(raw, "config", out _) || TryGetParam(raw, "outputPath", out _))
+                    return BuildError(op, "build_all は config・outputPath を受けません（全構成を構成ファイルのとおりにビルドします）");
+                targets.AddRange(config.builds);
+            }
+            else
+            {
+                if (TryGetParam(raw, "config", out string name))
+                {
+                    var found = PolyLingBuildConfigLoader.Find(config, name);
+                    if (found == null)
+                        return BuildError(op, $"構成がありません: {name}（{source} にある構成: {PolyLingBuildConfigLoader.Names(config)}）");
+                    targets.Add(found);
+                }
+                else
+                {
+                    targets.Add(config.builds[0]);
+                }
+                TryGetParam(raw, "outputPath", out outputOverride);
+            }
 
-            deferred = () => RunBuildPlayer(op, options, output, scenes, development);
+            string projectRoot = System.IO.Path.GetDirectoryName(Application.dataPath);
+            List<string> settingsScenes = null;
+            var jobs = new List<BuildJob>();
+
+            foreach (var b in targets)
+            {
+                string output = outputOverride ?? b.exe;
+                if (!System.IO.Path.IsPathRooted(output))
+                    output = System.IO.Path.Combine(projectRoot, output);
+                output = System.IO.Path.GetFullPath(output);
+                if (!output.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    return BuildError(op, "outputPath は .exe を指定してください: " + output);
+
+                List<string> scenes;
+                if (b.scenes.Count > 0)
+                {
+                    scenes = new List<string>(b.scenes);
+                }
+                else
+                {
+                    if (settingsScenes == null)
+                    {
+                        settingsScenes = new List<string>();
+                        foreach (var s in EditorBuildSettings.scenes)
+                            if (s != null && s.enabled && !string.IsNullOrEmpty(s.path)) settingsScenes.Add(s.path);
+                    }
+                    if (settingsScenes.Count == 0)
+                        return BuildError(op, $"構成 {b.name} の scenes が空で、Build Settings にも有効なシーンがありません");
+                    scenes = settingsScenes;
+                }
+
+                jobs.Add(new BuildJob
+                {
+                    Name   = b.name,
+                    Output = output,
+                    Scenes = scenes,
+                    Options = new BuildPlayerOptions
+                    {
+                        scenes           = scenes.ToArray(),
+                        locationPathName = output,
+                        target           = BuildTarget.StandaloneWindows64,
+                        targetGroup      = BuildTargetGroup.Standalone,
+                        options          = development ? BuildOptions.Development : BuildOptions.None,
+                    },
+                });
+            }
+
+            deferred = () => RunBuildJobs(op, jobs, source, development);
             return null;
         }
 
-        /// <summary>build_player の本体。プレイヤーループ外（delayCall）から呼ぶこと。</summary>
-        private static string RunBuildPlayer(
-            string op, BuildPlayerOptions options, string output, List<string> scenes, bool development)
+        /// <summary>構成を順にビルドする。失敗した構成で止める。プレイヤーループ外（delayCall）から呼ぶこと。</summary>
+        private static string RunBuildJobs(string op, List<BuildJob> jobs, string source, bool development)
         {
             if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"configFile={source}; builds={jobs.Count}");
+
+            for (int i = 0; i < jobs.Count; i++)
+            {
+                bool ok = RunBuildPlayer(jobs[i], development, out string text);
+                sb.Append("\n").Append(text);
+                if (!ok)
+                {
+                    if (i + 1 < jobs.Count)
+                    {
+                        var rest = new List<string>();
+                        for (int k = i + 1; k < jobs.Count; k++) rest.Add(jobs[k].Name);
+                        sb.Append("\n未実行（失敗で中止）: ").Append(string.Join(", ", rest));
+                    }
+                    return BuildError(op, sb.ToString());
+                }
+            }
+            return BuildOk(op, sb.ToString());
+        }
+
+        /// <summary>構成 1 つのビルド。結果の文を text に入れ、成功なら true。</summary>
+        private static bool RunBuildPlayer(BuildJob job, bool development, out string text)
+        {
+            var options = job.Options;
+            string output = job.Output;
+            var scenes = job.Scenes;
 
             // BuildReport に載らないエラー（例: プレイヤーループ内呼び出しの拒否）も応答に添えるため、
             // ビルド中に出た Error / Exception ログを拾う。
@@ -836,7 +929,7 @@ namespace Poly_Ling.EditorControl
                 }
             };
 
-            Debug.Log($"{LogTag} build_player 開始: {output} scenes={string.Join(",", scenes)} dev={development}");
+            Debug.Log($"{LogTag} build_player 開始: config={job.Name} {output} scenes={string.Join(",", scenes)} dev={development}");
 
             UnityEditor.Build.Reporting.BuildReport report;
             Application.logMessageReceivedThreaded += onLog;
@@ -851,7 +944,7 @@ namespace Poly_Ling.EditorControl
             var sum = report.summary;
 
             var sb = new System.Text.StringBuilder();
-            sb.Append($"result={sum.result}; output={output}; seconds={sum.totalTime.TotalSeconds:F1}; ");
+            sb.Append($"config={job.Name}; result={sum.result}; output={output}; seconds={sum.totalTime.TotalSeconds:F1}; ");
             sb.Append($"errors={sum.totalErrors}; warnings={sum.totalWarnings}; bytes={sum.totalSize}; ");
             sb.Append($"scenes={string.Join(",", scenes)}");
 
@@ -876,9 +969,11 @@ namespace Poly_Ling.EditorControl
                         foreach (var line in logged) sb.Append("\n").Append(line);
                     }
                 }
-                return BuildError(op, sb.ToString());
+                text = sb.ToString();
+                return false;
             }
-            return BuildOk(op, sb.ToString());
+            text = sb.ToString();
+            return true;
         }
 
         private static string HandlePrefabInstantiate(string op, RemoteMessage msg)

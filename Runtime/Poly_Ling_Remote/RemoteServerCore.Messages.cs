@@ -46,13 +46,27 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// チャネルに紐づく register 済みユーザー名を返す。未登録なら空文字。
-        /// 所有権判定（RemoteOwnership）の要求者名として使う。
+        /// チャネルの操作者名を返す。未登録なら空文字。
+        /// 所有権判定（RemoteOwnership）の要求者名と、選択の枠の鍵に使う。
+        /// role=host はホスト名、それ以外は登録したユーザー名（RemoteClientRole.cs）。
         /// </summary>
         private string ResolveUserName(IDuplexChannel channel)
         {
             if (channel == null) return "";
-            return _clientRegistry.TryGetValue(channel, out var reg) ? (reg.UserName ?? "") : "";
+            return _clientRegistry.TryGetValue(channel, out var reg) ? ActorNameOf(reg) : "";
+        }
+
+        /// <summary>登録 1 件の操作者名。振り分けは role だけで決める。</summary>
+        private string ActorNameOf(ClientRegistration reg)
+            => reg.Role == RemoteClientRole.Host ? (HostUserName ?? "") : (reg.UserName ?? "");
+
+        /// <summary>チャネルの種別。未登録なら false。</summary>
+        private bool TryGetRole(IDuplexChannel channel, out RemoteClientRole role)
+        {
+            role = RemoteClientRole.Separate;
+            if (channel == null || !_clientRegistry.TryGetValue(channel, out var reg)) return false;
+            role = reg.Role;
+            return true;
         }
 
         private string ProcessQuery(RemoteMessage msg, IDuplexChannel channel = null)
@@ -355,14 +369,23 @@ namespace Poly_Ling.Remote
 
             string requester = ResolveUserName(channel);
 
-            // ── 選択はユーザーごとに持つ（共有 ModelContext を書き換えない） ──
-            // selectMesh をここで横取りし、本体へは流さない。
-            // これをやらないと A の選択が B の画面まで飛び、担当を分けても
-            // 同時作業ができなくなる。
-            // ただしホストと同じ名前（同一人物の別窓）の選択は横取りせず本体へ流す。
-            // 本体の選択が変わると CheckSelectionChanged が同名の窓へ送り返す。
-            if (cmd is SelectMeshCommand sel && requester != HostUserName)
-                return HandleRemoteSelect(msg, channel, requester, sel);
+            // ── 選択の振り分けは種別（role）で決める（RemoteClientRole.cs） ──
+            //   host         … 横取りせず本体へ流す。本体の選択が変わると CheckSelectionChanged が本人連動の窓へ送り返す。
+            //   collaborator … 横取りして本人用の枠に記録する。本体も他人の画面も動かない。
+            //   separate     … 選択は手元だけで持つ約束なので拒否する。
+            if (cmd is SelectMeshCommand sel)
+            {
+                if (!TryGetRole(channel, out var selRole))
+                    return BuildErrorResponse(msg.Id,
+                        "register していないクライアントの選択は受け付けません。role を付けて register してください。",
+                        CommandErrorCodes.InvalidArgs);
+                if (selRole == RemoteClientRole.Separate)
+                    return BuildErrorResponse(msg.Id,
+                        "個別作業（role=separate）のクライアントは選択をサーバへ送りません。選択は手元で持ってください。",
+                        CommandErrorCodes.InvalidArgs);
+                if (selRole == RemoteClientRole.Collaborator)
+                    return HandleRemoteSelect(msg, channel, requester, sel);
+            }
 
             // ── 所有権ゲートはディスパッチャが操作者を見て行う ──────────
             ulong[] objectIds = RemoteOwnership.ParseIdCsv(GetParamString(msg, "objectIds", null));
@@ -408,8 +431,9 @@ namespace Poly_Ling.Remote
 
         private CommandResult DispatchWithSelectionOf(string userName, PanelCommand cmd, CommandActor actor)
         {
-            // ホストと同名（同一人物の別窓）は本体の選択そのものを使う。
+            // ホスト（本体と role=host の窓。操作者名はホスト名になる）は本体の選択そのものを使う。
             // 差し替えると実行後に元へ戻され、選択コマンドの結果が消えるため。
+            // role=separate は枠を持たないので、下で slot が見つからず本体の選択で動く（計画書「残す点」）。
             if (userName == HostUserName)
                 return Invoke(cmd, actor);
 
@@ -484,7 +508,19 @@ namespace Poly_Ling.Remote
             if (slot != null) SendSelectionToUser(userName, slot);
         }
 
-        /// <summary>指定ユーザーの全チャネルへ selectionChanged を送る。</summary>
+        /// <summary>この名前の別作業者連動（role=collaborator）の窓がつながっているか。</summary>
+        private bool HasCollaborator(string userName)
+        {
+            foreach (var kv in _clientRegistry)
+                if (kv.Value.Role == RemoteClientRole.Collaborator && kv.Value.UserName == userName)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 操作者名が userName の窓（role=host ならホスト名、collaborator なら登録名）へ selectionChanged を送る。
+        /// role=separate の窓には送らない（選択は手元で持つ）。
+        /// </summary>
         private void SendSelectionToUser(string userName, UserSelection sel)
         {
             if (_clientRegistry.Count == 0 || sel == null) return;
@@ -500,7 +536,7 @@ namespace Poly_Ling.Remote
 
             string json = BuildPushMessage("selectionChanged", jb.ToString());
             foreach (var kv in _clientRegistry)
-                if (kv.Value.UserName == userName)
+                if (kv.Value.Role != RemoteClientRole.Separate && ActorNameOf(kv.Value) == userName)
                     SendToChannel(kv.Key, TypedPayload.FromJson(json), WebSocketFrameKind.Text);
         }
 

@@ -36,8 +36,11 @@ namespace Poly_Ling.Player
         private void OnConnected()
         {
             _status = "接続済み";
-            // 自タイプをサーバへ登録（list 系と同じ枠組み）。userName 既定は空（名前なし）。
-            _client?.RegisterClientType("playerViewer", "");
+            // 自タイプをサーバへ登録（list 系と同じ枠組み）。
+            // 本体ビューアのクライアント起動は個別作業（手元のコピーで作業し、選択は手元で持つ）。
+            // 頂点移動を確定するたびに位置を送る動き（SyncClientToServer）は当面維持する
+            // （PolyLing_クライアント種別とビルド構成計画.md）。
+            _client?.RegisterClientType("playerViewer", RemoteClientRole.Separate, "");
         }
         private void OnDisconnected() { _status = "切断"; }
 

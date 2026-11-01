@@ -125,7 +125,8 @@ namespace Poly_Ling.Remote
         private struct ClientRegistration
         {
             public string ClientType;   // 例: "modelList" / "meshList" / "materialList" / "probe"
-            public string UserName;     // 既定は空（名前なし）。将来の協働開発で使用。
+            public string UserName;     // 登録した名前（表示用。操作者名は Role で決まる。ActorNameOf を使う）
+            public RemoteClientRole Role; // 種別（RemoteClientRole.cs）。振り分けはこれだけで決める
             public string[] Capabilities; // PolyLing から要求できる action（register の capabilities。無ければ空）
         }
 
@@ -143,8 +144,8 @@ namespace Poly_Ling.Remote
 
         /// <summary>
         /// ホスト（サーバ本体を操作している人）のユーザー名。
-        /// クライアントが同名で register するとホストと選択を共有してしまうため、
-        /// 運用上は重複しない名前にすること。
+        /// role=host のクライアントはこの名前を操作者として使う（RemoteClientRole.cs）。
+        /// role=collaborator はこの名前で登録できない。
         /// </summary>
         public string HostUserName { get; set; } = CommandActor.DefaultHostUserName;
 
@@ -195,10 +196,13 @@ namespace Poly_Ling.Remote
                 {
                     // 切断した作業者の一時ロックを外す（操作経路統一計画.md L-4）。
                     // 名前は登録簿から消す前に引く。
+                    // 本人連動（role=host）の窓の操作者はホストなので、窓が閉じてもホストのロックは外さない。
+                    bool isHostWindow = _clientRegistry.TryGetValue(ch, out var leftReg)
+                                        && leftReg.Role == RemoteClientRole.Host;
                     string leftUser = ResolveUserName(ch);
                     _clientRegistry.Remove(ch);
                     Log("クライアント切断");
-                    if (RemoteOwnership.ReleaseLocksOf(GetProjectContext(), leftUser))
+                    if (!isHostWindow && RemoteOwnership.ReleaseLocksOf(GetProjectContext(), leftUser))
                         CheckOwnershipChanged();
                     RaiseClientsChanged();
                     OnRepaint?.Invoke();

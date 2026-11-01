@@ -5,7 +5,7 @@
 //
 // 【役割】
 //   Editor の PolyLingEditorControlServer（ポート 8770）と同じ 1 行 JSON を、
-//   ビルド版ではポート 8772 で受ける。処理は Editor と共通の
+//   ビルド版ではポート 8772（起動引数 --polyling-control-port=N で変更）で受ける。処理は Editor と共通の
 //   PolyLingControlProtocol（ping / tools* / scenes / call）に任せる。
 //   state は host=player を返す。Editor にしか無い action は理由付きで断る。
 //
@@ -42,10 +42,15 @@ namespace Poly_Ling.Player
     public static class PolyLingPlayerControlServer
     {
         /// <summary>
-        /// 待ち受けポート。MCP サーバ側（EditorControlClient.PlayerPort）と一致させること。
+        /// 既定の待ち受けポート。MCP サーバ側（EditorControlClient.PlayerPort）と一致させること。
         /// Editor の 8770、MCP サーバの HTTP の例（README の --http 8771）と重ならない値。
+        /// 起動引数 --polyling-control-port=N（PolyLingLaunchArgs.cs）があればそちらで待ち受ける
+        /// （ビルド構成ごとに分けるため。PolyLing_クライアント種別とビルド構成計画.md 段 3）。
         /// </summary>
-        public const int Port = 8772;
+        public const int DefaultPort = 8772;
+
+        /// <summary>実際に待ち受けているポート（起動前・起動失敗時は 0）。</summary>
+        public static int Port { get; private set; }
 
         /// <summary>コンソールログの共通接頭辞。</summary>
         private const string LogTag = "[PolyLingPlayerControl]";
@@ -74,6 +79,13 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // 引数の値が不正なら待ち受けない（既定ポートで立てると、別の構成の受付と取り違える）。
+            if (!PolyLingLaunchArgs.TryGetControlPort(DefaultPort, out int port, out string portError))
+            {
+                Debug.LogError($"{LogTag} 起動しない: {portError}");
+                return;
+            }
+
             var server = new TcpDuplexServer();
             server.OnReceived += OnReceived;
 
@@ -81,18 +93,19 @@ namespace Poly_Ling.Player
             {
                 // 外部から届かないようループバックだけを bind する。
                 // 使用中のポートは SocketException が同期的に出る（RemoteDirectory.cs と同じ扱い）。
-                server.StartAsync(System.Net.IPAddress.Loopback, Port);
+                server.StartAsync(System.Net.IPAddress.Loopback, port);
             }
             catch (Exception ex)
             {
                 try { server.OnReceived -= OnReceived; } catch { }
                 try { server.Dispose(); } catch { }
-                Debug.LogWarning($"{LogTag} 起動失敗: port={Port}; {ex.Message}");
+                Debug.LogWarning($"{LogTag} 起動失敗: port={port}; {ex.Message}");
                 return;
             }
 
             _server = server;
-            Debug.Log($"{LogTag} 起動: port={Port}（ループバックのみ）");
+            Port = port;
+            Debug.Log($"{LogTag} 起動: port={port}（ループバックのみ）");
         }
 
         /// <summary>停止する。起動していなければ何もしない。</summary>
@@ -105,6 +118,7 @@ namespace Poly_Ling.Player
 
             try { server.OnReceived -= OnReceived; } catch { }
             try { server.Dispose(); } catch { }
+            Port = 0;
 
             Debug.Log($"{LogTag} 停止");
         }
@@ -167,7 +181,7 @@ namespace Poly_Ling.Player
             {
                 case "state":
                     return PolyLingControlProtocol.BuildOk(op,
-                        $"host=player; panelReady={(PolyLingCommandGateway.IsReady ? "true" : "false")}");
+                        $"host=player; port={Port}; panelReady={(PolyLingCommandGateway.IsReady ? "true" : "false")}");
 
                 case "play":
                 case "stop":

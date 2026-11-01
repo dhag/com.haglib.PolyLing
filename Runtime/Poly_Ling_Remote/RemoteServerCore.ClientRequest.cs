@@ -196,7 +196,7 @@ namespace Poly_Ling.Remote
         public ClientRequestState GetClientRequest(int requestNo)
             => _clientRequests.TryGetValue(requestNo, out var s) ? s : null;
 
-        /// <summary>登録済みクライアントの一覧（JSON 配列。clientType / userName / capabilities）。メインスレッド。</summary>
+        /// <summary>登録済みクライアントの一覧（JSON 配列。clientType / userName / role / actorName / capabilities）。メインスレッド。</summary>
         public string BuildClientListJson()
         {
             var arr = new JArray();
@@ -205,6 +205,8 @@ namespace Poly_Ling.Remote
                 {
                     ["clientType"]   = kv.Value.ClientType ?? "",
                     ["userName"]     = kv.Value.UserName ?? "",
+                    ["role"]         = RemoteClientRoles.ToWire(kv.Value.Role),
+                    ["actorName"]    = ActorNameOf(kv.Value),
                     ["capabilities"] = new JArray(kv.Value.Capabilities ?? Array.Empty<string>()),
                 });
             return arr.ToString(Newtonsoft.Json.Formatting.None);

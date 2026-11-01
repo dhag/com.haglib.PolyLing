@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using HagLib.NET.Duplex;
+using Poly_Ling.Remote;
 
 namespace Poly_Ling.Player
 {
@@ -368,16 +369,21 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// クライアントタイプ（機能）とユーザー名をサーバへ登録する。接続直後に1回呼ぶ。
-        /// サーバはチャネル→タイプの対応表に記録し、タイプ宛 push を振り分ける。
-        /// userName 既定は空（名前なし）。将来の協働開発向け。
+        /// クライアントタイプ（機能）・種別・ユーザー名をサーバへ登録する。接続直後に1回呼ぶ。
+        /// サーバはチャネル→登録情報を記録し、タイプ宛 push を振り分ける。
+        /// role は必須（RemoteClientRole.cs）。選択の振り分けと操作者名は role だけで決まる。
+        ///   Host         … 本体と連動（選択は本体のもの、操作者はホスト）。userName は表示用。
+        ///   Collaborator … サーバで別の作業者として作業。userName 必須（ホスト名と別）。
+        ///   Separate     … 手元のコピーで作業し、明示的に上げる。選択はサーバへ送らない。
         /// </summary>
-        public void RegisterClientType(string clientType, string userName = "", Action<string> onAck = null)
+        public void RegisterClientType(string clientType, RemoteClientRole role, string userName,
+                                       Action<string> onAck = null)
         {
             var p = new Dictionary<string, string>
             {
                 ["clientType"] = clientType ?? "",
                 ["userName"]   = userName   ?? "",
+                [RemoteClientRoles.ParamName] = RemoteClientRoles.ToWire(role),
             };
             SendCommand("register", 0, p, onAck);
         }
