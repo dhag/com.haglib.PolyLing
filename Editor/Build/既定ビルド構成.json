@@ -1,8 +1,7 @@
 {
   "version": 1,
   "editor": {
-    "name": "editor",
-    "port": 8770
+    "name": "editor"
   },
   "builds": [
     {

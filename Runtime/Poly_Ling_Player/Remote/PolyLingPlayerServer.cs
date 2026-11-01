@@ -157,6 +157,15 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 本体で一覧の構造が変わった（NotifyPanels の ListStructure）ときに呼ぶ。
+        /// 接続中クライアントへ meshListChanged を配信する（同じフレームの中で 1 回にまとめる）。
+        /// </summary>
+        public void NotifyListStructureChanged()
+        {
+            _server?.NotifyListStructureChanged();
+        }
+
+        /// <summary>
         /// 作業軸の値（または使う作業軸）の変更が確定したときに呼ぶ。
         /// 接続中クライアントへ workAxisChanged を配信する。
         /// </summary>

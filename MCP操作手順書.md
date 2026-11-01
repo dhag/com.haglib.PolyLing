@@ -202,6 +202,59 @@ JSON の配列をそのまま渡すと断られる。
 全フレームの `sampleMotionEdit` のような大きな結果は、Editor の 8770（Duplex のパケット。`PolyLing_外部連携の契約.md` §2・§3.1）を Python から呼んでファイルに書くと、会話に載せずに比べられる。
 例：`SandBox/curve_test/s6/pl_call.py`（呼ぶコマンドの並びを JSON ファイルで渡す）。
 
+### 1-6. ビルド版と複数の構成（instance）
+
+Editor のほかに、ビルドした exe を複数同時に動かし、それぞれへ MCP から送れる。
+どれへ送るかは道具の引数 `instance` に**構成名**を書いて選ぶ。経緯は `PolyLing_クライアント種別とビルド構成計画.md`。
+
+**ビルド構成ファイル**
+
+- 読む順：`Assets/PolyLingBuild/ビルド構成.json` があればそれ、無ければパッケージ既定 `Packages/com.haglib.polyling/Editor/Build/既定ビルド構成.json`。
+  Editor（ビルド）と MCP サーバ（instance の解決）は同じファイルを同じ順・同じ検査で読む。試験の構成は Assets 側に置き、終わったら `delete_path` で除く（既定に戻る）。
+- 形：
+  ```json
+  { "version": 1,
+    "editor": { "name": "editor" },
+    "builds": [
+      { "name": "player", "scenes": [], "exe": "ビルド用/PolyLing.exe", "role": "server", "port": 8772, "user": "" } ] }
+  ```
+- `editor.name` … Editor を呼ぶ名前。**Editor の受付は 8770 固定で、`editor.port` は書けない**（書くと構成全体が拒否される）。
+- `builds` の各項目：
+  - `name` … 構成名。editor の name とも他の構成とも重複不可（大文字小文字は区別しない）。
+  - `scenes` … `Assets/... .unity` の並び。空なら Build Settings の有効なシーン。
+  - `exe` … 出力する exe。プロジェクト直下からの相対。重複不可。試験の出力は `SandBox/` の下にする。
+  - `role` … `server` / `host` / `collaborator` / `separate` / `none`。本体ビューアのシーンは server / separate / none、
+    host / collaborator はリストクライアント（ListClientBase）のシーン。
+  - `port` … ビルド版の MCP 受付ポート。8770 とも他の構成とも重複不可。
+  - `user` … 省略可。リストクライアントのユーザー名。同じ PC の collaborator はホスト名と別の名前が要る。
+
+**ビルド**
+
+| 道具 | 使い方 |
+|---|---|
+| `unity_build_player` | `config=<構成名>`（省略時は builds の先頭）。`all=true` で並びの順に全部（失敗で止まる。`config`・`output_path` とは併用不可）。Play 中なら止めてからビルドする。出力の exe が動いていると失敗するので先に `player_stop` |
+
+**instance を持つ道具**
+
+| 道具 | instance で変わること |
+|---|---|
+| `polyling_call`・`polyling_tools`・`polyling_search`・`polyling_describe`・`polyling_scenes` | その構成の受付ポートへ送る |
+| `unity_ping`・`unity_state` | その構成へ問い合わせる（`state` の `host=` で Editor かビルド版かが分かる） |
+| `unity_capture` | その構成の画面を撮る |
+| `unity_focus` | Editor なら Unity、ビルド版なら構成の exe と実行ファイルのパスが一致するプロセスだけを前面にする |
+| `player_launch` | 構成の exe を `--polyling-remote=<role> --polyling-control-port=<port>`（user があれば `--polyling-user=<user>`）で起動。`exe_path`・`remote_mode` とは併用不可。instance=editor は不可 |
+| `player_stop` | 構成の exe のプロセスだけを終える。`exe_path` とは併用不可 |
+
+- `instance` を省くと、MCP サーバの起動引数 `--target` のまま（editor なら 8770、player なら 8772）。このときは構成ファイルを読まない。
+- 未知の構成名は、書ける名前の一覧付きで拒否される。
+- `unity_play`・`unity_stop`・`unity_refresh`・`unity_recompile`・`unity_validate_changes` は instance を持たず、`--target` の接続先へ送る。
+  `unity_prefab_*`・`unity_build_player` は `--target` にかかわらず Editor（8770）へ送る。
+- **リストクライアントだけの構成（シーンに PolyLingPlayerViewer が無い）には MCP の受付が無い。** `port` を書いてあっても誰も待ち受けていない。
+  そういう構成へ `polyling_call`・`unity_capture` などを送ると、送る前に理由付きのエラーになる。起動・終了・前面化（`player_launch`・`player_stop`・`unity_focus`）は使える。
+  リストクライアントの様子は、サーバ側の構成へ `polyling_call`（`queryRemoteClients` など）と、`-logFile` で書かせたログ（`player_launch` の `extra_args`）で見る。
+  `player_launch` は exe のフォルダを作業フォルダにして起動するので、`-logFile` は**絶対パス**で書く（相対だと exe のフォルダの下にできる）。
+- 起動直後は受付が立つまで数秒かかる。`unity_state instance=…` が通るまで待ってから送る。
+
 ---
 
 ## 2. 守る手順

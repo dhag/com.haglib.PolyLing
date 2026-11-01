@@ -137,6 +137,36 @@
     - 本人連動（hostB）：hostB の一覧で RoundedCube をクリック → サーバの選択が 0:RoundedCube に。サーバで selectMesh Drawable=1 → hostB の一覧が Sphere に追従。
     - 別作業者連動（collabB）：起動直後は何も選んでいない（サーバ・hostB は RoundedCube）。collabB で Sphere をクリック → サーバは 0 のまま、hostB も RoundedCube のまま。その後サーバで 0 を選び直しても collabB は Sphere のまま。
     - push の受け取りもログで一致：hostB は選択のたびに selectionChanged を受け、collabB は登録直後の分だけ。
-  - 見つかった不具合（未修正。この段の範囲外）：リストクライアント（hostB・collabB）を、サーバのモデルに描画オブジェクトが無いうちに接続すると、起動時の project_header 取得が「project_header 失敗」になり、その後サーバで createCube・createSphere をしても meshListChanged の push が届かず（両ログに selectionChanged のみ）、一覧が空のまま。クライアントを起動し直すと一覧が出た（確認はその状態で行った）。
-    調べた事実：サーバの一覧変更の push は `RemoteServerCore.SubscribeModel` が購読した `Context.Model.OnListChanged` から出る（`RemoteServerCore.Push.cs`）。購読し直すのはサーバ起動時と `NotifyProjectReplaced`（`ChangeKind.ModelSwitch` のとき）だけ。createCube の経路（`PrimitiveMeshCreateNewObject` の `model.Add`）でその購読先に OnListChanged が出ているかは未確認。
+  - 見つかった不具合（2026-11-01 修正済み。下の「修正」）：リストクライアント（hostB・collabB）を、サーバのモデルに描画オブジェクトが無いうちに接続すると、起動時の project_header 取得が「project_header 失敗」になり、その後サーバで createCube・createSphere をしても meshListChanged の push が届かず（両ログに selectionChanged のみ）、一覧が空のまま。クライアントを起動し直すと一覧が出た（確認はその状態で行った）。
+    原因（コードとログで確認）：
+    1. 一覧変更の push は `RemoteServerCore.SubscribeModel` が購読した `Context.Model.OnListChanged` から出るが、購読し直すのはサーバ起動時と `NotifyProjectReplaced`（`ChangeKind.ModelSwitch`）だけ。
+       サーバ起動時にプロジェクトが無いと何も購読せず（リストクライアントの project_header には "No project"）、createCube が `PlayerLocalLoader.EnsureProject` で黙ってプロジェクトとモデルを作っても付け替わらない。`ExecuteCreateEmptyModel`（ListStructure で通知）も同じ。
+    2. `OnListChanged` を呼ぶのは Undo/Redo の記録と一部のコマンドだけ。図形生成（`PrimitiveMeshCreateNewObject` → `PrimitiveMeshFinalize`）は呼ばず、`NotifyPanels(ChangeKind.ListStructure)` だけで知らせる。購読できていても meshListChanged が出ない。
+    修正：
+    - `RemoteServerCore.Push.cs`：`FollowCurrentModel`（監視先が今の現在モデルと違えば付け替え、refreshRequired を送る）を `NotifySelectionChanged` の頭で呼ぶ（NotifyPanels から毎回通る）。
+      `NotifyListStructureChanged` を追加。一覧変更の送出は印を立てて `RunOnMainThread` で 1 回にまとめる（OnListChanged と NotifyPanels の両方が出ても 1 回。refreshRequired を送ったときは印を下ろす）。
+    - `PolyLingPlayerServer.cs`：`NotifyListStructureChanged` を中継。
+    - `PolyLingPlayerViewerCore.ModelSync.cs`：`NotifyPanels` の ListStructure で `_playerServer.NotifyListStructureChanged()`。
+    確認（Unity のコンパイル 0 件。server・hostB をビルドし直し、空の server に hostB をつないでから）：
+    - createCube → hostB に refreshRequired と meshListChanged、一覧 1 行（RoundedCube）。
+    - createSphere → meshListChanged 1 回、一覧 2 行。
+    - undo → meshListChanged 1 回、一覧 1 行（画面でも 1 行）。
+    - ログは `SandBox/段5ビルド/fix2_hostB.log`・`fix2_server.log`。試験構成は delete_path で `_McpTrash` へ。
   - 片付け：4 プロセスを player_stop。試験構成は delete_path で `_McpTrash/20261101_110702/` へ。ビルド出力とログは `SandBox/段5ビルド/` に残す。
+- 段 6（残りの片付け）：完了（2026-11-01）。Unity のコンパイル 0 件。MCP サーバはコンパイル通過（exe のコピーだけ失敗）、操作者が再ビルド・再起動済み。
+  - Editor の受付ポート：Editor 側の `PolyLingEditorControlServer.Port`（8770）固定に寄せ、構成の `editor.port` を無くした。
+    理由（コードで確認）：`unity_play`・`unity_stop`・`unity_refresh`・`unity_recompile`・`unity_validate_changes` は `--target` の接続先（既定 8770）へ、
+    `unity_prefab_*`・`unity_build_player` は `SendToEditorAsync` で 8770 へ、どれも構成を読まずに送る。Editor の受付は `[InitializeOnLoad]` で立つ。
+    ポートを構成で決めると、これら全部が構成に依存し、構成が検査に落ちている間は Editor へ届く道（refresh・play を含む）も受付も止まる。
+    - `Editor/Build/PolyLingBuildConfig.cs`：`PolyLingEditorInstance.port` の初期値を -1（書かれていない印 `NotWritten`）にし、-1 以外なら拒否。builds の port の重複検査に 8770 を入れる。
+    - `Editor/Build/既定ビルド構成.json`：editor から port を除いた。
+    - MCP `BuildInstances.cs`：`EditorInstanceConfig.Port` を `int?`（null＝書かれていない）にし、値があれば拒否。重複検査に `EditorControlClient.Port`。instance=editor の接続先は `EditorControlClient.Port`。`EditorControlClient.cs` は注記だけ。
+  - 文書：`MCP操作手順書.md` に「1-6. ビルド版と複数の構成（instance）」（構成ファイル・ビルド・instance を持つ 11 の道具・instance を持たない道具の送り先・リストクライアントだけの構成）。
+    `McpGuide/primer.md` に「複数の構成を扱うとき」（3 行）。
+  - 確認（MCP サーバ再起動後）：
+    - 既定の構成で `unity_state instance=editor` → host=editor、`player_launch instance=player`（引数 `--polyling-remote=server --polyling-control-port=8772`）→ `unity_state instance=player` → host=player・port=8772。両方へ届く。
+    - 試験構成 `Assets/PolyLingBuild/ビルド構成.json` に editor.port=8779 → `unity_state instance=editor`（MCP 側）と `unity_build_player config=player`（Unity 側）の両方が「editor.port は書けません（…8770 固定）」で拒否。
+    - 同じく editor の port を除き builds の port を 8770 → 両方が「port が editor か他の構成と重複」で拒否。
+    - 試験構成は delete_path で `_McpTrash/20261101_125040/` へ。除いた後 `unity_state instance=editor` は既定で通る。
+  - 残り：`player_launch` の `extra_args` に相対の `-logFile SandBox/段6確認/player.log` を渡したところ、exe のフォルダが作業フォルダのため `ビルド用/SandBox/段6確認/player.log` ができた。
+    `ビルド用/` は MCP の書き込み範囲の外で delete_path できない（操作者が削除）。手順書 1-6 に「-logFile は絶対パスで」を書いた。

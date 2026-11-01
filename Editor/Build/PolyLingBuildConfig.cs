@@ -11,12 +11,15 @@
 // 【形】（キーは小文字始まり。JsonUtility と System.Text.Json の両方で読める平らな形）
 //   {
 //     "version": 1,
-//     "editor": { "name": "editor", "port": 8770 },
+//     "editor": { "name": "editor" },
 //     "builds": [
 //       { "name": "player", "scenes": [], "exe": "ビルド用/PolyLing.exe", "role": "server", "port": 8772, "user": "" }
 //     ]
 //   }
 //   editor  … Editor の受付。name は MCP から呼ぶときの名前（段 4）。
+//             ポートは PolyLingEditorControlServer.Port（8770）固定で、port は書けない（書くと拒否。段 6）。
+//             Editor の受付は [InitializeOnLoad] で立ち、unity_play・unity_refresh・unity_prefab_* などは
+//             構成を読まずに 8770 へ送る。構成から決めると、構成が検査に落ちている間 Editor へ届かなくなるため。
 //   builds  … ビルド構成の並び。build_all はこの順にビルドする。
 //     name   … 構成名。editor の name も含めて重複不可。
 //     scenes … Assets/... .unity の並び。空なら Build Settings の有効なシーン。
@@ -25,7 +28,7 @@
 //              起動時に --polyling-remote=<role> で exe へ渡す（PolyLingLaunchArgs.cs。渡すのは段 4 の player_launch）。
 //              本体ビューアのシーンで使えるのは server / separate / none。host / collaborator は
 //              リストクライアント（ListClientBase）のシーンで使う。
-//     port   … MCP 受付ポート。editor の port も含めて重複不可。--polyling-control-port=N で exe へ渡す。
+//     port   … MCP 受付ポート。Editor の 8770 とも他の構成とも重複不可。--polyling-control-port=N で exe へ渡す。
 //              受付を立てるのは本体ビューア（PolyLingPlayerViewerCore）だけなので、
 //              リストクライアントだけのシーンの構成では、このポートで MCP には届かない（値は書く）。
 //     user   … 省略可。--polyling-user=<user> で渡すユーザー名（リストクライアントが使う）。
@@ -53,12 +56,19 @@ namespace Poly_Ling.EditorControl
         public List<PolyLingBuildConfig> builds = new List<PolyLingBuildConfig>();
     }
 
-    /// <summary>Editor の受付。</summary>
+    /// <summary>
+    /// Editor の受付。ポートは PolyLingEditorControlServer.Port（8770）固定で、構成には書かない（段 6）。
+    /// port は「書かれていないこと」を確かめるためだけに置く。JsonUtility は無いキーで初期値（-1）のままにするので、
+    /// -1 以外なら書かれていた（検査で拒否する）。
+    /// </summary>
     [Serializable]
     public class PolyLingEditorInstance
     {
         public string name = "editor";
-        public int    port = 8770;
+        public int    port = NotWritten;
+
+        /// <summary>port が書かれていない印。</summary>
+        public const int NotWritten = -1;
     }
 
     /// <summary>ビルド構成 1 つ。</summary>
@@ -163,9 +173,9 @@ namespace Poly_Ling.EditorControl
                 reason = "editor.name がありません";
                 return false;
             }
-            if (!IsPort(config.editor.port))
+            if (config.editor.port != PolyLingEditorInstance.NotWritten)
             {
-                reason = $"editor.port が 1〜65535 ではありません: {config.editor.port}";
+                reason = $"editor.port は書けません（Editor の受付は PolyLingEditorControlServer.Port＝{PolyLingEditorControlServer.Port} 固定）: {config.editor.port}";
                 return false;
             }
             if (config.builds == null || config.builds.Count == 0)
@@ -175,7 +185,7 @@ namespace Poly_Ling.EditorControl
             }
 
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { config.editor.name.Trim() };
-            var ports = new HashSet<int> { config.editor.port };
+            var ports = new HashSet<int> { PolyLingEditorControlServer.Port };
             var exes  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string root = Path.GetFullPath(projectRoot).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
 

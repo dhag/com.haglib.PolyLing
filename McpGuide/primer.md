@@ -10,6 +10,11 @@
 - unity_play 直後は数秒つながらない（ポートに接続できません）。unity_state をもう一度呼べば通る。
 - 状態は unity_state（Play 中か・コンパイル中か）。
 
+## 複数の構成を扱うとき（Editor とビルド版を同時に動かす）
+- 送り先は道具の instance に構成名で指定する（Assets/PolyLingBuild/ビルド構成.json、無ければパッケージ既定。既定は editor と player）。省くと MCP サーバの --target のまま。
+- リストクライアントだけの構成には MCP の受付が無い。polyling_call・unity_capture は届かない（起動・終了・前面化だけ使える）。
+- 詳しくは MCP操作手順書.md の 1-6。
+
 ## スクリプトを直したとき
 - 一発で確かめる：unity_validate_changes（Play を抜けて反映し、この間に出たコンパイルエラーだけ返す。restore_play_mode=true で Play に戻る）。
 - 手動なら unity_stop → unity_refresh → read_unity_log(contains="error CS") → unity_play。

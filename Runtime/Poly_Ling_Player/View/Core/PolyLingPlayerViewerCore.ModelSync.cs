@@ -580,6 +580,10 @@ namespace Poly_Ling.Player
             {
                 if (kind == ChangeKind.ModelSwitch)
                     _playerServer.NotifyProjectReplaced();
+                // 一覧の構造変更も、パネルへ知らせるこの経路からクライアントへ知らせる
+                // （OnListChanged を呼ばない経路があるため。RemoteServerCore で 1 回にまとめる）。
+                if (kind == ChangeKind.ListStructure)
+                    _playerServer.NotifyListStructureChanged();
                 _playerServer.NotifySelectionChanged();
             }
 

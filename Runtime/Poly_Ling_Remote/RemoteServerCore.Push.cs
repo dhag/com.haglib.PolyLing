@@ -71,8 +71,37 @@ namespace Poly_Ling.Remote
                 "ownershipChanged", RemoteOwnership.BuildOwnershipJson(model, mi)));
         }
 
+        // ================================================================
+        // 一覧変更 push（meshListChanged）
+        //
+        // 【入口は 2 つ】
+        //   ModelContext.OnListChanged … Undo/Redo の記録と一部のコマンドが呼ぶ。
+        //   NotifyListStructureChanged … 本体の NotifyPanels(ChangeKind.ListStructure) から呼ぶ。
+        //     図形生成（PrimitiveMeshFinalize）など、OnListChanged を呼ばずに一覧を変える経路も
+        //     本体のパネルへはここで知らせているので、それに合わせる。
+        // 【同じフレームの中で 1 回にまとめる】
+        //   両方が同じ変更で出ることがあるので、印（_listPushPending）を立てて RunOnMainThread で 1 回だけ送る。
+        //   FollowCurrentModel が refreshRequired を送ったときは、そちらで再取得されるので印を下ろす。
+        // ================================================================
+
+        private bool _listPushPending;
+
+        /// <summary>本体で一覧の構造が変わった（NotifyPanels の ListStructure）ときに呼ぶ。</summary>
+        public void NotifyListStructureChanged() => OnModelListChanged();
+
         private void OnModelListChanged()
         {
+            if (!IsRunning || _listPushPending) return;
+            _listPushPending = true;
+            RunOnMainThread(FlushModelListChanged);
+        }
+
+        private void FlushModelListChanged()
+        {
+            if (!_listPushPending) return;
+            _listPushPending = false;
+            if (!IsRunning) return;
+
             string data     = RemoteDataProvider.QueryMeshList(Context, null);
             string pushJson = BuildPushMessage("meshListChanged", data);
             BroadcastAsync(pushJson);
@@ -114,7 +143,35 @@ namespace Poly_Ling.Remote
         /// 方式（案B）に変えたため、ここではホスト自身のスロットを更新するだけにする。
         /// ホストの選択を他ユーザーへ押し付けない。
         /// </summary>
-        public void NotifySelectionChanged() => CheckSelectionChanged();
+        public void NotifySelectionChanged()
+        {
+            FollowCurrentModel();
+            CheckSelectionChanged();
+        }
+
+        /// <summary>
+        /// 一覧変更の監視先（_subscribedModel）を今の現在モデルに合わせる。違っていれば付け替え、
+        /// 全クライアントへ再取得（refreshRequired）を促す。同じなら何もしない。
+        ///
+        /// 【なぜ要るか】
+        ///   付け替えはサーバ起動時と NotifyProjectReplaced（ChangeKind.ModelSwitch）だけだった。
+        ///   起動時にプロジェクトが無いと何も購読せず、その後 createCube などが
+        ///   PlayerLocalLoader.EnsureProject で黙ってプロジェクトとモデルを作っても、
+        ///   ModelSwitch ではないので付け替わらない。結果、meshListChanged が出ず、
+        ///   起動直後に "No project" を受けたクライアントは一覧が空のままになっていた。
+        ///   CreateEmptyModel（ListStructure で通知）も同じ。
+        ///   NotifySelectionChanged は本体の NotifyPanels から毎回呼ばれるので、ここで合わせれば
+        ///   現在モデルが変わるどの経路でも追いつく。
+        /// </summary>
+        private void FollowCurrentModel()
+        {
+            if (!IsRunning) return;
+            var model = Context?.Model;
+            if (ReferenceEquals(model, _subscribedModel)) return;
+            SubscribeModel();
+            _listPushPending = false;   // refreshRequired で全体を取り直すので、一覧変更の push は要らない
+            BroadcastAsync(BuildPushMessage("refreshRequired", "{}"));
+        }
 
         /// <summary>
         /// ホストでプロジェクト／現在モデルが入れ替わったとき（ファイル読込・インポート・モデル切替）に呼ぶ。
