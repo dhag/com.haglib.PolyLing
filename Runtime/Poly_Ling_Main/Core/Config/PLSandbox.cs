@@ -49,6 +49,12 @@ namespace Poly_Ling.Core
         private const string UnsetMessage =
             "作業フォルダが未設定です。左ペインの「その他 → 作業フォルダ」で選んでください";
 
+        /// <summary>コマンドから直下に新規作成させないフォルダ（作業フォルダ直下の名前）。</summary>
+        private const string NoDirectWriteFolder = "データとツール";
+
+        /// <summary>シナリオ・ランタイムの生成物の置き場（拒否の文言で案内する）。</summary>
+        private const string ScenarioSandboxFolder = "サンドボックス_シナリオ用";
+
         private static readonly object _lock = new object();
 
         // 読み込み済みの作業フォルダ（正規化済み・末尾に区切り無し）。未設定は null。
@@ -180,7 +186,7 @@ namespace Poly_Ling.Core
         /// <param name="fullPath">解決した実経路。失敗時は null。</param>
         /// <param name="reason">拒否した理由。成功時は null。</param>
         public static bool TryResolveRead(string path, out string fullPath, out string reason)
-            => TryResolve(path, forWrite: false, out fullPath, out reason);
+            => TryResolve(path, forWrite: false, forFolder: false, out fullPath, out reason);
 
         /// <summary>
         /// 書き込み用に経路を解決する。読み込みに加えて拡張子の許可も見る。
@@ -189,7 +195,7 @@ namespace Poly_Ling.Core
         /// <param name="fullPath">解決した実経路。失敗時は null。</param>
         /// <param name="reason">拒否した理由。成功時は null。</param>
         public static bool TryResolveWrite(string path, out string fullPath, out string reason)
-            => TryResolve(path, forWrite: true, out fullPath, out reason);
+            => TryResolve(path, forWrite: true, forFolder: false, out fullPath, out reason);
 
         /// <summary>
         /// フォルダとして解決する。書き出し先フォルダの指定に使う。
@@ -197,9 +203,9 @@ namespace Poly_Ling.Core
         /// </summary>
         /// <param name="reason">拒否した理由。成功時は null。</param>
         public static bool TryResolveFolder(string path, out string fullPath, out string reason)
-            => TryResolve(path, forWrite: false, out fullPath, out reason);
+            => TryResolve(path, forWrite: false, forFolder: true, out fullPath, out reason);
 
-        private static bool TryResolve(string path, bool forWrite, out string fullPath, out string reason)
+        private static bool TryResolve(string path, bool forWrite, bool forFolder, out string fullPath, out string reason)
         {
             fullPath = null;
             reason   = null;
@@ -250,6 +256,9 @@ namespace Poly_Ling.Core
 
             // 作業フォルダ直下を散らかさない。直下に置けるのは既存フォルダの中だけ。
             if (!IsUnderExistingTopFolder(root, full, forWrite, out reason)) return false;
+
+            // データとツール直下も散らかさない。読み込みは止めない。
+            if ((forWrite || forFolder) && !IsAllowedInDataFolder(root, full, out reason)) return false;
 
             // リンクは辿らない。辿ると根の外へ抜けられる。
             if (HasReparsePointOnPath(root, full, out string linkPath))
@@ -321,6 +330,32 @@ namespace Poly_Ling.Core
             { reason = msg; return false; }
 
             return true;
+        }
+
+        /// <summary>
+        /// 作業フォルダ直下の「データとツール」の直下に、コマンドから新しいファイルや
+        /// フォルダを作らせない。既存ファイルの上書きと、既存フォルダの中は通す。
+        /// ダイアログで選んだパスはここへ来る前に通っているので、人の保存は止めない。
+        /// 【なぜ要るか】AI の作業データが直下に溜まったため。
+        /// </summary>
+        private static bool IsAllowedInDataFolder(string root, string full, out string reason)
+        {
+            reason = null;
+            string guarded = Path.Combine(TrimSeparator(root), NoDirectWriteFolder);
+            string f = TrimSeparator(full);
+
+            if (string.Equals(guarded, f, StringComparison.OrdinalIgnoreCase)) return true;
+            if (!IsInside(guarded, f)) return true;
+
+            // 既存のものはそのまま使える
+            if (File.Exists(f) || Directory.Exists(f)) return true;
+
+            string rest = f.Substring(guarded.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            int sep = rest.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+            if (sep >= 0 && Directory.Exists(Path.Combine(guarded, rest.Substring(0, sep)))) return true;
+
+            reason = $"{NoDirectWriteFolder} の直下には作れません。{NoDirectWriteFolder}/{ScenarioSandboxFolder}（シナリオ・ランタイムの生成物）か SandBox（デバッグ）の下を指定してください";
+            return false;
         }
 
         private static bool IsWritableExtension(string full, out string reason)

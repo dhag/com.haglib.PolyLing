@@ -157,7 +157,7 @@ JSON の配列をそのまま渡すと断られる。
 - Play の直後は「no project」で `polyling_call` が通らない。先に `createEmptyModel`（`modelName` 任意）を呼ぶ
 - 読込は `invokeToolAction`（`toolId` `motionClip`、`action` `load`、`argKeys` `"path,sourceKind,time"`、`argValues` の path は**絶対パス**。作業フォルダからの相対は通らない）。
   例：`argValues` = `"D:/…/PolyLing/SandBox/curve_test/stage4_cmd2.plmotion.json,1,0"`
-- 保存は `saveMotionClipJson`（`filePath`）。作業フォルダの直下には置けないので、`SandBox/…` の下にする
+- 保存は `saveMotionClipJson`（`filePath`）。作業フォルダの直下と `データとツール` の直下には作れないので、`SandBox/…`（デバッグ）か `データとツール/サンドボックス_シナリオ用/…`（シナリオ・ランタイムの生成物）の下にする
 - `edit` の無いクリップ（version 4 以前など）も編集できる。最初の書き込みで、トラックごとにクリップ 1 本の `edit` が作られる。
   照会は作られる形で答え、クリップは変えない（結果の `editHeld` が false）
 - 派生のトラック（`rotationSource` が `"bakedBones"` のときの muscles・body、そうでないときの bakedBones）は `edit` に入らず、書き込みはエラーになる。

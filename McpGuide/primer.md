@@ -48,6 +48,8 @@
 
 ## 書ける場所と消し方
 - 書き込み：Packages/com.haglib.polyling、Packages/com.haglib.net_duplexchannel、SandBox、データとツール、@settings。
+- 作業で作るデータの置き場：デバッグは主に SandBox、シナリオ・ランタイムの生成物は主に データとツール/サンドボックス_シナリオ用。
+- PolyLing 直下と データとツール 直下にファイルやフォルダを作るのは禁止（コマンドと MCP の書き込みは拒否される。device_bash やスクリプトでも作らない）。
 - delete_path は削除ではなく _McpTrash へ移す。書ける場所の外は消せない。
 - MCP サーバ自身（データとツール/PolyLingMcpServer）はソースを書けるが、動いている exe がロックされるので再ビルド・再起動は操作者に頼む。compile で出る「exe をコピーできない」だけのエラーは、コンパイル自体は通っている。
 

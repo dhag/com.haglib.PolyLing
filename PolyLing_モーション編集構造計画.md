@@ -267,7 +267,7 @@ Motion Studio で編集できるデータ（キー・接線・ラップ・クリ
 - 確かめ方（出力は `SandBox/curve_test/s6/`）
   - 比較は Studio のページで行った（`s6/stage6_cmp.js`・`s6/stage6_vrma.js`、edit と平らなトラックは段 4 の `stage4_cmp.js`）。比べたのは 3 つ：Studio の `Track.sampleCh`、本体の `sampleMotionEdit`、ファイルの平らなトラックを `PLCurve`（`MotionCurveMath.cs` の写し）で評価した値。本体に平らなトラックを評価するコマンドは無い。範囲は全トラック・全チャンネル・整数フレーム 0〜最終フレーム（どのファイルも 60）
   - 本体の大きな結果（全フレームの `sampleMotionEdit` など）は、Editor の 8770 を Python から呼んでファイルに書いた（`s6/pl_call.py`。呼ぶ並びは `s6/calls_*.json`）
-  - Studio の出力は、確認用のサーバ `データとツール/verify1031/serve_root.py` に足した PUT（`SandBox/curve_test/s6/` の直下だけ）でそのままファイルにした。PUT した中身が `export()` と同一であることを確かめた
+  - Studio の出力は、確認用のサーバ `データとツール/サンドボックス_シナリオ用/verify1031/serve_root.py` に足した PUT（`SandBox/curve_test/s6/` の直下だけ）でそのままファイルにした。PUT した中身が `export()` と同一であることを確かめた
 - 本体 → Studio（`stage4_cmd2.plmotion.json`、`s5/panel_build.json`）
   - Studio の再生と `sampleMotionEdit`（edit の 6 トラック・2562 値）：どちらも差の最大 9.9e-7（LeftUpperArm rot[2]、フレーム 15。float と double）。`sampleMotionEdit` と平らなトラックも 9.9e-7
   - 本体が足した派生の muscles 9 本・body は、Studio の再生と平らなトラックが最大 0.04（stage4_cmd2）・0.062（panel_build）違った → 不具合 1

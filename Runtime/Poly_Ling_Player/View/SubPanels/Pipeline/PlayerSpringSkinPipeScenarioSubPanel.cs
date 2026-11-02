@@ -190,7 +190,7 @@ namespace Poly_Ling.Player
             @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\ローカル原点MoldelFKDL_5T.csv";
 
         private const string DefaultVrmPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\MCPで自動生成\tmpp_pipe.vrm";
+            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\サンドボックス_シナリオ用\MCPで自動生成\tmpp_pipe.vrm";
 
         /// <summary>梯子。MQO の「頭」の下にある開いたはしご（四角形 8 枚＋開始／終了三角形）。</summary>
         private const string DefaultLadderName = "アホ毛用はしご";
