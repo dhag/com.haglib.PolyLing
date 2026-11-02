@@ -8,6 +8,7 @@
 //   PlaceGeneratedMesh を通して行う。
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Commands;
@@ -99,7 +100,7 @@ namespace Poly_Ling.Player
 
                 return BuildCore(
                     cmd.WidthWorld, null, "", cmd.AddStartTag, cmd.AddEndTag,
-                    out meshObject, out reason);
+                    cmd.StartVertexIds, out meshObject, out reason);
             }
 
             if (cmd.MasterIndices == null || cmd.MasterIndices.Length == 0)
@@ -113,21 +114,37 @@ namespace Poly_Ling.Player
 
             return BuildCore(
                 cmd.WidthWorld, cmd.MasterIndices, cmd.EdgeSetName,
-                cmd.AddStartTag, cmd.AddEndTag, out meshObject, out reason);
+                cmd.AddStartTag, cmd.AddEndTag, cmd.StartVertexIds, out meshObject, out reason);
         }
+
+        /// <summary>
+        /// 直近の BuildFromCommand が選んだ開始側の頂点 ID（段 9b）。
+        /// 受け口がモディファイアスタックに残すとき、コマンドの StartVertexIds が空ならこれを記録する。
+        /// </summary>
+        public int[] LastStartVertexIds { get; private set; } = System.Array.Empty<int>();
 
         private bool BuildCore(
             float widthWorld, int[] targetIndices, string edgeSetName,
             bool addStartTag, bool addEndTag,
+            out MeshObject meshObject, out string reason)
+            => BuildCore(widthWorld, targetIndices, edgeSetName, addStartTag, addEndTag, null, out meshObject, out reason);
+
+        private bool BuildCore(
+            float widthWorld, int[] targetIndices, string edgeSetName,
+            bool addStartTag, bool addEndTag, int[] preferredStartIds,
             out MeshObject meshObject, out string reason)
         {
             float saved = Settings.WidthWorld;
             try
             {
                 Settings.WidthWorld = widthWorld;
-                return _tool.Build(
+                bool ok = _tool.Build(
                     _project?.CurrentModel, targetIndices, edgeSetName, GetWorldPositions,
-                    addStartTag, addEndTag, out meshObject, out reason);
+                    addStartTag, addEndTag,
+                    preferredStartIds != null && preferredStartIds.Length > 0 ? new HashSet<int>(preferredStartIds) : null,
+                    out meshObject, out var starts, out reason);
+                LastStartVertexIds = ok && starts != null ? starts.ToArray() : System.Array.Empty<int>();
+                return ok;
             }
             finally
             {

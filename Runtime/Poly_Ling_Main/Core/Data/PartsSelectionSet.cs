@@ -499,8 +499,12 @@ namespace Poly_Ling.Selection
         ///
         /// 頂点は ResolveByVertexId と同じ規則。面・線分は Face.Id、
         /// 辺は両端の頂点 ID で引く。引き当てられなかったものは落とす
-        /// （面と辺は「索引が空いていれば残す」ができない。面 ID は
-        /// 1 メッシュ内で一意なので、見つからない＝その面はもう無い）。
+        /// （面と辺は「索引が空いていれば残す」ができない）。
+        ///
+        /// 【同じ ID が複数あるとき】頂点と同じく、当たったものすべてを採る（モディファイア枠組み計画 段 9b）。
+        ///   厚み・配列・ミラー（実体化）は元の頂点・面の ID を写しに写すので、同じ ID が複数になる。
+        ///   辺は、両端の候補の組が複数あるときだけ、実際に面の辺であるものに絞る
+        ///   （表の頂点と裏の頂点の組のような、辺でない組を採らないため）。候補が 1 組なら今までどおり採る。
         /// </summary>
         /// <param name="resolved">引き当てられた控えの件数（頂点・面・線分・辺の合計）。</param>
         /// <param name="lost">引き当てられなかった控えの件数。</param>
@@ -525,13 +529,14 @@ namespace Poly_Ling.Selection
             {
                 any = true;
 
-                var byFaceId = new Dictionary<int, int>();
+                var byFaceId = new Dictionary<int, List<int>>();
                 var faces    = meshObject.Faces;
                 for (int i = 0; i < faces.Count; i++)
                 {
                     int id = faces[i].Id;
                     if (MeshObject.IsUnsetId(id)) continue;
-                    if (!byFaceId.ContainsKey(id)) byFaceId[id] = i;
+                    if (!byFaceId.TryGetValue(id, out var bucket)) { bucket = new List<int>(); byFaceId[id] = bucket; }
+                    bucket.Add(i);
                 }
 
                 ResolveFaceSet(Faces, FaceIds, byFaceId, ref resolved, ref lost);
@@ -543,29 +548,46 @@ namespace Poly_Ling.Selection
             {
                 any = true;
 
-                var byVertexId = new Dictionary<int, int>();
+                var byVertexId = new Dictionary<int, List<int>>();
                 var list       = meshObject.Vertices;
                 for (int i = 0; i < list.Count; i++)
                 {
                     int id = list[i].Id;
                     if (MeshObject.IsUnsetId(id)) continue;
-                    if (!byVertexId.ContainsKey(id)) byVertexId[id] = i;
+                    if (!byVertexId.TryGetValue(id, out var bucket)) { bucket = new List<int>(); byVertexId[id] = bucket; }
+                    bucket.Add(i);
                 }
+
+                HashSet<VertexPair> meshEdges = null;   // 候補が複数のときだけ作る
 
                 var newEdges = new HashSet<VertexPair>();
                 var newIds   = new Dictionary<VertexPair, VertexPair>();
                 foreach (var kv in EdgeVertexIds)
                 {
-                    if (!byVertexId.TryGetValue(kv.Value.V1, out int a) ||
-                        !byVertexId.TryGetValue(kv.Value.V2, out int b) ||
-                        a == b)
+                    if (!byVertexId.TryGetValue(kv.Value.V1, out var ha) ||
+                        !byVertexId.TryGetValue(kv.Value.V2, out var hb))
                     {
                         lost++;
                         continue;
                     }
-                    var edge = new VertexPair(a, b);
-                    newEdges.Add(edge);
-                    newIds[edge] = kv.Value;
+
+                    var candidates = new List<VertexPair>();
+                    foreach (int a in ha)
+                        foreach (int b in hb)
+                            if (a != b) candidates.Add(new VertexPair(a, b));
+
+                    if (candidates.Count > 1)
+                    {
+                        if (meshEdges == null) meshEdges = BuildFaceEdgeSet(meshObject);
+                        candidates.RemoveAll(e => !meshEdges.Contains(e));
+                    }
+                    if (candidates.Count == 0) { lost++; continue; }
+
+                    foreach (var edge in candidates)
+                    {
+                        newEdges.Add(edge);
+                        newIds[edge] = kv.Value;
+                    }
                     resolved++;
                 }
                 Edges         = newEdges;
@@ -575,10 +597,25 @@ namespace Poly_Ling.Selection
             return any;
         }
 
-        /// <summary>面（または線分）の集合を Face.Id で引き直す。</summary>
+        /// <summary>メッシュの面の辺（線分は 2 頂点の面そのもの）の集合。</summary>
+        private static HashSet<VertexPair> BuildFaceEdgeSet(MeshObject meshObject)
+        {
+            var set = new HashSet<VertexPair>();
+            foreach (var f in meshObject.Faces)
+            {
+                var idx = f.VertexIndices;
+                int n = idx.Count;
+                if (n < 2) continue;
+                if (n == 2) { set.Add(new VertexPair(idx[0], idx[1])); continue; }
+                for (int j = 0; j < n; j++) set.Add(new VertexPair(idx[j], idx[(j + 1) % n]));
+            }
+            return set;
+        }
+
+        /// <summary>面（または線分）の集合を Face.Id で引き直す。同じ ID の面はすべて採る。</summary>
         private static void ResolveFaceSet(
             HashSet<int> target, Dictionary<int, int> ids,
-            Dictionary<int, int> byFaceId, ref int resolved, ref int lost)
+            Dictionary<int, List<int>> byFaceId, ref int resolved, ref int lost)
         {
             if (ids == null || ids.Count == 0) return;
 
@@ -586,9 +623,12 @@ namespace Poly_Ling.Selection
             var newIds = new Dictionary<int, int>();
             foreach (var kv in ids)
             {
-                if (!byFaceId.TryGetValue(kv.Value, out int fi)) { lost++; continue; }
-                newSet.Add(fi);
-                newIds[fi] = kv.Value;
+                if (!byFaceId.TryGetValue(kv.Value, out var hits)) { lost++; continue; }
+                foreach (int fi in hits)
+                {
+                    newSet.Add(fi);
+                    newIds[fi] = kv.Value;
+                }
                 resolved++;
             }
             target.Clear();

@@ -106,9 +106,29 @@ namespace Poly_Ling.Tools
             bool addEndTag,
             out MeshObject meshObject,
             out string reason)
+            => Build(model, targetIndices, edgeSetName, getWorldPositions, addStartTag, addEndTag,
+                     null, out meshObject, out _, out reason);
+
+        /// <summary>
+        /// 開始側の頂点 ID を指定して組む（モディファイアスタックの作り直し用。段 9b）。
+        /// preferredStartIds に端点の Vertex.Id があればその端を開始側にし、無ければ位置で決める。
+        /// startVertexIds には、選んだ開始側の Vertex.Id を全対象ぶん返す。
+        /// </summary>
+        public bool Build(
+            ModelContext model,
+            IReadOnlyList<int> targetIndices,
+            string edgeSetName,
+            Func<MeshContext, Vector3[]> getWorldPositions,
+            bool addStartTag,
+            bool addEndTag,
+            ICollection<int> preferredStartIds,
+            out MeshObject meshObject,
+            out List<int> startVertexIds,
+            out string reason)
         {
             meshObject = null;
             reason = null;
+            startVertexIds = new List<int>();
 
             if (model == null)
             {
@@ -188,8 +208,10 @@ namespace Poly_Ling.Tools
                         _settings.WidthWorld,
                         addStartTag,
                         addEndTag,
-                        dest);
+                        dest,
+                        preferredStartIds);
 
+                if (r.StartVertexIds != null) startVertexIds.AddRange(r.StartVertexIds);
                 totalFaces += r.GeneratedFaces;
                 totalVertices += r.GeneratedVertices;
                 totalSkipped += r.SkippedEdges;

@@ -414,6 +414,34 @@
   6. パーツ選択辞書の作成日時が保存再読込で変わる
   7. `createEdgePipe`・`placeSpringBoneLadderChains` に PLUiRoute が無い
 
+### 段 9b：段 9 で見つけた 1〜4 を直す
+
+- 状態：完了（2026-11-02）
+- 決めたこと
+  - ベベルの穴（1）：`EdgeBevelOps.Execute` の Pass 1.5 を作り直した。頂点ごとに、まわりの面をベベルしない辺で結ばれたものどうし 1 つの領域にまとめ（union-find）、同じ領域に 2 本以上の辺の端があれば 1 つの頂点にまとめる（位置は辺の内向きのずれのマイター）。2 本の辺が出会う所は分割の中間の点もまとめ、3 本以上が出会う所は蓋の面を足す（Pass 3.5。`Result.CapFaceCount`）。ベベルしない辺が 1 本だけの端（価数 4 の頂点で一直線に続く辺の端など）は、その列の点を A 面から B 面までの脇の面へ配る（`DistributeEndRow`）。面の差し替えは面・頂点ごとの上書き（`faceVertexOverride`）を先に見る。マイターは単位でないずれにも効く式にした（中間の点のずれが単位でないため）。既存のツールのベベルも同じ関数を通る
+  - 辞書の引き直し（2）：`PartsSelectionSet.ResolveByIds` は同じ ID の頂点・面をすべて引く。辺は ID の組の候補が複数あるとき、面の辺に実在する組だけを残す（`BuildFaceEdgeSet`）
+  - 角度で辺を決める（3・4）：ベベルの種類に `limitMethod`（`BevelLimitMethod`：Scope＝範囲の辺／Angle＝隣の 2 面の法線のなす角が `angle` 以上の辺）と `angle`（0〜180、既定 30）を足した。既定は Scope のままで、段 7a の保存データは同じ結果になる。Angle では同じ位置の頂点を 1 つとみなして辺の隣の面を数え（ブーリアンの切り口は頂点が分かれているため）、面がちょうど 2 枚の辺だけを見る。範囲が全体でなければ両端が範囲にある辺だけ
+  - 梯子の根元（段 9 の 4）：帯を作ったときの始端の頂点 ID を `EdgeRibbonFaceCommand.StartVertexIds` に控え、スタックの作り直しでは控えた ID を片端にだけ持つ鎖でその端を始端にする（`EdgeRibbonFaceOps.BuildInto` の `preferredStartIds`）。当たらなければ従来の形の規則（`CompareStart`）。控えるのは `createEdgePipe` などがスタックを控えるとき（`PlayerCommandDispatcher.EditTools.cs` の `WithRecordedRibbonStart`）。頂点 ID が未設定の芯では控えられない
+- 足した・変えたファイル
+  - `Runtime/Poly_Ling_Main/Core/Ops/EdgeBevelOps.cs`（作り直し）
+  - `Runtime/Poly_Ling_Main/Core/Data/PartsSelectionSet.cs`
+  - `Runtime/Poly_Ling_Main/Core/Modifiers/Kinds/BevelMeshModifier.cs`
+  - `Runtime/Poly_Ling_Main/Core/Ops/EdgeRibbonFaceOps.cs`、`Tools/TopologyTools/Create/EdgeRibbonFaceTool_/EdgeRibbonFaceTool.cs`、`Core/Data/PanelCommand.TopologyTargeted.cs`、`Poly_Ling_Player/View/ToolHandlers/EdgeRibbonFaceToolHandler.cs`、`PlayerCommandDispatcher.cs`・`PlayerCommandDispatcher.EditTools.cs`、`PolyLingPlayerViewerCore.CreateCommands.cs`
+  - `Runtime/Poly_Ling_Main/Core/Modifiers/MeshModifierAudit.cs`（ベベルのつなぎ目の自己試験 8 件）
+  - シナリオ：`枠組み9_箱_ブーリアン_ベベル` は頂点 ID・範囲の選択・辞書の手順を外し、ベベルを `limitMethod=Angle`・範囲は全体にした。`枠組み9_髪_パイプ_揺れ鎖` は芯に `repairVertexIds` を足した。`枠組み9b_髪_水平芯_根元保持` と `枠組み9b_基準_辺1本ベベル` を足した（写しは `SandBox/stage9fw/scn/`・`SandBox/stage9b/scn/`）
+- 確認（MCP）
+  - `queryMeshModifierAudit`：発見・往復・範囲・種類とも 0。足した試験：角の 2 辺（頂点 11・面 8・境界辺 0）、角の 3 辺（13・10・0、蓋の三角形）、角の 3 辺・分割 3（境界辺 0）、角度・全体・分割 1（箱の 12 辺：24・26・0）、角度・分割 2・フィレット（境界辺 0）、平らな帯の角度は失敗、厚みの後の一直線の 2 辺（範囲の辺 4・境界辺 0）、厚みの後の辞書が表と裏の 2 辺に当たる
+  - 修正前後の比較（辺 1 本のベベル。ツールと処理列）：`queryCsvFolderDiff` の差は面 ID・オブジェクト ID と、価数 4 の端の頂点の 2 面だけ（6 角形＋4 角形が、列の中の点を共有する 5 角形 2 つになった）。頂点の行は同じで、どちらも境界辺 0
+  - 板：ベベルの後に頂点 110・面 104・境界ループ 0（段 9 は 3）。表と裏の上端の両方にかかる。途中変更・Undo・Redo・CSV と二進の保存再読込で頂点数・面数・確かめた位置が一致
+  - 箱：角度・全体のベベルで頂点 170・面 208・境界ループ 0。B の移動で 176・216（処理器で作り直した）、Undo・Redo、和で 202・244、保存再読込で 176・216・0 と位置が一致。作る操作は 37→27 回
+  - 髪（水平な芯）：控えた `startVertexIds` が x=0 の頂点の ID。毛先を +Y へ 0.2 上げた後も、帯の始端 (0,±0.025,0)・パイプの最初の輪 x=0・根元のボーン `HairSpringH_top` の位置 (0,0,0) のまま
+  - 髪（垂れた芯）：毛先の移動・Undo・Redo・厚みの変更と Undo・保存再読込でパイプの頂点数・面数・毛先の輪の位置が一致
+  - `queryUiAutomationAudit`（処理列パネルでベベルの項目を選び `limitMethod` の選択肢が出た状態で）：誤り 0。`queryCommandAudit`：PLParam 付け忘れ 0、範囲の宣言漏れ 0、action 衝突 0。`queryProjectSyncDiff`：via=binary・via=csv とも差はパーツ選択辞書の作成日時だけ（段 9 の範囲外 6）
+- 確かめていないこと
+  - マウスで頂点をドラッグしている最中のベベルの追随（ドラッグ中は BasePos＋OffsetDir×量で動かし、まとめた頂点の OffsetDir はマイター）
+  - 4 本以上の辺が 1 つの頂点で出会う蓋（試験は 3 本まで）
+  - 段 9 より前に保存された梯子のスタック（`startVertexIds` が無い）は従来の形の規則で始端を決める
+
 ### 段 10：モーション（別の作業線。この計画では方針だけ置く）
 
 - レイヤーの重みを、既存のスカラートラックの形で時間変化させられるようにする。Studio も同じ評価の写しにそろえる
@@ -426,7 +454,8 @@
 - ~~結果を作り直したときのミラー側の追随の口（段 8。3.6）~~ → 段 8 で `MirrorBranchOps.RebuildMirrorSideOf` に決めた
 - ~~処理列の結果が元メッシュの BoneTransform を写したまま子に置かれる件（段 8）~~ → 段 9 で直した
 - 既存のサブディビジョンパネルの「作る」で子があると拒否される件（段 8 の「段の範囲外で見つけたこと」）
-- 段 9 で見つけたこと（段 9 の「段の範囲外で見つけたこと」1〜7、`PolyLing_モディファイア比較_Blender_Maya.md` の 5.）。Blender との比較で効くのは次の 3 つ
-  - ベベルの連続した辺の穴（1）
-  - 範囲の指定の手間：パーツ選択辞書が同じ ID の写しの 1 つにしか当たらない（2）、切り口の辺を範囲に入れられない・角度で範囲を決める手段が無い（3）、頂点 ID の付与が要る。作業 2 で Blender 20 回に対し 37 回、差 17 回のうち 8 回がここ
-  - 梯子の根元を作り直しのたびに形から決め直す（4）
+- 段 9 で見つけたこと（段 9 の「段の範囲外で見つけたこと」1〜7、`PolyLing_モディファイア比較_Blender_Maya.md` の 5.）
+  - ~~ベベルの連続した辺の穴（1）~~ → 段 9b で直した
+  - ~~パーツ選択辞書が同じ ID の写しの 1 つにしか当たらない（2）、切り口の辺を範囲に入れられない・角度で範囲を決める手段が無い（3）~~ → 段 9b で直した（作業 2 は 37→27 回）
+  - ~~梯子の根元を作り直しのたびに形から決め直す（4）~~ → 段 9b で直した（始端を頂点 ID で控える）
+  - 残り：範囲を ID の組・辞書で渡すときの頂点 ID の付与（比較の文書の 5. の 5）、`saveProjectBinary` の保存先フォルダ（5）、辞書の作成日時（6）、PLUiRoute（7）

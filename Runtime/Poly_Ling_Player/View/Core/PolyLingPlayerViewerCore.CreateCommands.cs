@@ -71,6 +71,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnAlignVertices       = ExecuteAlignVertices;
             _commandDispatcher.OnSmoothEdges         = ExecuteSmoothEdges;
             _commandDispatcher.OnEdgeRibbonFace      = ExecuteEdgeRibbonFace;
+            _commandDispatcher.GetLastEdgeRibbonStartIds = () => _edgeRibbonFaceHandler?.LastStartVertexIds ?? System.Array.Empty<int>();
             _commandDispatcher.OnCreateVertexBillboardPlace = ExecuteVertexBillboardPlace;
             // ホスト（画面操作）が担当者判定で止められたら状態表示へ出す（操作経路統一計画.md L-5）。
             _commandDispatcher.OnOwnershipDenied = (deniedCmd, deniedActor, reason) =>

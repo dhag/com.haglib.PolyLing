@@ -124,7 +124,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
   - Undo・選択の消去・GPU への通知・ログは実処理に入れず、ツール側に残す（種類は下見で何度も流れる）
   - 写し先は「処理後の頂点ごとの元の頂点番号」と「新しく作った頂点か」を返す（`EdgeBevelOps.Result.SourceOf`・`Created`）。種類はこれで新しい頂点に元の ID を写す。ツールは使わないので動作は変わらない
   - 置き換えたら、変更前のコードでコマンドの結果（`getRawData`・保存した CSV）を控え、変更後と比べる
-- 範囲の要る種類（ベベルは辺）は、全体の範囲・要る要素の無い範囲を失敗にし、理由を `error` に入れる。全体を勝手に対象にしない
+- 範囲の要る種類（ベベルは辺）は、全体の範囲・要る要素の無い範囲を失敗にし、理由を `error` に入れる。全体を勝手に対象にしない。対象を範囲以外で決める口を設けるなら、引数で明示して選ばせる（ベベルの `limitMethod=Angle` は、隣の 2 面の角度が `angle` 以上の辺を全体または範囲の中から拾う）
 - 下見（スライダーのドラッグ中）でも毎回流し直されるので、重さを確かめる
 - **ドラッグ中も追随させたい**なら `IMeshModifierDragFollow.FollowPositions(src, out dst)` を実装する（段 8。例：`SubdivisionMeshModifier`・`MirrorBakeMeshModifier`）
   - 最後の `Evaluate` で対応（ステンシル、頂点の出自など）を private の欄に控え、入力の位置から出力の位置を求める。面構成は最後の `Evaluate` のままとみなす。控えが無い・数が合わないときは false
@@ -151,7 +151,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 
 | 検査 | 見るもの | 合格 |
 |---|---|---|
-| `queryMeshModifierAudit` | 発見・引数の往復（既定値×3 種類の範囲）・範囲の自己試験・種類の自己試験（デフォーマの包む漏れ・位置の口と `Evaluate` の一致・範囲の外が動かない・厚み・ベベル・配列・ブーリアン・格子・サブディビジョン・ミラー（実体化）・追随の口と `Evaluate` の一致・末尾固定）。面構成を変える種類を足したら、頂点数・面数・ID の写しの試験を `MeshModifierAudit.KindSelfTest` に足す | `problems`・`roundTripFailures`・`scopeFailures`・`kindFailures` が 0 |
+| `queryMeshModifierAudit` | 発見・引数の往復（既定値×3 種類の範囲）・範囲の自己試験・種類の自己試験（デフォーマの包む漏れ・位置の口と `Evaluate` の一致・範囲の外が動かない・厚み・ベベル（辺のつなぎ目の穴・蓋・角度で決める辺・厚みの後の辞書）・配列・ブーリアン・格子・サブディビジョン・ミラー（実体化）・追随の口と `Evaluate` の一致・末尾固定）。面構成を変える種類を足したら、頂点数・面数・ID の写しの試験を `MeshModifierAudit.KindSelfTest` に足す | `problems`・`roundTripFailures`・`scopeFailures`・`kindFailures` が 0 |
 | `queryMeshModifierAudit kind=<種類> argKeys=… argValues=…` | 指定の引数の往復 | 失敗 0 |
 | `queryCommandAudit` | 「処理列の種類の範囲の宣言漏れ」 | 0 |
 | `queryUiAutomationAudit` | 引数欄が UI 自動操作に載っているか | 誤り 0。**足した種類の項目を処理列パネルで選んだ状態で**実行する |

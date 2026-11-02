@@ -365,7 +365,7 @@ namespace Poly_Ling.Player
                         if (erfReason != null) { Fail(erfReason); return true; }
 
                         if (c.Placement.KeepAsModifierStack)
-                            CaptureModifierStack(c, erfBeforeIds, erfFallback);
+                            CaptureModifierStack(WithRecordedRibbonStart(c), erfBeforeIds, erfFallback);
                         return true;
                     }
 
@@ -399,7 +399,7 @@ namespace Poly_Ling.Player
 
                             erfFail = OnEdgeRibbonFace.Invoke(erfCmd);
                             if (erfFail == null)
-                                CaptureModifierStack(erfCmd, erfBeforeId, erfFallback);
+                                CaptureModifierStack(WithRecordedRibbonStart(erfCmd), erfBeforeId, erfFallback);
                         }
                     }
                     finally
@@ -1030,6 +1030,19 @@ namespace Poly_Ling.Player
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// 帯面をモディファイアスタックに残すとき、開始側を記録したコマンドにする（モディファイア枠組み計画 段 9b）。
+        /// コマンドの StartVertexIds が空なら、直近の実行が選んだ開始側の頂点 ID を書き込む。
+        /// 作り直しは記録した ID の端を開始側にするので、辺の形を変えても根元が入れ替わらない。
+        /// 開始側の頂点に ID が無ければ記録できず、作り直しは今までどおり位置で決める。
+        /// </summary>
+        private EdgeRibbonFaceCommand WithRecordedRibbonStart(EdgeRibbonFaceCommand c)
+        {
+            if (c == null || (c.StartVertexIds != null && c.StartVertexIds.Length > 0)) return c;
+            var ids = GetLastEdgeRibbonStartIds?.Invoke();
+            return ids != null && ids.Length > 0 ? c.WithStartVertexIds(ids) : c;
         }
     }
 }

@@ -22,11 +22,15 @@
 //   付けるのは「分岐の無い開いた連なり」（端点がちょうど2個・次数3以上の頂点が無い）だけ。
 //   閉路と分岐を含む連なりには付けない（Result.UntaggedChains に数える）。
 //
-// 【開始側の決め方】端点 2 個のワールド位置を比べる。
+// 【開始側の決め方】
+//   0. 呼び出し側が開始側の頂点 ID（preferredStartIds）を渡し、端点の一方の Vertex.Id がその中にあれば、その端
+//      （モディファイアスタックの作り直しで、形を変えても根元が入れ替わらないため。モディファイア枠組み計画 段 9b）
+//   無ければ端点 2 個のワールド位置を比べる。
 //   1. 上（+Y）から下
 //   2. Y が同じなら 手前（-Z）から奥（+Z）
 //   3. Z も同じなら 左（-X）から右（+X）
 //   「同じ」は差が DirectionTolerance 以下。3 軸とも同じなら決まらないので付けない。
+//   選んだ開始側の Vertex.Id は Result.StartVertexIds に返す（未設定 ID の端は返さない）。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -69,6 +73,9 @@ namespace Poly_Ling.Ops
             /// <summary>タグを求められたが付けなかった連なりの数（閉路・分岐・開始側が決まらない）。</summary>
             public int UntaggedChains;
 
+            /// <summary>タグを付けた連なりの開始側の端点の Vertex.Id（未設定 ID の端は入れない）。</summary>
+            public List<int> StartVertexIds;
+
             public bool Changed => GeneratedFaces > 0;
         }
 
@@ -96,6 +103,7 @@ namespace Poly_Ling.Ops
         /// <param name="worldPositions">mc の全頂点のワールド位置（GPU から読んだ値）。頂点番号で引く。</param>
         /// <param name="addStartTag">開いた連なりの開始端に開始三角と開始タグ三角を付ける。</param>
         /// <param name="addEndTag">開いた連なりの終了端に終了三角を付ける。</param>
+        /// <param name="preferredStartIds">開始側にする端点の Vertex.Id。null・空なら位置で決める。</param>
         public static Result BuildInto(
             MeshContext mc,
             IEnumerable<VertexPair> selectedEdges,
@@ -103,9 +111,10 @@ namespace Poly_Ling.Ops
             float widthWorld,
             bool addStartTag,
             bool addEndTag,
-            MeshObject dest)
+            MeshObject dest,
+            ICollection<int> preferredStartIds = null)
         {
-            var result = new Result();
+            var result = new Result { StartVertexIds = new List<int>() };
             var mo = mc?.MeshObject;
             if (mo == null || dest == null || selectedEdges == null ||
                 worldPositions == null || widthWorld <= Eps)
@@ -319,7 +328,7 @@ namespace Poly_Ling.Ops
             {
                 AppendTags(
                     mo, worldPositions, edges, incident, generated, quadVertices,
-                    widthWorld, addStartTag, addEndTag, dest, ref result);
+                    widthWorld, addStartTag, addEndTag, preferredStartIds, dest, ref result);
             }
 
             return result;
@@ -362,6 +371,7 @@ namespace Poly_Ling.Ops
             float widthWorld,
             bool addStartTag,
             bool addEndTag,
+            ICollection<int> preferredStartIds,
             MeshObject dest,
             ref Result result)
         {
@@ -409,7 +419,17 @@ namespace Poly_Ling.Ops
                     continue;
                 }
 
-                int order = CompareStart(world[endA], world[endB]);
+                int order = 0;
+                if (preferredStartIds != null && preferredStartIds.Count > 0)
+                {
+                    int idA = mo.Vertices[endA].Id;
+                    int idB = mo.Vertices[endB].Id;
+                    bool prefA = !MeshObject.IsUnsetId(idA) && preferredStartIds.Contains(idA);
+                    bool prefB = !MeshObject.IsUnsetId(idB) && preferredStartIds.Contains(idB);
+                    if (prefA && !prefB) order = 1;
+                    else if (prefB && !prefA) order = -1;
+                }
+                if (order == 0) order = CompareStart(world[endA], world[endB]);
                 if (order == 0)
                 {
                     result.UntaggedChains++;
@@ -418,6 +438,9 @@ namespace Poly_Ling.Ops
 
                 int start = order > 0 ? endA : endB;
                 int end = order > 0 ? endB : endA;
+
+                int startId = mo.Vertices[start].Id;
+                if (!MeshObject.IsUnsetId(startId)) result.StartVertexIds?.Add(startId);
 
                 if (addStartTag)
                 {

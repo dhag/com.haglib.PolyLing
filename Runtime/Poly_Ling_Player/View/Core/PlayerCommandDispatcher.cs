@@ -367,6 +367,12 @@ namespace Poly_Ling.Player
         /// <summary>選択辺から帯面を足すコマンドの実行。</summary>
         public Func<EdgeRibbonFaceCommand, string> OnEdgeRibbonFace;
 
+        /// <summary>
+        /// 直近の帯面の実行が選んだ開始側の頂点 ID（段 9b）。モディファイアスタックに残すとき、
+        /// コマンドの StartVertexIds が空ならこれを書き込んだコマンドを記録する。
+        /// </summary>
+        public Func<int[]> GetLastEdgeRibbonStartIds;
+
         /// <summary>頂点へ藤壺を置くコマンドの実行。</summary>
         public Func<CreateVertexBillboardPlaceCommand, string> OnCreateVertexBillboardPlace;
 

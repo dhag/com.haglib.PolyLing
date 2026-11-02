@@ -313,6 +313,11 @@ namespace Poly_Ling.Data
         [PLParam(Description = "辺を読むパーツ選択辞書の名前。空にすると選択中の辺を使う")]
         public string EdgeSetName { get; }
 
+        // モディファイアスタックに残すとき、受け口が作成時に選んだ開始側を書き込む（段 9b）。
+        // 作り直しで辺の形が変わっても根元が入れ替わらないようにするため。空なら位置で決める。
+        [PLParam(Description = "開始側にする端点の頂点 ID（Vertex.Id）。連なりの端点の ID がこの中にあればその端を開始側にし、無ければ上→下・手前→奥・左→右で決める。モディファイアスタックに残すとき、空なら作成時に選んだ端の ID が記録される")]
+        public int[] StartVertexIds { get; }
+
         public EdgeRibbonFaceCommand(
             int modelIndex, int[] masterIndices,
             float widthWorld  = 0.05f,
@@ -320,23 +325,31 @@ namespace Poly_Ling.Data
             ulong[] objectIds = null,
             bool addStartTag = false,
             bool addEndTag = false,
-            string edgeSetName = "")
+            string edgeSetName = "",
+            int[] startVertexIds = null)
             : base(modelIndex)
         {
-            MasterIndices = masterIndices ?? System.Array.Empty<int>();
-            ObjectIds     = objectIds;
-            WidthWorld    = widthWorld;
-            Placement     = placement;
-            AddStartTag   = addStartTag;
-            AddEndTag     = addEndTag;
-            EdgeSetName   = edgeSetName ?? "";
+            MasterIndices  = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds      = objectIds;
+            WidthWorld     = widthWorld;
+            Placement      = placement;
+            AddStartTag    = addStartTag;
+            AddEndTag      = addEndTag;
+            EdgeSetName    = edgeSetName ?? "";
+            StartVertexIds = startVertexIds ?? System.Array.Empty<int>();
         }
 
         /// <summary>辞書名だけを差し替えた写しを作る。</summary>
         public EdgeRibbonFaceCommand WithEdgeSetName(string edgeSetName)
             => new EdgeRibbonFaceCommand(
                 ModelIndex, MasterIndices, WidthWorld, Placement, ObjectIds,
-                AddStartTag, AddEndTag, edgeSetName);
+                AddStartTag, AddEndTag, edgeSetName, StartVertexIds);
+
+        /// <summary>開始側の頂点 ID だけを差し替えた写しを作る。</summary>
+        public EdgeRibbonFaceCommand WithStartVertexIds(int[] startVertexIds)
+            => new EdgeRibbonFaceCommand(
+                ModelIndex, MasterIndices, WidthWorld, Placement, ObjectIds,
+                AddStartTag, AddEndTag, EdgeSetName, startVertexIds);
     }
 
     /// <summary>

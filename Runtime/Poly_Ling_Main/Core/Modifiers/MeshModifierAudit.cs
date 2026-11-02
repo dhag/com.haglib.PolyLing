@@ -214,6 +214,113 @@ namespace Poly_Ling.Modifiers
             return $"V[{V(s.Vertices)}] E[{E(s.Edges)}] F[{F(s.Faces)}] A[{V(s.AffectedVertices)}]";
         }
 
+        /// <summary>閉じた単位立方体（頂点 ID 31〜38、面 ID 301〜306）。</summary>
+        private static MeshObject BuildTestCube()
+        {
+            var p = new[]
+            {
+                new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 1, 0), new Vector3(0, 1, 0),
+                new Vector3(0, 0, 1), new Vector3(1, 0, 1), new Vector3(1, 1, 1), new Vector3(0, 1, 1),
+            };
+            var mo = new MeshObject("bevelJoinCube");
+            for (int i = 0; i < 8; i++) mo.Vertices.Add(new Vertex(31 + i, p[i]));
+            int[][] f =
+            {
+                new[] { 0, 3, 2, 1 }, new[] { 4, 5, 6, 7 }, new[] { 0, 1, 5, 4 },
+                new[] { 3, 7, 6, 2 }, new[] { 0, 4, 7, 3 }, new[] { 1, 2, 6, 5 },
+            };
+            for (int i = 0; i < f.Length; i++)
+                mo.Faces.Add(new Face(f[i][0], f[i][1], f[i][2], f[i][3], 0) { Id = 301 + i });
+            return mo;
+        }
+
+        /// <summary>3 枚の四角の帯（下の辺 y=0・上の辺 y=1、頂点 ID 41〜48、面 ID 401〜403）。</summary>
+        private static MeshObject BuildTestStrip()
+        {
+            var mo = new MeshObject("bevelJoinStrip");
+            for (int i = 0; i < 4; i++) mo.Vertices.Add(new Vertex(41 + i, new Vector3(i, 0, 0)));
+            for (int i = 0; i < 4; i++) mo.Vertices.Add(new Vertex(45 + i, new Vector3(i, 1, 0)));
+            for (int i = 0; i < 3; i++)
+                mo.Faces.Add(new Face(i, i + 1, i + 5, i + 4, 0) { Id = 401 + i });
+            return mo;
+        }
+
+        private static MeshObject BevelByEdges(MeshObject src, VertexPair[] edges, int segments, out string error)
+        {
+            var sc = MeshModifierScope.FromIndices(src, null, edges, null, out _);
+            sc.TryResolve(src, null, out var r, out _);
+            var bv = new BevelMeshModifier { Amount = 0.1f, Segments = segments };
+            return bv.Evaluate(new MeshModifierInput { Source = src, Scope = r }, out error);
+        }
+
+        private static string BevelStats(MeshObject m)
+            => m == null ? "null" : $"頂点 {m.Vertices.Count}・面 {m.Faces.Count}・境界辺 {Poly_Ling.Ops.BoundaryEdgeOps.CollectBoundaryEdges(m).Count}";
+
+        private static int Boundary(MeshObject m) => m == null ? -1 : Poly_Ling.Ops.BoundaryEdgeOps.CollectBoundaryEdges(m).Count;
+
+        /// <summary>
+        /// 段 9b：2 本以上のベベル辺が集まる頂点で穴が空かないこと、3 本ではふたが付くこと、
+        /// 角度で辺を決めること、厚みの後の辞書が表と裏の両方の辺に当たること。
+        /// </summary>
+        private static void BevelJoinSelfTest(List<string> lines, ref int failures)
+        {
+            var cube = BuildTestCube();
+
+            var two = BevelByEdges(cube, new[] { new VertexPair(0, 1), new VertexPair(0, 3) }, 1, out string e1);
+            // 残る元の頂点 5 ＋ 新しい頂点 6（辺ごとに両端 2 個ずつの 8 個から、角の 2 領域でまとめた 2 個を引く）
+            Check(lines, ref failures, "ベベル：角の 2 辺（分割 1）で穴が空かない：頂点 11・面 8・境界辺 0",
+                  two != null && two.Vertices.Count == 11 && two.Faces.Count == 8 && Boundary(two) == 0,
+                  two == null ? e1 : BevelStats(two));
+
+            var three = BevelByEdges(cube, new[] { new VertexPair(0, 1), new VertexPair(0, 3), new VertexPair(0, 4) }, 1, out string e2);
+            Check(lines, ref failures, "ベベル：角の 3 辺（分割 1）でふたの三角形が付く：頂点 13・面 10・境界辺 0",
+                  three != null && three.Vertices.Count == 13 && three.Faces.Count == 10 && Boundary(three) == 0
+                  && three.Faces.Count(f => f.VertexIndices.Count == 3) == 1,
+                  three == null ? e2 : BevelStats(three));
+
+            var three2 = BevelByEdges(cube, new[] { new VertexPair(0, 1), new VertexPair(0, 3), new VertexPair(0, 4) }, 3, out string e3);
+            Check(lines, ref failures, "ベベル：角の 3 辺（分割 3）で境界辺 0",
+                  three2 != null && Boundary(three2) == 0, three2 == null ? e3 : BevelStats(three2));
+
+            var all = new BevelMeshModifier { Amount = 0.1f, Segments = 1, LimitMethod = BevelLimitMethod.Angle, Angle = 30f }
+                .Evaluate(new MeshModifierInput { Source = cube, Scope = ResolvedMeshModifierScope.CreateAll() }, out string e4);
+            Check(lines, ref failures, "ベベル（角度・全体・分割 1）：箱の 12 辺すべて：頂点 24・面 26・境界辺 0",
+                  all != null && all.Vertices.Count == 24 && all.Faces.Count == 26 && Boundary(all) == 0,
+                  all == null ? e4 : BevelStats(all));
+
+            var all2 = new BevelMeshModifier { Amount = 0.1f, Segments = 2, Fillet = true, LimitMethod = BevelLimitMethod.Angle, Angle = 30f }
+                .Evaluate(new MeshModifierInput { Source = cube, Scope = ResolvedMeshModifierScope.CreateAll() }, out string e5);
+            Check(lines, ref failures, "ベベル（角度・全体・分割 2・フィレット）：境界辺 0",
+                  all2 != null && Boundary(all2) == 0, all2 == null ? e5 : BevelStats(all2));
+
+            var flat = new BevelMeshModifier { LimitMethod = BevelLimitMethod.Angle, Angle = 30f }
+                .Evaluate(new MeshModifierInput { Source = BuildTestStrip(), Scope = ResolvedMeshModifierScope.CreateAll() }, out string e6);
+            Check(lines, ref failures, "ベベル（角度）：平らな帯は角度以上の辺が無いので失敗", flat == null, e6);
+
+            // 厚みの後：一直線に並ぶ上の 2 辺（ID 45-46・46-47）は表と裏の両方に当たり、つながった帯になる
+            var strip = BuildTestStrip();
+            var thick = new ThicknessMeshModifier { Thickness = 0.2f }
+                .Evaluate(new MeshModifierInput { Source = strip, Scope = ResolvedMeshModifierScope.CreateAll() }, out string e7);
+            if (thick == null)
+            {
+                Check(lines, ref failures, "厚みの帯を作る", false, e7);
+                return;
+            }
+            var idScope = MeshModifierScope.FromIndices(strip, null, new[] { new VertexPair(4, 5), new VertexPair(5, 6) }, null, out _);
+            idScope.TryResolve(thick, null, out var rid, out _);
+            var bvThick = new BevelMeshModifier { Amount = 0.05f, Segments = 2 }
+                .Evaluate(new MeshModifierInput { Source = thick, Scope = rid }, out string e8);
+            Check(lines, ref failures, "ベベル：厚みの後の一直線の 2 辺（表と裏・分割 2）で境界辺 0",
+                  rid.Edges.Count == 4 && bvThick != null && Boundary(bvThick) == 0,
+                  bvThick == null ? e8 : $"範囲の辺 {rid.Edges.Count}・{BevelStats(bvThick)}");
+
+            var set = new PartsSelectionSet("上の辺") { Edges = new HashSet<VertexPair> { new VertexPair(4, 5) } };
+            set.CaptureIds(strip);
+            bool okSet = MeshModifierScope.PartsSet("上の辺").TryResolve(thick, new List<PartsSelectionSet> { set }, out var rs, out string e9);
+            Check(lines, ref failures, "パーツ選択辞書：厚みの後は同じ ID の辺（表と裏）の両方に当たる：辺 2",
+                  okSet && rs.Edges.Count == 2, okSet ? $"辺 {rs.Edges.Count}" : e9);
+        }
+
         private static void Check(List<string> lines, ref int failures, string name, bool ok, string detail)
         {
             if (!ok) failures++;
@@ -396,6 +503,9 @@ namespace Poly_Ling.Modifiers
             Check(lines, ref failures, "ベベル：全体の範囲は失敗", bvAll == null, e4);
             Check(lines, ref failures, "ベベルは入力を書き換えない", a.Vertices.Count == 6 && a.Faces.Count == 2
                   && a.Faces[0].VertexIndices.Count == 4 && a.Faces[1].VertexIndices.Count == 4, null);
+
+            // ── 4b. ベベルの頂点のまとめ方とふた・角度・辞書（段 9b）──────────
+            BevelJoinSelfTest(lines, ref failures);
 
             // ── 5. 配列（段 7a）──────────────────────────────────────
             // 全体を 3 個、相対の間隔 (1,0,0)：外接箱の幅 2 なので x に 2・4 ずれた写しが足される。
