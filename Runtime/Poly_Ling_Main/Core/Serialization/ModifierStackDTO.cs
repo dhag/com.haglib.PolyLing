@@ -26,6 +26,9 @@
 //   goal / preconditions / successCriteria /
 //   tags / prov* / scenarioParams（スタック）は、いずれも既定が空か 0。JsonUtility は無い欄を
 //   既定のまま残すので、これらを持たない保存データもそのまま読める。
+//   isChain（スタック）・disabled（項目）も既定が false で、欄の無い保存データは
+//   「処理列でない」「有効」として読む（モディファイア枠組み計画 段 2）。項目の有効を
+//   enabled ではなく disabled の向きで持つのは、欄が無いときの既定を有効にするため。
 //   ScenarioItemId だけは空のままにできない（項目を ID で指すため）ので、
 //   読みの最後に ModifierStack.EnsureScenarioItemIds が振る。
 
@@ -103,6 +106,12 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public int profileDim = 0;
 
+        /// <summary>
+        /// 項目が無効か（ModifierStackStep.Enabled の反対）。既定 false＝有効。
+        /// 有効を既定にするため「無効」の向きで持つ。欄の無い古いデータは false（有効）として読まれる。
+        /// </summary>
+        public bool disabled = false;
+
         public List<ModifierStackArgDTO>     args     = new List<ModifierStackArgDTO>();
         public List<ModifierStackMeshRefDTO> meshRefs = new List<ModifierStackMeshRefDTO>();
 
@@ -123,6 +132,7 @@ namespace Poly_Ling.Serialization
                 expansionPolicy = (int)s.ExpansionPolicy,
                 usageScene      = s.UsageScene ?? "",
                 profileDim      = s.ProfileDim,
+                disabled        = !s.Enabled,
             };
 
             foreach (var kv in s.SortedArgs())
@@ -161,6 +171,7 @@ namespace Poly_Ling.Serialization
                             : ScenarioExpansionPolicy.Reference,
                 UsageScene = usageScene ?? "",
                 ProfileDim = profileDim >= ModifierStackStep.CurrentProfileDim ? profileDim : 2,
+                Enabled    = !disabled,
             };
 
             if (args != null)
@@ -222,6 +233,9 @@ namespace Poly_Ling.Serialization
         public string sourceDigest = "";
         public bool   autoUpdate;
 
+        /// <summary>処理列か（ModifierStack.IsChain）。古い保存データには無い（false として読む）。</summary>
+        public bool   isChain;
+
         /// <summary>作成日時（ISO 8601 形式）。</summary>
         public string createdAt = "";
 
@@ -268,6 +282,7 @@ namespace Poly_Ling.Serialization
                 stashObjectId = g.StashObjectId.ToString(CultureInfo.InvariantCulture),
                 sourceDigest  = g.SourceDigest ?? "",
                 autoUpdate    = g.AutoUpdate,
+                isChain       = g.IsChain,
                 createdAt     = g.CreatedAt.ToString("o"),
                 goal          = g.Goal ?? "",
             };
@@ -334,6 +349,7 @@ namespace Poly_Ling.Serialization
                 StashObjectId = ParseId(stashObjectId),
                 SourceDigest  = sourceDigest ?? "",
                 AutoUpdate    = autoUpdate,
+                IsChain       = isChain,
                 Goal          = goal ?? "",
             };
 

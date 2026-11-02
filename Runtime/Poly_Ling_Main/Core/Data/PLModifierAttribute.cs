@@ -17,6 +17,10 @@
 //   Assembly      … PlayerCommandDispatcher.MagicCircle.cs ExecuteEmptyParentAssembly（魔法陣・鉄塔）
 //   属性が無いもの … 記録しない（None）
 //   受け口の記録のしかたを変えたら、ここの宣言も直すこと。
+//
+// 【PLMeshModifierAttribute とは別物】
+//   処理列の種類（IMeshModifier）の宣言は Core/Modifiers/IMeshModifier.cs の PLMeshModifierAttribute。
+//   あちらは IMeshModifier の型に付け、こちらは PanelCommand の型に付ける。
 
 using System;
 

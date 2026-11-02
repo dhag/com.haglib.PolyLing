@@ -64,6 +64,9 @@ namespace Poly_Ling.View
         /// <summary>モディファイアスタックはスナップショットに載せていない。空。</summary>
         public IReadOnlyList<ModifierStackView> ModifierStacks => System.Array.Empty<ModifierStackView>();
 
+        /// <summary>スナップショットは選択を持たないので作れない。</summary>
+        public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex) => null;
+
         /// <summary>マテリアルはスナップショットに載せていない。</summary>
         public int MaterialCount        => 0;
         public int CurrentMaterialIndex => -1;

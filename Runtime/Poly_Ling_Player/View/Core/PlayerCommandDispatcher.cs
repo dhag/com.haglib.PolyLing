@@ -1152,6 +1152,9 @@ namespace Poly_Ling.Player
             string gateReason = CommandGate?.Invoke(cmd);
             if (gateReason != null) { Fail(gateReason); return; }
 
+            // 処理列の引数の下見（スライダーのドラッグ中）が残っていれば、別の書き込みの前に Undo 1 件として閉じる。
+            CloseChainArgsPreviewBefore(cmd);
+
             // 出力の編集が未確定でも保存できる。未確定は描画オブジェクトごとに保存される
             // （MeshContext.ModifierForwardSig。作り直し整備計画 段 F）。
 
@@ -1217,6 +1220,23 @@ namespace Poly_Ling.Player
                     .Text("report",       PanelCommandFactoryAudit.RunAll())
                     .Int("toolsUsable",   auditUsable)
                     .Int("toolsSkipped",  auditSkipped)
+                    .Build());
+                return;
+            }
+
+            // 処理列の種類の検査。型とメモリ上の試験メッシュだけを見るので同じく門の前で受ける。
+            if (cmd is QueryMeshModifierAuditCommand mmAudit)
+            {
+                MarkNotRecorded();
+                var mmr = Poly_Ling.Modifiers.MeshModifierAudit.Run(mmAudit.Kind, mmAudit.ArgKeys, mmAudit.ArgValues);
+                ReportData(CommandDataJson.New()
+                    .Text("report",            mmr.Report)
+                    .Texts("kinds",            mmr.Kinds)
+                    .Int("problems",           mmr.Problems)
+                    .Int("roundTripFailures",  mmr.RoundTripFailures)
+                    .Int("scopeFailures",      mmr.ScopeFailures)
+                    .Int("kindFailures",       mmr.KindFailures)
+                    .Texts("args",             mmr.Args)
                     .Build());
                 return;
             }
@@ -1388,6 +1408,7 @@ namespace Poly_Ling.Player
             if (DispatchBoneMorphUv(cmd, project, model))       return;
             if (DispatchBlend(cmd, project, model))             return;
             if (DispatchModifierStack(cmd, project, model))       return;
+            if (DispatchModifierChain(cmd, project, model))       return;
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchSubdivision(cmd, project, model))       return;

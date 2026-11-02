@@ -462,7 +462,11 @@ namespace Poly_Ling.Tools.Deformers
         /// 選択（頂点 / 辺 / 面 / 線分）から影響頂点を集める。
         /// RotateTool.UpdateAffected (RotateTool.cs:155-182) と同じ規則。
         /// </summary>
-        private static HashSet<int> CollectSelectedVertices(MeshContext mc, MeshObject mo)
+        /// <summary>
+        /// 変形の対象にする頂点（選択した頂点・辺・面・線分の頂点の和）。
+        /// 格子の「処理列へ取り込む」（LatticeToolHandler）も同じ集め方で処理範囲を作る。
+        /// </summary>
+        public static HashSet<int> CollectSelectedVertices(MeshContext mc, MeshObject mo)
         {
             var set = new HashSet<int>();
             if (mc == null || mo == null) return set;

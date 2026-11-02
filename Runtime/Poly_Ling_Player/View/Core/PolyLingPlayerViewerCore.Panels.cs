@@ -333,6 +333,13 @@ namespace Poly_Ling.Player
             _modifierStackSubPanel?.Refresh();
         }
 
+        private void ShowModifierChainPanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持（元メッシュの選択を処理範囲にするため）
+            ShowRightPanel(_layoutRoot?.ModifierChainSection, _layoutRoot?.ModifierChainBtn);
+            _modifierChainSubPanel?.Refresh();
+        }
+
         private void ShowMergeMeshesPanel()
         {
             // カテゴリ 3

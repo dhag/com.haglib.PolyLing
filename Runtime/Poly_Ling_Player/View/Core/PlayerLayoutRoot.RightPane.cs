@@ -198,6 +198,8 @@ namespace Poly_Ling.Player
         public VisualElement PartsSelectionSetSection { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
         public VisualElement ModifierStackSection    { get; private set; }
+        /// <summary>処理列（モディファイア枠組み計画 段 5）。元メッシュの選択を範囲にするので 3D 操作を保つ。</summary>
+        public VisualElement ModifierChainSection    { get; private set; }
         public VisualElement NormalExcludeSetSection { get; private set; }
         public VisualElement NormalEditSection     { get; private set; }
         public VisualElement NormalTransplantSection { get; private set; }
@@ -564,6 +566,7 @@ namespace Poly_Ling.Player
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
             ModifierStackSection         = AddSection(visible: false, kind: RightPanelKind.General);
+            ModifierChainSection         = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalExcludeSetSection    = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalEditSection          = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalTransplantSection    = AddSection(visible: false, kind: RightPanelKind.General);

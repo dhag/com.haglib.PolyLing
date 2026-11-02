@@ -121,6 +121,7 @@ namespace Poly_Ling.Player
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
             _layoutRoot.ModifierStackBtn.clicked       += ShowModifierStackPanel;
+            _layoutRoot.ModifierChainBtn.clicked       += ShowModifierChainPanel;
             _layoutRoot.NormalExcludeSetBtn.clicked  += ShowNormalExcludeSetPanel;
             _layoutRoot.NormalEditBtn.clicked        += ShowNormalEditPanel;
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
@@ -682,6 +683,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.PartsSelectionSetSection, () => _partsSelSetSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshSelectionSetSection,  () => _meshSelSetSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.ModifierStackSection,       () => _modifierStackSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.ModifierChainSection,       () => _modifierChainSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalExcludeSetSection,  () => _normalExcludeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalEditSection,        () => _normalEditSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FaceHideSection,          () => _faceHideSubPanel?.Refresh()));

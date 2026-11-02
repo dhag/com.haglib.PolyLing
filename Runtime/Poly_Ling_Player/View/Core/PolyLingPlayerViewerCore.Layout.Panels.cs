@@ -442,6 +442,14 @@ namespace Poly_Ling.Player
             };
             _modifierStackSubPanel.Build(_layoutRoot.ModifierStackSection);
 
+            // 処理列（モディファイア枠組み計画 段 5）。操作はすべてコマンドで送る。
+            _modifierChainSubPanel = new PlayerModifierChainSubPanel
+            {
+                GetProject  = () => LoadedProjectView,
+                SendCommand = cmd => DispatchHost(cmd),
+            };
+            _modifierChainSubPanel.Build(_layoutRoot.ModifierChainSection);
+
             _mergeMeshesSubPanel = new PlayerMergeMeshesSubPanel
             {
                 GetView     = () => LoadedProjectView,

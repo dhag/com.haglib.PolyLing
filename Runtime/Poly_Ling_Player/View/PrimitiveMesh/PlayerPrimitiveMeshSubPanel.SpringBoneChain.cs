@@ -360,7 +360,8 @@ namespace Poly_Ling.Player
         {
             // ── 鎖の先 ────────────────────────────────────────────────
             c.Add(TR(T("SBAddTail"), () => _sbAddTail, v => { _sbAddTail = v; UpdateSpringBonePreview(); }));
-            c.Add(SR(T("SBTailLength"), 0.01f, 0.3f, () => _sbTailLength, v => _sbTailLength = v));
+            c.Add(SR(T("SBTailLength"), 0.01f, Poly_Ling.Data.PlaceSpringBoneLadderChainsCommand.TailLengthMax,
+                () => _sbTailLength, v => _sbTailLength = v));
             c.Add(SL("鎖のいちばん先のボーンは、1 つ手前の向きを決めるためだけに使われ、自分は揺れません。"));
 
             // ── 揺れ方 ────────────────────────────────────────────────

@@ -623,11 +623,9 @@ namespace Poly_Ling.Player
             var mirrorMo  = mirrorCtx?.MeshObject;
             var realMo    = realCtx.MeshObject;
             if (mirrorMo == null || realMo == null) return;
-
-            int axis = MirrorBranchOps.ResolveMirrorAxis(realCtx);
-            var built = MirrorBranchOps.BuildMirroredMeshObject(
-                realMo, axis, realCtx.MirrorDistance, realCtx.MirrorMaterialOffset, mirrorCtx.Name);
-            if (built == null) return;
+            // 中身の作り直しは MirrorBranchOps.RebuildMirrorSideOf（処理列の結果と共用。段 8）。
+            // それが作れない（頂点が無い：BuildMirroredMeshObject が null）ときは、Undo の準備より前に抜ける。
+            if (realMo.Vertices == null || realMo.Vertices.Count == 0) return;
 
             // 記録を止めているとき（作り直し・依存の評価）は書き込み先を設定しない。
             // SetMeshObjectFor は頂点編集の履歴を消す（段 5。本体側の ReplaceExisting と同じ扱い）。
@@ -641,27 +639,11 @@ namespace Poly_Ling.Player
                 before = undo.CaptureMeshObjectSnapshotOf(mirrorCtx);
             }
 
-            mirrorMo.Vertices.Clear();
-            mirrorMo.Faces.Clear();
-            foreach (var v in built.Vertices) mirrorMo.Vertices.Add(v);
-            foreach (var f in built.Faces)    mirrorMo.Faces.Add(f);
-            mirrorMo.LineGroups = LineGroupOps.CloneList(realMo);
-            LineGroupOps.MirrorHandles(mirrorMo.LineGroups, n => MirrorBranchOps.MirrorNormal(axis, n));
-            mirrorMo.RebuildIdSets();
-            mirrorMo.InvalidatePositionCache();
-
-            // 消えた頂点・面を指したままの選択を残さない。
-            mirrorCtx.Selection?.ClearAll();
-
-            if (pair.Build(model.MeshContextList))
+            if (!MirrorBranchOps.RebuildMirrorSideOf(model, realCtx, out _))
             {
-                if (realCtx.IsSkinned) pair.SyncBoneWeights();
+                undo?.ClearTargetMeshContext();
+                return;
             }
-            else
-            {
-                Debug.LogWarning($"[Mirror] 作り直し後のペアの張り直しに失敗しました mirror=\"{mirrorCtx.Name}\"\n{pair.BuildLog}");
-            }
-            mirrorMo.RecomputeSkinKind();
 
             var newUnityMesh = mirrorMo.ToUnityMesh();
             newUnityMesh.name      = mirrorCtx.Name;

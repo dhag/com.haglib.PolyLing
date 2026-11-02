@@ -171,6 +171,8 @@ namespace Poly_Ling.Player
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        ModifierStackBtn        { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
+        public Button        ModifierChainBtn        { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalExcludeSetBtn   { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalEditBtn         { get; private set; }
@@ -639,9 +641,11 @@ namespace Poly_Ling.Player
 
             // モディファイアスタック（帯・断面・パラメータと出力先のまとまり）。
             // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
-            ModifierStackBtn = MakeBtn("モディファイアスタック"); ModifierStackBtn.style.flexGrow = 1;
+            ModifierStackBtn = MakeBtn("モディファイアスタック"); ModifierStackBtn.style.flexGrow = 1; ModifierStackBtn.style.marginRight = 2;
+            // 処理列（1 つのオブジェクトに処理を積み重ねる非破壊のモディファイア）。スタックの一種なので隣に置く。
+            ModifierChainBtn = MakeBtn("処理列"); ModifierChainBtn.style.flexGrow = 1;
             var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
-            rowObjGroup.Add(ModifierStackBtn); foSelect.Add(rowObjGroup);
+            rowObjGroup.Add(ModifierStackBtn); rowObjGroup.Add(ModifierChainBtn); foSelect.Add(rowObjGroup);
 
             // ── 移動/回転/拡大縮小 ─────────────────────────────────────
             var foTransform = MakeFoldout("移動/回転/拡大縮小", "Transform");

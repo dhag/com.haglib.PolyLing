@@ -75,7 +75,7 @@ namespace Poly_Ling.Ops
         /// <summary>評価器の項目から、つながりを作る。サブディビジョンでない・揃っていなければ null。</summary>
         private static Link ToLink(ModifierEvaluator.Entry e)
         {
-            if (e?.Step == null) return null;
+            if (e?.Step == null || e.IsChain) return null;
             if (!string.Equals(e.Step.Action, Action, System.StringComparison.Ordinal)) return null;
 
             var cage  = e.Input(CageKey);

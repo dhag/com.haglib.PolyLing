@@ -87,6 +87,7 @@ namespace Poly_Ling.Player
         private Toggle        _diagAttrToggle;
         [UiControl("diag.undo", Description = "診断ログ: Undo")]
         private Toggle        _diagUndoToggle;
+        [UiControl("diag.timing", Description = "診断ログ: 時間の計測 (Timing)。結果は queryModifierGraph の lastPass に出る")]
         private Toggle        _diagTimingToggle;
         [UiControl("diag.pick", Description = "診断ログ: 逐次出力 (Pick)")]
         private Toggle        _diagPickToggle;

@@ -158,6 +158,84 @@ namespace Poly_Ling.Data
             return report;
         }
 
+        // ================================================================
+        // 数値の引数の範囲の宣言漏れ（PolyLing_モディファイア枠組み計画.md 3.5・段 5）
+        // ================================================================
+
+        /// <summary>範囲の宣言漏れの検査結果。</summary>
+        public sealed class RangeReport
+        {
+            /// <summary>処理列の種類の数値の引数で、Min・Max も LimitKey も無いもの（完了条件）。</summary>
+            public List<string> Kinds { get; } = new List<string>();
+
+            /// <summary>
+            /// スタックに記録されるコマンドの書ける数値の引数で、範囲の無いもの（参考）。
+            /// 範囲の出どころがコードに無いものは値を作らずに残す。引数欄は数値欄だけになる。
+            /// </summary>
+            public List<string> StackArgs { get; } = new List<string>();
+
+            public override string ToString()
+            {
+                var sb = new StringBuilder();
+                sb.Append("[PLParamAudit.Ranges] 処理列の種類の範囲の宣言漏れ ").Append(Kinds.Count)
+                  .Append(" / スタックの書ける引数の範囲なし ").Append(StackArgs.Count).Append("（完了条件ではない）");
+                if (Kinds.Count > 0)
+                {
+                    sb.Append('\n').Append("── 処理列の種類 ──");
+                    foreach (var e in Kinds) sb.Append('\n').Append("  ").Append(e);
+                }
+                if (StackArgs.Count > 0)
+                {
+                    sb.Append('\n').Append("── スタックの書ける引数（参考） ──");
+                    foreach (var e in StackArgs) sb.Append('\n').Append("  ").Append(e);
+                }
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>
+        /// 引数欄（ParamFieldBuilder）がスライダーを作れるかの検査。
+        /// 数値（int・float・double・Vector2・Vector3）で、Min と Max の両方か LimitKey が無いものを数える。
+        /// 参照の索引（IsMeshRef）は数えない。
+        /// </summary>
+        public static RangeReport RunRanges()
+        {
+            var r = new RangeReport();
+
+            foreach (var info in Poly_Ling.Modifiers.MeshModifierRegistry.All)
+                foreach (var p in info.Params)
+                    if (LacksRange(p.Type, p.Attr))
+                        r.Kinds.Add($"{info.Kind}.{p.Key} : {TypeName(p.Type)}");
+
+            foreach (var t in FindCommandTypes())
+            {
+                var mod = t.GetCustomAttribute<PLModifierAttribute>(inherit: true);
+                if (mod == null) continue;
+                if (mod.Capture != PLStackCapture.OnKeepAsModifierStack && mod.Capture != PLStackCapture.Always) continue;
+
+                foreach (var ap in PanelCommandFactory.EnumerateArgParams(t))
+                {
+                    if (!LacksRange(ap.Type, ap.Attr)) continue;
+                    if (Poly_Ling.Ops.ModifierStackOps.ArgWriteBlockReason(t, ap.Key) != null) continue;
+                    r.StackArgs.Add($"{PanelCommandFactory.ActionOf(t)}.{ap.Key} : {TypeName(ap.Type)}");
+                }
+            }
+            return r;
+        }
+
+        /// <summary>数値の型か（引数欄が数値欄＋スライダーを作る型）。</summary>
+        public static bool IsNumericType(Type t)
+            => t == typeof(int) || t == typeof(float) || t == typeof(double)
+            || t == typeof(UnityEngine.Vector2) || t == typeof(UnityEngine.Vector3);
+
+        private static bool LacksRange(Type t, PLParamAttribute a)
+        {
+            if (a == null || a.Ignore || a.IsMeshRef) return false;
+            if (!IsNumericType(t)) return false;
+            if (a.HasLimitKey) return false;
+            return !(a.HasMin && a.HasMax);
+        }
+
         /// <summary>
         /// 自動プロパティか。コンパイラが作る裏フィールドの有無で判定する。
         /// setter を持つ通常のプロパティも裏フィールドを持つので同じ扱いになる。

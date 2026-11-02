@@ -355,6 +355,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.PartsSelectionSetSection, ShowPartsSelectionSetPanel, _partsSelSetSubPanel);
             RegisterUiPanel("modifierStack", "モディファイアスタック",
                 _layoutRoot.ModifierStackSection, ShowModifierStackPanel, _modifierStackSubPanel);
+            RegisterUiPanel("modifierChain", "処理列（編集対象のオブジェクトに処理を積み重ねる。追加・並べ替え・有効・引数・処理範囲・削除・適用）",
+                _layoutRoot.ModifierChainSection, ShowModifierChainPanel, _modifierChainSubPanel);
             RegisterUiPanel("materialList", "マテリアル一覧（作成・シェーダー・選択面への適用）",
                 _layoutRoot.MaterialListSection, ShowMaterialListPanel, _materialListSubPanel);
             RegisterUiPanel("humanoidBoneSelect", "ヒューマノイドボーン選択（体・頭・手の図の丸印でボーンを選ぶ。背景と丸印の位置は差し替え可）",

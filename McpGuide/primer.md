@@ -42,6 +42,7 @@
 - PolyLing_姿勢の規約.md … 姿勢・行列（WorldMatrix / BindPose / BindWorldMatrix / BoneTransform / ポーズ層 / スキニング）に触れる前。
 - PolyLing_姿勢_残件.md / PolyLing_残件.md … 残件・未確認事項を聞かれたとき、残件に手を付けるとき。直したら更新する。
 - PolyLing_サブツール作成ガイド.md … サブツール（右ペインのパネル）を作る・直すとき。
+- PolyLing_モディファイア作成ガイド.md … 処理列の種類（IMeshModifier）を作る・直すとき。
 - MCP操作手順書.md … MCP の道具の細かい使い方で迷ったとき。
 - 作業ログ.md … 過去の経緯を知りたいとき。
 

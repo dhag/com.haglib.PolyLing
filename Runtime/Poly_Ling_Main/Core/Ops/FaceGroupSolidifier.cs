@@ -95,6 +95,12 @@ namespace Poly_Ling.Tools
             /// 逆方向の控え（ModifierFrameTrace.Expanded）が枠を広げるのに使う（作り直し整備計画 段 15）。
             /// </summary>
             public int[][] SourceToVertices;
+
+            /// <summary>
+            /// 出力の面番号 → その面を作った元の面番号（表の殻・裏の殻）。側面は -1。
+            /// 長さは Mesh の面数。処理列の厚み（ThicknessMeshModifier）が殻の面 ID を元の面 ID にそろえるのに使う。
+            /// </summary>
+            public int[] FaceSources;
         }
 
         // ================================================================
@@ -271,6 +277,7 @@ namespace Poly_Ling.Tools
             }
 
             // ── 8) シェル面（表＝元の巻き順、裏＝逆順） ────────────────
+            var faceSources = new List<int>(targets.Count * 2);
             foreach (int fi in targets)
             {
                 var f = source.Faces[fi];
@@ -301,6 +308,7 @@ namespace Poly_Ling.Tools
                     front.NormalIndices.Add(nrms[i]);
                 }
                 mesh.AddFace(front);
+                faceSources.Add(fi);
 
                 var back = new Face { MaterialIndex = f.MaterialIndex };
                 for (int i = n - 1; i >= 0; i--)
@@ -310,6 +318,7 @@ namespace Poly_Ling.Tools
                     back.NormalIndices.Add(nrms[i]);
                 }
                 mesh.AddFace(back);
+                faceSources.Add(fi);
             }
 
             // ── 9) 境界頂点ごとの縦列（表シェル → … → 裏シェル） ───────
@@ -380,6 +389,10 @@ namespace Poly_Ling.Tools
                     ? (int[])colAll.Clone()                              // 表・帯・裏
                     : new[] { frontIdx[li], backIdx[li] };
             result.SourceToVertices = map;
+
+            // 側面は元の面を持たない（-1）。殻の面は上の 8) で記録した。
+            while (faceSources.Count < mesh.Faces.Count) faceSources.Add(-1);
+            result.FaceSources = faceSources.ToArray();
 
             result.Mesh = mesh;
             result.TargetFaceCount = targets.Count;

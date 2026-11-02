@@ -398,6 +398,9 @@ namespace Poly_Ling.View
         /// <summary>プロジェクトを持たないので作れない（出力先の解決にプロジェクトが要る）。空。</summary>
         public IReadOnlyList<ModifierStackView> ModifierStacks => Array.Empty<ModifierStackView>();
 
+        public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex)
+            => LiveProjectView.BuildModifierScopeFromSelection(_model, masterIndex);
+
         public int MaterialCount        => _model.MaterialCount;
         public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
         public MaterialSlotView GetMaterialSlot(int slot) => LiveProjectView.BuildMaterialSlotView(_model, slot);
@@ -677,12 +680,54 @@ namespace Poly_Ling.View
                 // 項目ごとの引数と、書けるか（setModifierStackStepArgs と同じ判定）。
                 var stepViews = new List<ModifierStackStepView>();
                 var graph = Poly_Ling.Ops.ModifierEvaluator.GetGraph(model);
+
+                // 処理列の元・結果と項目ごとの状態（段 5）。
+                MeshContext chainSrc = null, chainRes = null;
+                var chainStates = new Dictionary<string, Poly_Ling.Modifiers.ModifierChainHandler.ItemState>(StringComparer.Ordinal);
+                if (g.IsChain)
+                {
+                    Poly_Ling.Modifiers.ModifierChainOps.ChainEnds(model, g, out chainSrc, out chainRes);
+                    foreach (var ist in Poly_Ling.Modifiers.ModifierChainHandler.ItemStates(chainRes))
+                        if (ist != null && !string.IsNullOrEmpty(ist.ScenarioItemId)) chainStates[ist.ScenarioItemId] = ist;
+                }
+
+                // 既存のサブディビジョン（subdivideMesh）のスタック（段 8）。処理列パネルに同じ見た目で出すため、
+                // 親・子を処理列の元・結果の欄に入れる（つながりは SubdivisionSync が引く）。
+                Poly_Ling.Ops.SubdivisionSync.Link subLink = null;
+                if (!g.IsChain)
+                    foreach (var l in Poly_Ling.Ops.SubdivisionSync.CollectLinks(model))
+                        if (ReferenceEquals(l.Group, g)) { subLink = l; break; }
+                if (subLink != null) { chainSrc = subLink.Cage; chainRes = subLink.Child; }
                 for (int i = 0; i < g.StepCount; i++)
                 {
                     var st = g.GetStep(i);
                     var sv = new ModifierStackStepView { Action = st?.Action ?? "", IsExecutable = st != null && st.IsExecutable };
-                    if (st != null)
+                    if (st != null && g.IsChain)
                     {
+                        // 処理列の項目（段 5）。引数は今の索引へ引き直した値。書けるかは種類の宣言で決まるので全部書ける。
+                        sv.ItemId  = st.ScenarioItemId ?? "";
+                        sv.Enabled = st.Enabled;
+                        if (st.IsExecutable && chainStates.TryGetValue(sv.ItemId, out var ist))
+                        { sv.State = ist.Result.ToString(); sv.StateMessage = ist.Message ?? ""; }
+                        var cur = Poly_Ling.Modifiers.ModifierChainOps.CurrentArgs(model, st);
+                        var ckeys = new List<string>(cur.Keys);
+                        ckeys.Sort(string.CompareOrdinal);
+                        sv.Keys     = ckeys.ToArray();
+                        sv.Values   = new string[ckeys.Count];
+                        sv.Writable = new bool[ckeys.Count];
+                        for (int k = 0; k < ckeys.Count; k++)
+                        {
+                            sv.Values[k]   = cur[ckeys[k]] ?? "";
+                            sv.Writable[k] = sv.IsExecutable;
+                        }
+                    }
+                    else if (st != null)
+                    {
+                        if (subLink != null && ReferenceEquals(st, subLink.Step))
+                        {
+                            sv.ItemId  = st.ScenarioItemId ?? "";
+                            sv.Enabled = true;
+                        }
                         var stType = Poly_Ling.Data.PanelCommandFactory.ResolveType(st.Action);
 
                         // 逆方向（段 6）。未確定かは評価器の控えで見る。
@@ -693,7 +738,7 @@ namespace Poly_Ling.View
                             sv.InverseKeeps  = inv.Keeps;
                             sv.InverseLoses  = inv.Loses;
                             foreach (var ge in graph)
-                                if (ReferenceEquals(ge.Step, st))
+                                if (ge.Owns(st))
                                 { sv.OutputEditPending = Poly_Ling.Ops.ModifierEvaluator.IsOutputEditPending(model, ge); break; }
                         }
                         var sorted = st.SortedArgs();
@@ -711,8 +756,20 @@ namespace Poly_Ling.View
                     stepViews.Add(sv);
                 }
 
+                string chainResult = "", chainMessage = "";
+                if (g.IsChain && Poly_Ling.Modifiers.ModifierChainOps.TryGetChainState(model, g, out var cr, out string cm))
+                { chainResult = cr.ToString(); chainMessage = cm; }
+
                 list.Add(new ModifierStackView
                 {
+                    IsChain          = g.IsChain,
+                    IsSubdivision    = subLink != null,
+                    ChainSourceIndex = chainSrc != null ? model.MeshContextList.IndexOf(chainSrc) : -1,
+                    ChainResultIndex = chainRes != null ? model.MeshContextList.IndexOf(chainRes) : -1,
+                    ChainSourceName  = chainSrc?.Name ?? "",
+                    ChainResultName  = chainRes?.Name ?? "",
+                    ChainResult      = chainResult,
+                    ChainMessage     = chainMessage,
                     Name          = g.Name,
                     Action        = g.Action,
                     StepCount     = g.StepCount,
@@ -728,6 +785,33 @@ namespace Poly_Ling.View
                 });
             }
             return list;
+        }
+
+        /// <summary>
+        /// 描画オブジェクトの今の選択から処理範囲の引数を作る（Live・Player の両ビューで共用。モディファイア枠組み計画 段 5）。
+        /// 選択は MeshContext.Selection（頂点・辺・面）。頂点 ID の無い要素は控えない。
+        /// </summary>
+        public static ModifierScopeArgsView BuildModifierScopeFromSelection(ModelContext model, int masterIndex)
+        {
+            var mc = masterIndex >= 0 ? model?.GetMeshContext(masterIndex) : null;
+            if (mc?.MeshObject == null) return null;
+            var sel = mc.Selection;
+            var scope = Poly_Ling.Modifiers.MeshModifierScope.FromIndices(
+                mc.MeshObject, sel?.Vertices, sel?.Edges, sel?.Faces, out int noId);
+            var args = Poly_Ling.Modifiers.MeshModifierRegistry.ScopeToArgs(scope);
+            var keys = new List<string>(args.Keys);
+            keys.Sort(string.CompareOrdinal);
+            var v = new ModifierScopeArgsView
+            {
+                Keys        = keys.ToArray(),
+                Values      = new string[keys.Count],
+                VertexCount = scope.VertexIds.Length,
+                EdgeCount   = scope.EdgeVertexIds.Length / 2,
+                FaceCount   = scope.FaceSizes.Length,
+                NoId        = noId,
+            };
+            for (int i = 0; i < keys.Count; i++) v.Values[i] = args[keys[i]];
+            return v;
         }
 
         public IModelView GetModelView(int index)

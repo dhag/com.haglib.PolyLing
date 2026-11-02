@@ -74,6 +74,9 @@ namespace Poly_Ling.Player
                 ? Poly_Ling.View.LiveProjectView.BuildModifierStackViews(_project, _model)
                 : Array.Empty<ModifierStackView>();
 
+        public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex)
+            => Poly_Ling.View.LiveProjectView.BuildModifierScopeFromSelection(_model, masterIndex);
+
         public int MaterialCount        => _model.MaterialCount;
         public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
         public MaterialSlotView GetMaterialSlot(int slot)

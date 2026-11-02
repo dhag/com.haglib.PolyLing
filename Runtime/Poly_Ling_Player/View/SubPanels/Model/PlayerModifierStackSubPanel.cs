@@ -91,6 +91,18 @@ namespace Poly_Ling.Player
                    Description = "引数を書いて、その項目だけを作り直す")]
         private Button        _btnArgWrite;
 
+        // ── 引数欄（モディファイア枠組み計画 段 5）。宣言（コマンドの PLParam）から ParamFieldBuilder が作る。
+        //    ID は "modifierStack.arg.<キー>"。書くと setModifierStackStepArgs でその項目だけ作り直す。
+        //    作り直しが重いので、スライダーは離したときだけ送る（OnPreview なし）。
+        [UiControl("argDetail", Safety = UiSafety.SafeWrite, Description = "詳細（引数を文字列で書く）の開閉")]
+        private Foldout       _argDetailFold;
+        [UiControl(Ignore = true)]
+        private VisualElement _argContainer;
+        private readonly UiDynamicControls _argControls = new UiDynamicControls();
+        private ParamFieldBuilder _argBuilder;
+        private string _argSig = "";
+        private readonly List<ParamFieldSpec> _argSpecs = new List<ParamFieldSpec>();
+
         // ── 出力の編集（逆方向。段 6）。対象は「項目の引数」で選んだ項目。
         [UiControl("inverseInfo", Safety = UiSafety.ReadOnly, Description = "選んだ項目の逆方向（保つもの・失うもの・未確定か）")]
         private Label  _inverseInfo;
@@ -211,18 +223,31 @@ namespace Poly_Ling.Player
             _argStepDropdown.RegisterValueChangedCallback(_ => UpdateArgKeys());
             root.Add(_argStepDropdown);
 
+            _argContainer = new VisualElement();
+            _argContainer.style.marginBottom = 3;
+            root.Add(_argContainer);
+            _argBuilder = new ParamFieldBuilder(_argControls)
+            {
+                OnPreview = null,
+                OnCommit  = OnArgFieldCommit,
+            };
+
+            _argDetailFold = new Foldout { text = "詳細（引数を文字列で書く）", value = false };
+            _argDetailFold.style.marginBottom = 3;
+            root.Add(_argDetailFold);
+
             _argKeyDropdown = new DropdownField("キー", new List<string>(), -1);
             _argKeyDropdown.style.fontSize = 10;
             _argKeyDropdown.RegisterValueChangedCallback(_ => UpdateArgValue());
-            root.Add(_argKeyDropdown);
+            _argDetailFold.Add(_argKeyDropdown);
 
             _argValueField = new TextField("値");
             _argValueField.style.fontSize = 10;
-            root.Add(_argValueField);
+            _argDetailFold.Add(_argValueField);
 
             _btnArgWrite = MkBtn("書いて作り直す", OnArgWrite);
             _btnArgWrite.style.marginBottom = 3;
-            root.Add(_btnArgWrite);
+            _argDetailFold.Add(_btnArgWrite);
 
             // ── 出力の編集（逆方向）：逆方向を持つ項目は出力の頂点の位置を編集でき、確定で入力へ戻す。
             root.Add(SecLabel("出力の編集（逆方向）"));
@@ -369,7 +394,61 @@ namespace Poly_Ling.Player
             _argKeyDropdown.SetValueWithoutNotify(v);
             _btnArgWrite?.SetEnabled(choices.Count > 0);
             UpdateArgValue();
+            UpdateArgFields();
             UpdateInverse();
+        }
+
+        /// <summary>
+        /// 選んだ項目の書けるキーの引数欄を作る（宣言はコマンドの PLParam。PanelCommandFactory.TryGetArgParam）。
+        /// 欄の組が同じなら値だけ合わせる。処理列のスタックは処理列のパネルで編集する。
+        /// </summary>
+        private void UpdateArgFields()
+        {
+            if (_argContainer == null || _argBuilder == null) return;
+            var g  = SelectedGroup();
+            var st = SelectedArgStep();
+            _argSpecs.Clear();
+
+            if (g != null && g.IsChain)
+            {
+                _argSig = "";
+                _argControls.Begin("");
+                _argBuilder.Build(_argContainer, _argSpecs);
+                _argContainer.Add(new Label("処理列は左の「処理列」のパネルで編集します") { style = { fontSize = 10 } });
+                PlayerLayoutRoot.ApplyDarkTheme(_argContainer);
+                _btnArgWrite?.SetEnabled(false);
+                return;
+            }
+
+            var type = st != null ? PanelCommandFactory.ResolveType(st.Action) : null;
+            if (type != null && st.Keys != null)
+                for (int k = 0; k < st.Keys.Length; k++)
+                {
+                    if (k >= st.Writable.Length || !st.Writable[k]) continue;
+                    if (!PanelCommandFactory.TryGetArgParam(type, st.Keys[k], out var argType, out var attr)) continue;
+                    _argSpecs.Add(new ParamFieldSpec
+                    {
+                        Key = st.Keys[k], Type = argType, Attr = attr,
+                        Value = k < st.Values.Length ? st.Values[k] ?? "" : "",
+                    });
+                }
+
+            string sig = ParamFieldBuilder.Signature($"{g?.Name}|{_argStepDropdown?.index}|{st?.Action}", _argSpecs);
+            if (sig == _argSig && _argSpecs.Count > 0) { _argBuilder.UpdateValues(_argSpecs); return; }
+            _argSig = sig;
+            _argControls.Begin("");
+            _argBuilder.Build(_argContainer, _argSpecs);
+        }
+
+        /// <summary>引数欄の確定：その項目のそのキーだけを書いて作り直す（setModifierStackStepArgs）。</summary>
+        private void OnArgFieldCommit(string key, string value)
+        {
+            var g = SelectedGroup();
+            int si = _argStepDropdown?.index ?? -1;
+            if (g == null || si < 0 || string.IsNullOrEmpty(key)) return;
+            SendCmd(new SetModifierStackStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { value ?? "" }));
+            SetStatus($"「{g.Name}」項目 {si} の {key} を書いて作り直しを送りました");
+            Refresh();
         }
 
         /// <summary>選んだ項目の逆方向の表示とボタンを合わせる。</summary>

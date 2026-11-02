@@ -48,6 +48,10 @@ namespace Poly_Ling.Player
 
                     var mgSource = model.FindModifierStackByName(c.SourceStackName);
                     if (mgSource == null) { Fail($"スタックが見つかりません: {c.SourceStackName}"); return true; }
+
+                    // 処理列（IsChain）の項目は生成コマンドではないので、普通のスタックと混ぜられない（枠組み計画 段 4）。
+                    if (mgTarget.IsChain || mgSource.IsChain)
+                    { Fail("処理列のスタックはまとめられません（処理列の項目は addMeshModifier で足す）"); return true; }
                     if (mgSource.StepCount == 0)
                     { Fail($"足す項目がありません: {c.SourceStackName}"); return true; }
 
@@ -622,8 +626,9 @@ namespace Poly_Ling.Player
             model.ComputeWorldMatrices();
             ModifierEvaluator.Entry spaceEntry = null;
             foreach (var ge in ModifierEvaluator.GetGraph(model))
-                if (ReferenceEquals(ge.Step, step)) { spaceEntry = ge; break; }
-            if (spaceEntry == null) return true;
+                if (ge.Owns(step)) { spaceEntry = ge; break; }
+            // 処理列の節点（段 3）は評価空間を持たない（処理器が流す）。
+            if (spaceEntry == null || spaceEntry.IsChain) return true;
 
             var kind = ModifierSpace.Classify(spaceEntry, out string spaceWhy);
             if (kind == ModifierSpaceKind.Unsupported)
@@ -656,6 +661,8 @@ namespace Poly_Ling.Player
         {
             var g = model.FindModifierStackByName(c.StackName);
             if (g == null) return $"スタックが見つかりません: {c.StackName}";
+            // 処理列の項目は生成コマンドを作り直す経路では流せない（枠組み計画 段 4）。
+            if (g.IsChain) return $"{g.Name} は処理列です。項目の引数は setMeshModifierArgs で書き換えてください";
 
             if (!ModifierStackOps.TryValidateStepArgs(
                     project, c.ModelIndex, g, c.StepIndex, c.Keys, c.Values, c.AllowProfileKeys, out string vErr))

@@ -13,13 +13,15 @@
 //       A と B がどちらも同じものを Write で持つときは、スタック順・項目順で前のものから張る。
 //   同じ順位のものはスタック順・項目順に並べる（Kahn 法）。
 //   並べられずに残ったもの（自分の出力を自分で読むものを含む）は「循環」にして評価から外す。
+//   処理列（ModifierStack.IsChain）のスタックは節点 1 つ（モディファイア枠組み計画 段 3。
+//   ModifierEvaluator.AddChainEntry・ModifierChainHandler）。
 //
 // 【いつ作り直すか】スタックの増減・変更のときだけ。ModifierEvaluator が構造キー（StructureKey）を
 //   比べて決める。キーはスタック・項目・入出力の ObjectId と、引けた描画オブジェクトの同一性・
-//   スキンド化の有無だけから作り、頂点は見ない。
+//   スキンド化の有無だけから作り、頂点は見ない。処理列は元・結果・参照の ID だけを混ぜる。
 //
 // 【状態】項目ごとに次のどれか（ModifierEntryStatus）。
-//   Handler  … 処理器のある項目（サブディビジョン）。評価器のきっかけで処理器が流す（段 1 のまま）
+//   Handler  … 処理器のある項目（サブディビジョン・処理列）。評価器のきっかけで処理器が流す（段 1 のまま）
 //   Evaluate … 処理器の無い項目。作り直し（RunModifierStackStep）で流す
 //   Excluded … 流さない（理由は StatusReason）。スキンド化のあとに評価できない項目もここ（ModifierSpace）
 //   Cycle    … 循環。流さない
@@ -51,7 +53,7 @@ namespace Poly_Ling.Ops
         /// 項目に状態・上流・下流・順を埋め、依存の順に並べた一覧を返す。
         /// 循環の項目は末尾に並べる（照会で見せるため）。
         /// </summary>
-        /// <param name="hasHandler">action に処理器があるか。</param>
+        /// <param name="hasHandler">処理器のキー（Entry.HandlerKey）に処理器があるか。</param>
         public static List<ModifierEvaluator.Entry> Build(
             List<ModifierEvaluator.Entry> entries, Func<string, bool> hasHandler)
         {
@@ -154,7 +156,7 @@ namespace Poly_Ling.Ops
             e.Space        = ModifierSpaceKind.Same;
             e.SpaceReason  = "";
 
-            if (hasHandler != null && hasHandler(e.Step.Action))
+            if (hasHandler != null && hasHandler(e.HandlerKey))
             {
                 e.Status = ModifierEntryStatus.Handler;
                 return;
@@ -163,7 +165,7 @@ namespace Poly_Ling.Ops
             e.Status = ModifierEntryStatus.Excluded;
 
             if (e.CommandType == null)
-            { e.StatusReason = $"未対応の action: {e.Step.Action}"; return; }
+            { e.StatusReason = $"未対応の action: {e.ActionLabel}"; return; }
 
             if (e.MissingRefs > 0)
             { e.StatusReason = $"入力か出力のオブジェクトが {e.MissingRefs} 個見つからない"; return; }
@@ -239,7 +241,7 @@ namespace Poly_Ling.Ops
             foreach (var e in entries)
             {
                 if (!ReferenceEquals(e.Group, focus) || e.Status != ModifierEntryStatus.Cycle) continue;
-                return $"スタック「{focus.Name}」の項目 {e.StepIndex}（{e.Step.Action}）が依存の循環になる"
+                return $"スタック「{focus.Name}」の項目 {e.StepIndex}（{e.ActionLabel}）が依存の循環になる"
                      + $"（{e.StatusReason}）";
             }
             return null;
@@ -252,6 +254,7 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// グラフを作り直すかを決めるキー。スタック・項目の同一性、action、参照の ObjectId と
         /// それが引く描画オブジェクトの同一性・スキンド化の有無、描画オブジェクトの数を混ぜる。
+        /// 処理列のスタックは元・結果・参照の ID だけ（項目の並び・有効・引数は混ぜない）。
         /// 頂点は見ない。
         /// </summary>
         public static ulong StructureKey(ModelContext model)
@@ -290,7 +293,9 @@ namespace Poly_Ling.Ops
             {
                 if (g == null) { Mix(4UL); continue; }
                 Mix((ulong)(uint)RuntimeHelpers.GetHashCode(g));
+                Mix(g.IsChain ? 9UL : 10UL);
                 if (g.Steps == null) continue;
+                if (g.IsChain) { MixChain(g); continue; }
                 foreach (var s in g.Steps)
                 {
                     if (s == null) { Mix(5UL); continue; }
@@ -312,6 +317,43 @@ namespace Poly_Ling.Ops
                 }
             }
             return h;
+
+            // 処理列は節点 1 つ（モディファイア枠組み計画 段 3）。元・結果・参照の ID を重複なしで、
+            // 項目の並びに依らない順に混ぜる。列の中の並べ替え・無効化・引数の変更ではグラフを作り直さない。
+            void MixChain(ModifierStack g)
+            {
+                var refs = new List<(string Key, ulong Id)>();
+                var outs = new List<ulong>();
+                bool anyStep = false;
+                foreach (var s in g.Steps)
+                {
+                    if (s == null || !s.IsExecutable || string.IsNullOrEmpty(s.Action)) continue;
+                    anyStep = true;
+                    if (s.MeshRefIds != null)
+                        foreach (var kv in s.MeshRefIds)
+                        {
+                            if (kv.Value == null) continue;
+                            foreach (ulong id in kv.Value)
+                            {
+                                var r = (kv.Key ?? "", id);
+                                if (!refs.Contains(r)) refs.Add(r);
+                            }
+                        }
+                    if (s.OutputObjectIds != null)
+                        foreach (ulong id in s.OutputObjectIds) if (!outs.Contains(id)) outs.Add(id);
+                }
+                refs.Sort((a, b) =>
+                {
+                    int c = string.CompareOrdinal(a.Key, b.Key);
+                    return c != 0 ? c : a.Id.CompareTo(b.Id);
+                });
+                outs.Sort();
+
+                Mix(anyStep ? 11UL : 12UL);
+                foreach (var r in refs) { MixStr(r.Key); MixId(r.Id); }
+                Mix(8UL);
+                foreach (ulong id in outs) MixId(id);
+            }
         }
     }
 }

@@ -611,6 +611,63 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
+        /// 実体側 realCtx の中身を入れ替えた後に、その MirrorPair のミラー側の中身を作り直す（段 8）。
+        /// ミラー側の描画オブジェクト自体は差し替えないので、名前・階層・ObjectId は残る。
+        ///
+        /// 【作り方】形は生成ミラーと同じ BuildMirroredMeshObject（添字恒等対応が保たれる）。
+        ///   線分群は実体のものを写し、ハンドルのずれも鏡映する。消えた頂点・面を指す選択を消す。
+        ///   MirrorPair の頂点対応表を張り直し、実体側がスキンドなら対のボーンへ写したウェイトを
+        ///   ミラー側へ書く（SyncBoneWeights。ミラーの有効化 EnableMirror と同じ手順）。
+        ///   生成ミラー（MirrorGeometryDerived）か否かは見ない（呼び出し側が決める）。
+        ///
+        /// 【しないこと】UnityMesh の差し替え・OriginalPositions・GPU への送り・Undo は呼び出し側。
+        ///   呼ぶのは PolyLingPlayerViewerCore.ReplaceMirrorSideContents（スタックの作り直し）と
+        ///   ModifierChainHandler（処理列の結果の作り直し）。
+        /// </summary>
+        /// <returns>作り直したか（対が無い・中身が無いときは false。mirrorCtx は null）。</returns>
+        public static bool RebuildMirrorSideOf(ModelContext model, MeshContext realCtx, out MeshContext mirrorCtx)
+        {
+            mirrorCtx = null;
+            var pair = model?.GetMirrorPair(realCtx);
+            if (pair == null || !ReferenceEquals(pair.Real, realCtx)) return false;
+
+            var mc       = pair.Mirror;
+            var mirrorMo = mc?.MeshObject;
+            var realMo   = realCtx.MeshObject;
+            if (mirrorMo == null || realMo == null) return false;
+
+            int axis = ResolveMirrorAxis(realCtx);
+            var built = BuildMirroredMeshObject(
+                realMo, axis, realCtx.MirrorDistance, realCtx.MirrorMaterialOffset, mc.Name);
+            if (built == null) return false;
+
+            mirrorMo.Vertices.Clear();
+            mirrorMo.Faces.Clear();
+            foreach (var v in built.Vertices) mirrorMo.Vertices.Add(v);
+            foreach (var f in built.Faces)    mirrorMo.Faces.Add(f);
+            mirrorMo.LineGroups = LineGroupOps.CloneList(realMo);
+            LineGroupOps.MirrorHandles(mirrorMo.LineGroups, n => MirrorNormal(axis, n));
+            mirrorMo.RebuildIdSets();
+            mirrorMo.InvalidatePositionCache();
+
+            // 消えた頂点・面を指したままの選択を残さない。
+            mc.Selection?.ClearAll();
+
+            if (pair.Build(model.MeshContextList))
+            {
+                if (realCtx.IsSkinned) pair.SyncBoneWeights();
+            }
+            else
+            {
+                Debug.LogWarning($"[Mirror] 作り直し後のペアの張り直しに失敗しました mirror=\"{mc.Name}\"\n{pair.BuildLog}");
+            }
+            mirrorMo.RecomputeSkinKind();
+
+            mirrorCtx = mc;
+            return true;
+        }
+
+        /// <summary>
         /// Undo スナップショットの対象に、実体側とそのミラー側の両方を含めた索引を返す。
         /// 位相変更ツールはミラー側も作り直すため、片側だけ記録すると Undo で食い違う。
         /// </summary>

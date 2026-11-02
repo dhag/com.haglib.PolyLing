@@ -180,7 +180,7 @@ namespace Poly_Ling.Player
             if (OnBuildModifierTemplate == null) return Err("見本を作る口が配線されていません");
 
             foreach (var e in ModifierEvaluator.GetGraph(model))
-                if (ReferenceEquals(e.Step, p.Step)) { p.Pending = ModifierEvaluator.IsOutputEditPending(model, e); break; }
+                if (e.Owns(p.Step)) { p.Pending = ModifierEvaluator.IsOutputEditPending(model, e); break; }
 
             var rebuilt = ModifierStackOps.BuildCommand(project, modelIndex, p.Group, stepIndex, out string rbErr);
             if (rebuilt == null) return Err(rbErr ?? "作り直すコマンドを組めませんでした");

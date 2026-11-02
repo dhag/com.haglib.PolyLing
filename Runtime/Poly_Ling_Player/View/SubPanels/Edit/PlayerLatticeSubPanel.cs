@@ -90,6 +90,8 @@ namespace Poly_Ling.Player
         private Button _applyBtn;
         [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "取り消す")]
         private Button _cancelBtn;
+        [UiControl("toChain", Safety = UiSafety.SafeWrite, Description = "変形中の格子を処理列の項目「格子」として足す（変形中だけ。プレビューは取り消す）")]
+        private Button _toChainBtn;
 
         private static readonly Color ActiveBtnColor   = new Color(0.20f, 0.45f, 0.25f);
         private static readonly Color InactiveBtnColor = new Color(0.25f, 0.25f, 0.25f);
@@ -226,6 +228,12 @@ namespace Poly_Ling.Player
             btnRow.Add(_applyBtn); btnRow.Add(_cancelBtn);
             _root.Add(btnRow);
 
+            // 処理列へ取り込む（モディファイア枠組み計画 段 7b）。頂点は動かさず、非破壊の項目「格子」を足す。
+            _toChainBtn = new Button(() => { Surface?.Invoke(Tool, "commitToModifierChain"); Refresh(); })
+            { text = "処理列へ取り込む（非破壊）" };
+            _toChainBtn.style.marginTop = 2;
+            _root.Add(_toChainBtn);
+
             _infoLabel = new Label();
             _infoLabel.style.fontSize  = 10;
             _infoLabel.style.marginTop = 4;
@@ -336,6 +344,7 @@ namespace Poly_Ling.Player
             _modeGroup?.SetEnabled(deform);
             _applyBtn?.SetEnabled(!idle);
             _cancelBtn?.SetEnabled(!idle);
+            _toChainBtn?.SetEnabled(deform);
 
             RepaintModeButtons();
 
@@ -349,9 +358,12 @@ namespace Poly_Ling.Player
 
             if (_infoLabel != null)
             {
+                string imp = "";
+                if (Surface == null || !Surface.TryGet(Tool, "chainImportMessage", out imp) || imp == null) imp = "";
                 if (Surface == null || idle)
                 {
-                    _infoLabel.text = "頂点を選択してから開始してください。";
+                    _infoLabel.text = "頂点を選択してから開始してください。"
+                        + (string.IsNullOrEmpty(imp) ? "" : "\n" + imp);
                 }
                 else
                 {

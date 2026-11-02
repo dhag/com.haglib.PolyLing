@@ -3,6 +3,7 @@
 //
 //   PLRH v2 … 作業軸辞書（workaxis_library.csv）
 //   PLRS v8 … モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt。書き読みは本体側）
+//   PLRM v13 … 処理列の印と項目の有効（modifierStacks[] の isChain、steps[] の disabled）
 //   PLRM v12 … 表情の作成日時（.mfproj の morphExpressions[].createdAt）と ModifierStack の付帯
 //              （modifierStacks[] の createdAt・scenarioOutputs、steps[] の usageScene・profileDim）
 //   PLRM v10 … グループモーフの子（morphgroups.csv の子の欄）
@@ -208,6 +209,54 @@ namespace Poly_Ling.Remote
                     if (g?.Steps == null || s >= g.Steps.Count || g.Steps[s] == null) continue;
                     g.Steps[s].UsageScene = scene;
                     g.Steps[s].ProfileDim = dim;
+                }
+            }
+        }
+
+        // ================================================================
+        // PLRM v13：処理列の印と項目の有効（モディファイア枠組み計画 段 2）
+        //   スタックの数（int）、スタックごとに
+        //     [1B] IsChain
+        //     [int] 項目の数  [1B] Enabled × N
+        //   並びは本体の ModifierStacks（null は空として詰めてある）・Steps と同じ。
+        //   modifierstacks.csv の g 行 isChain・s 行 enabled、.mfproj の isChain・steps[].disabled と揃える。
+        // ================================================================
+
+        private static void WriteModifierChainFlags(BinaryWriter w, ModelContext model)
+        {
+            var groups = model.ModifierStacks;
+            int n = groups?.Count ?? 0;
+            w.Write(n);
+            for (int i = 0; i < n; i++)
+            {
+                var g = groups[i];
+                w.Write(g?.IsChain ?? false);
+
+                // 本体の書き（SerializeModelMeta）は null スタックを空の項目 0 件で詰める。
+                var steps = g?.Steps;
+                int sc = steps?.Count ?? 0;
+                w.Write(sc);
+                for (int s = 0; s < sc; s++)
+                    w.Write(steps[s]?.Enabled ?? true);
+            }
+        }
+
+        private static void ReadModifierChainFlags(BinaryReader r, ModelContext model)
+        {
+            int n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                var g = (model.ModifierStacks != null && i < model.ModifierStacks.Count) ? model.ModifierStacks[i] : null;
+
+                bool isChain = r.ReadBoolean();
+                if (g != null) g.IsChain = isChain;
+
+                int sc = r.ReadInt32();
+                for (int s = 0; s < sc; s++)
+                {
+                    bool enabled = r.ReadBoolean();
+                    if (g?.Steps == null || s >= g.Steps.Count || g.Steps[s] == null) continue;
+                    g.Steps[s].Enabled = enabled;
                 }
             }
         }

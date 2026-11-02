@@ -309,6 +309,12 @@ namespace Poly_Ling.View
         /// </summary>
         IReadOnlyList<ModifierStackView> ModifierStacks { get; }
 
+        /// <summary>
+        /// masterIndex の描画オブジェクトの今の選択（頂点・辺・面）から処理範囲の引数を作る
+        /// （MeshModifierScope.FromIndices）。モデルは変えない。作れない実装（スナップショットなど）は null。
+        /// </summary>
+        ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex);
+
         // マテリアル（操作経路統一計画.md E、M-1）
         /// <summary>マテリアルスロット数。スナップショットでは 0。</summary>
         int MaterialCount { get; }
@@ -431,6 +437,23 @@ namespace Poly_Ling.View
         public string Detail;
         /// <summary>項目ごとの引数（並びは項目順）。</summary>
         public ModifierStackStepView[] Steps = System.Array.Empty<ModifierStackStepView>();
+
+        // ── 処理列（ModifierStack.IsChain。モディファイア枠組み計画 段 5）
+        /// <summary>処理列か。</summary>
+        public bool   IsChain;
+        /// <summary>
+        /// 既存のサブディビジョン（subdivideMesh）のスタックか（段 8）。処理列パネルに同じ見た目で出すため、
+        /// 下の元・結果の欄に親（ケージ）と子を入れる。項目の ItemId も入る。
+        /// </summary>
+        public bool   IsSubdivision;
+        /// <summary>処理列の元メッシュ・結果の索引（無ければ -1）と名前（IsSubdivision では親と子）。</summary>
+        public int    ChainSourceIndex = -1;
+        public int    ChainResultIndex = -1;
+        public string ChainSourceName  = "";
+        public string ChainResultName  = "";
+        /// <summary>処理列の節点の最後の評価の結果（ModifierResult の名前）と理由。</summary>
+        public string ChainResult  = "";
+        public string ChainMessage = "";
     }
 
     /// <summary>モディファイアスタックの項目 1 つの引数の写し。</summary>
@@ -452,6 +475,28 @@ namespace Poly_Ling.View
         public string InverseLoses  = "";
         /// <summary>出力の編集が未確定か（ModifierEvaluator.IsOutputEditPending）。</summary>
         public bool   OutputEditPending;
+
+        // ── 処理列の項目（段 5）。処理列でないスタックでは既定のまま。
+        /// <summary>項目の ScenarioItemId。</summary>
+        public string ItemId = "";
+        /// <summary>項目が有効か（ModifierStackStep.Enabled）。</summary>
+        public bool   Enabled = true;
+        /// <summary>項目の評価の結果（ModifierChainHandler.ItemResult の名前）と理由。</summary>
+        public string State        = "";
+        public string StateMessage = "";
+    }
+
+    /// <summary>選択から作った処理範囲（MeshModifierScope.FromIndices）の引数の写し。</summary>
+    public sealed class ModifierScopeArgsView
+    {
+        /// <summary>"scope." のキーと値。</summary>
+        public string[] Keys   = System.Array.Empty<string>();
+        public string[] Values = System.Array.Empty<string>();
+        public int      VertexCount;
+        public int      EdgeCount;
+        public int      FaceCount;
+        /// <summary>頂点 ID が無く控えなかった要素の数。</summary>
+        public int      NoId;
     }
 
     // ================================================================

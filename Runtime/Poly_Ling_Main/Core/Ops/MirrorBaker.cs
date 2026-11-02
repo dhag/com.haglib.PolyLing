@@ -571,6 +571,32 @@ namespace Poly_Ling.Tools
             return (bakedMesh, result);
         }
 
+        /// <summary>
+        /// ベイク結果の頂点対応で、元の頂点位置 src（N 個）からベイク後の頂点位置を求める（面構成は変えない）。
+        /// BakeMirror の Step 1（二重化）と Step 5（位置）と同じ式：代表元がミラー側なら平面で鏡映し、
+        /// 統合された頂点は ProjectBoundaryToPlane なら平面へ射影する。
+        /// 処理列の種類「ミラー（実体化）」のドラッグ中の追随に使う（段 8）。数が合わなければ null。
+        /// </summary>
+        public static Vector3[] MapPositions(MirrorBakeResult result, Vector3[] src)
+        {
+            if (result == null || !result.IsValid || src == null) return null;
+            int n = result.OriginalVertexCount;
+            if (src.Length != n || result.NewToOldRepresentative == null || result.NewVertexOrigin == null) return null;
+
+            var dst = new Vector3[result.NewVertexCount];
+            for (int newV = 0; newV < dst.Length; newV++)
+            {
+                int rep = result.NewToOldRepresentative[newV];
+                bool mirrored = rep >= n;
+                Vector3 p = src[mirrored ? rep - n : rep];
+                if (mirrored) p = Mirror(p, result.PlaneNormal, result.PlaneDistance);
+                if (result.NewVertexOrigin[newV] == VertexOrigin.Merged && result.ProjectBoundaryToPlane)
+                    p = ProjectToPlane(p, result.PlaneNormal, result.PlaneDistance);
+                dst[newV] = p;
+            }
+            return dst;
+        }
+
         // ================================================================
         // WriteBack
         // ================================================================

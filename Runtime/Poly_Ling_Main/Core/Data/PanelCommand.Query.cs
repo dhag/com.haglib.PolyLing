@@ -425,6 +425,84 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 処理列の種類（IMeshModifier）の検査（MeshModifierAudit.Run）を回して結果を返す
+    /// （PolyLing_モディファイア枠組み計画.md 段 1）。モデルもプロジェクトも見ない。
+    /// </summary>
+    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "処理列の種類（IMeshModifier）を検査する。全アセンブリから発見した種類と引数の宣言・発見の問題・引数の文字列の往復（既定値と 3 種類の処理範囲）・処理範囲の自己試験（並びを入れ替えたメッシュへの引き直し）・種類の自己試験（デフォーマの包む漏れ・位置の口と Evaluate の一致・厚み）を返す。kind と argKeys・argValues を渡すと、その引数の往復も回す。モデルもプロジェクトも見ない。")]
+    [PLResult("report",            PLResultKind.Text,      Description = "検査結果の全文。複数行")]
+    [PLResult("kinds",             PLResultKind.TextArray, Description = "登録された種類名")]
+    [PLResult("problems",          PLResultKind.Integer,   Description = "発見の問題の件数")]
+    [PLResult("roundTripFailures", PLResultKind.Integer,   Description = "引数の往復の不一致の件数（指定の引数を含む）")]
+    [PLResult("scopeFailures",     PLResultKind.Integer,   Description = "処理範囲の自己試験の失敗の件数")]
+    [PLResult("kindFailures",      PLResultKind.Integer,   Description = "種類の自己試験（デフォーマの包む漏れ・位置の口と Evaluate の一致・厚み）の失敗の件数")]
+    [PLResult("args",              PLResultKind.TextArray, Description = "指定の引数を往復させた文字列の対（キー=値）。指定が無ければ空")]
+    public class QueryMeshModifierAuditCommand : PanelCommand
+    {
+        [PLParam(Description = "引数の往復を確かめる種類名。省くと既定値の往復だけ")]
+        public string Kind { get; }
+
+        [PLParam(Description = "kind に渡す引数のキー。処理範囲は scope.kind ほか")]
+        public string[] ArgKeys { get; }
+
+        [PLParam(Description = "argKeys と同じ並びの値。カンマを含む値は二重引用符で包む")]
+        public string[] ArgValues { get; }
+
+        public QueryMeshModifierAuditCommand(int modelIndex = 0, string kind = null,
+                                             string[] argKeys = null, string[] argValues = null)
+            : base(modelIndex)
+        {
+            Kind      = kind;
+            ArgKeys   = argKeys;
+            ArgValues = argValues;
+        }
+    }
+
+    /// <summary>
+    /// 処理列 1 つの中身を照会する（PolyLing_モディファイア枠組み計画.md 段 4）。モデルは変えない。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "処理列（非破壊のモディファイアの積み重ね）1 つの中身を照会する。元メッシュと結果（索引・ObjectId）、項目ごとに ScenarioItemId・種類・有効・引数（キー=値）・最後の評価の状態と理由、処理列全体の評価の結果を返す。モデルは変えない。")]
+    [PLResult("sourceIndex",  PLResultKind.Integer,      Description = "元メッシュの索引（見つからなければ -1）")]
+    [PLResult("sourceId",     PLResultKind.Text,         Description = "元メッシュの ObjectId")]
+    [PLResult("resultIndex",  PLResultKind.Integer,      Description = "結果の索引（見つからなければ -1）")]
+    [PLResult("resultId",     PLResultKind.Text,         Description = "結果の ObjectId")]
+    [PLResult("itemIds",      PLResultKind.TextArray,    Description = "項目の ScenarioItemId。並び順")]
+    [PLResult("kinds",        PLResultKind.TextArray,    Description = "項目の種類名。itemIds と同じ並び")]
+    [PLResult("enabled",      PLResultKind.IntegerArray, Description = "有効か。1 = 有効")]
+    [PLResult("args",         PLResultKind.TextArray,    Description = "引数（キー=値 を ; で区切ったもの。キー順）。参照の引数には =>ObjectId を添える")]
+    [PLResult("states",       PLResultKind.TextArray,    Description = "最後の評価の状態（None / Ok / Failed / Blocked / Disabled）")]
+    [PLResult("messages",     PLResultKind.TextArray,    Description = "状態の理由")]
+    [PLResult("chainResult",  PLResultKind.Text,         Description = "処理列全体の最後の評価の結果（None / Ok / Failed ほか）")]
+    [PLResult("chainMessage", PLResultKind.Text,         Description = "処理列全体の最後の評価の説明")]
+    public class QueryMeshModifierChainCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ModifierStackName", Description = "処理列のスタック名", Required = true)]
+        public string StackName { get; }
+
+        public QueryMeshModifierChainCommand(int modelIndex, string stackName)
+            : base(modelIndex) { StackName = stackName; }
+    }
+
+    /// <summary>
+    /// 登録されている処理の種類（IMeshModifier）の一覧を照会する（段 4）。モデルは見ない。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true, Description = "処理列に足せる処理の種類（IMeshModifier）の一覧を照会する。種類名・表示名・分類・変える範囲（PositionsOnly＝位置だけ / Topology＝面構成も）・位置の口の有無・説明・引数の宣言（キー:型 と 必須・最小・最大・刻み・参照）を返す。処理範囲の引数 scope.* はどの種類にも共通。モデルは見ない。")]
+    [PLResult("kinds",        PLResultKind.TextArray,    Description = "種類名（addMeshModifier の kind）")]
+    [PLResult("displayNames", PLResultKind.TextArray,    Description = "表示名。kinds と同じ並び")]
+    [PLResult("categories",   PLResultKind.TextArray,    Description = "分類")]
+    [PLResult("changes",      PLResultKind.TextArray,    Description = "PositionsOnly / Topology")]
+    [PLResult("positionsPath",PLResultKind.IntegerArray, Description = "位置の口（ドラッグ中の速い追随）を持つか。1 = 持つ")]
+    [PLResult("dragFollow",   PLResultKind.IntegerArray, Description = "面構成を変える種類がドラッグ中の追随の口（IMeshModifierDragFollow）を持つか。1 = 持つ")]
+    [PLResult("pinnedLast",   PLResultKind.IntegerArray, Description = "末尾固定（処理列に 1 つだけ・いつも最後・並べ替え不可）か。1 = 末尾固定")]
+    [PLResult("descriptions", PLResultKind.TextArray,    Description = "説明")]
+    [PLResult("params",       PLResultKind.TextArray,    Description = "引数の宣言。1 種類 1 行、引数を ; で区切る（キー:型[ required][ min=][ max=][ step=][ meshRef] 説明）")]
+    [PLResult("scopeKeys",    PLResultKind.TextArray,    Description = "処理範囲の引数のキー（全種類に共通）")]
+    [PLResult("problems",     PLResultKind.TextArray,    Description = "発見のときの問題（登録しなかった型）")]
+    public class QueryMeshModifierKindsCommand : PanelCommand
+    {
+        public QueryMeshModifierKindsCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>
     /// モディファイアスタックの項目（モディファイア）の依存のグラフを照会する（PolyLing_作り直し整備計画.md 段 4）。
     /// 依存の順に、項目・入力・出力・下流・状態（流すか・外した理由・循環）・要評価の印・
     /// 最後の評価の結果を返す。モデルは変えない。
@@ -443,6 +521,7 @@ namespace Poly_Ling.Data
     [PLResult("messages",   PLResultKind.TextArray,    Description = "最後の評価の理由・説明（失敗の理由、梯子・断面の扱いなど）")]
     [PLResult("lastPass",   PLResultKind.Text,         Description = "最後の流しの記録（契機・作り直した数・失敗・止めた数と各項目）")]
     [PLResult("pending",    PLResultKind.IntegerArray, Description = "出力の編集が未確定か。1 = 未確定（逆方向を持つ項目だけ）")]
+    [PLResult("structureKey", PLResultKind.Text,       Description = "グラフの構造キー（16 進）。変わるとグラフを作り直す。処理列は元・結果・参照の ID だけで決まる")]
     public class QueryModifierGraphCommand : PanelCommand
     {
         public QueryModifierGraphCommand(int modelIndex = 0) : base(modelIndex) { }

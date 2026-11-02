@@ -322,7 +322,7 @@ namespace Poly_Ling.Player
             foreach (var e in order)
             {
                 labels.Add(e.Label);
-                actions.Add(e.Step.Action ?? "");
+                actions.Add(e.ActionLabel);
 
                 var ins = new List<MeshContext>();
                 foreach (var kv in e.Inputs) if (!ins.Contains(kv.Value)) ins.Add(kv.Value);
@@ -368,6 +368,7 @@ namespace Poly_Ling.Player
                 .Texts("results",    results)
                 .Texts("messages",   messages)
                 .Text ("lastPass",   passText)
+                .Text ("structureKey", ModifierGraph.StructureKey(model).ToString("X16", System.Globalization.CultureInfo.InvariantCulture))
                 .Build();
         }
 

@@ -14,6 +14,8 @@
 //   PlayerDeformSubPanel はスライダと数値でパラメータを編集する前提であり、
 //   格子点の選択・移動を表現できない。格子変形は専用の操作層から
 //   DeformApplier.Apply(latticeDeformer) を直接呼んで使う。
+//   処理列の種類は別に LatticeMeshModifier（Core/Modifiers/Kinds/）がある。
+//   引数から格子を組むのは Configure の 1 か所（種類とコマンドの受け口が共用する）。
 //
 // 【Prepare で格子を作り直さないこと】
 //   「格子配置」と「格子変形」は別の作業である。Prepare は変形のたびに
@@ -106,6 +108,46 @@ namespace Poly_Ling.Tools.Deformers
             Grid.SetCenterSize(center, size);
             Grid.Rebuild();
             _interpolator.Bind(Grid);
+        }
+
+        /// <summary>
+        /// 引数から格子を組む（共用の組み立て。処理列の種類 LatticeMeshModifier と
+        /// 格子変形コマンドの受け口 LatticeToolHandler.ExecuteFromCommand が呼ぶ。モディファイア枠組み計画 段 7b）。
+        /// セル数（MinCells〜MaxCells に丸める）→ 中心と大きさ → 制御点を等間隔で作り直す →
+        /// 動かした点の検査と、基準位置からのずれで Current を書く。
+        /// pointIndices の索引は index = ix + iy*(CellsX+1) + iz*(CellsX+1)*(CellsY+1)、
+        /// pointOffsets は同じ並びで x,y,z の 3 個ずつ。どちらも null・空なら無変形。
+        /// 失敗したら false と理由（格子は組んだ直後の無変形のまま）。
+        /// </summary>
+        public bool Configure(int cellsX, int cellsY, int cellsZ, Vector3 center, Vector3 size,
+                              int[] pointIndices, float[] pointOffsets, out string error)
+        {
+            error = null;
+            Grid.SetCells(cellsX, cellsY, cellsZ);
+            Grid.SetCenterSize(center, size);
+            Grid.Rebuild();
+            _interpolator.Bind(Grid);
+
+            int n = pointIndices?.Length ?? 0;
+            int m = pointOffsets?.Length ?? 0;
+            if (m != n * 3)
+            { error = $"PointOffsets の長さは PointIndices の 3 倍にしてください（{n * 3} 個）"; return false; }
+
+            int pointCount = Grid.ControlPointCount;
+            for (int k = 0; k < n; k++)
+            {
+                int pi = pointIndices[k];
+                if (pi < 0 || pi >= pointCount)
+                { error = $"PointIndices[{k}] = {pi} が範囲外です（0〜{pointCount - 1}）"; return false; }
+            }
+
+            for (int k = 0; k < n; k++)
+            {
+                int pi = pointIndices[k];
+                var d = new Vector3(pointOffsets[k * 3], pointOffsets[k * 3 + 1], pointOffsets[k * 3 + 2]);
+                Grid.SetCurrent(pi, Grid.GetBase(pi) + d);
+            }
+            return true;
         }
 
         /// <summary>

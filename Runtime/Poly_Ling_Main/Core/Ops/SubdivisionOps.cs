@@ -98,8 +98,20 @@ namespace Poly_Ling.Ops
         public static bool TryBuild(
             MeshObject cage, int level,
             out MeshObject result, out SubdivisionStencil stencil, out string error)
+            => TryBuild(cage, level, out result, out stencil, out _, out error);
+
+        /// <summary>
+        /// 子の頂点の先頭 vertexPointSources.Length 個（頂点の点）が、親のどの頂点から来たかも返す版
+        /// （処理列の種類「サブディビジョン」が親の頂点 ID を写すのに使う。段 8）。
+        /// 頂点の点は「細分化の対象の面に使われている親の頂点」を番号の順に並べたもの（SubdivideOnce の出力の並び）。
+        /// 2 回目以降も頂点の点は前の回の頂点の点（すべて面に使われる）を同じ順に先頭へ置くので、
+        /// 回数によらず子の先頭のこの並びは変わらない。
+        /// </summary>
+        public static bool TryBuild(
+            MeshObject cage, int level,
+            out MeshObject result, out SubdivisionStencil stencil, out int[] vertexPointSources, out string error)
         {
-            result = null; stencil = null; error = null;
+            result = null; stencil = null; vertexPointSources = null; error = null;
 
             if (cage == null) { error = "親のメッシュがありません"; return false; }
             level = Mathf.Clamp(level, LevelMin, LevelMax);
@@ -131,6 +143,13 @@ namespace Poly_Ling.Ops
             }
 
             if (w.Faces.Count == 0) { error = "細分化できる面（3 頂点以上）がありません"; return false; }
+
+            // 頂点の点の出どころ：対象の面に使われている親の頂点を番号の順に（SubdivideOnce の vertOut と同じ規則）。
+            var used = new bool[w.VertexCount];
+            foreach (var fv in w.Faces) foreach (int vi in fv) used[vi] = true;
+            var srcList = new List<int>();
+            for (int v = 0; v < used.Length; v++) if (used[v]) srcList.Add(v);
+            vertexPointSources = srcList.ToArray();
 
             stencil = new SubdivisionStencil();
             for (int l = 0; l < level; l++)

@@ -69,7 +69,10 @@ namespace Poly_Ling.Data
         [PLParam(Description = "鎖の先に短いボーンを 1 本足す。鎖の先は tail 扱いで揺れないための手当て")]
         public bool AddTailBone { get; }
 
-        [PLParam(Description = "足すボーンの長さ[m]。0 以下で既定値", Min = 0.0)]
+        /// <summary>足すボーンの長さの上限。図形生成パネルの「足すボーンの長さ」の行（PlayerPrimitiveMeshSubPanel.SpringBoneChain.cs）も参照する。</summary>
+        public const float TailLengthMax = 0.3f;
+
+        [PLParam(Description = "足すボーンの長さ[m]。0 以下で既定値", Min = 0.0, Max = TailLengthMax)]
         public float TailLength { get; }
 
         [PLParam(Description = "取り込み元のはしごへウェイトを塗る。節点のボーンへ、間の段は線形補間で書く")]

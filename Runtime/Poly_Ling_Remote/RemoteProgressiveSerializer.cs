@@ -151,6 +151,10 @@ namespace Poly_Ling.Remote
         //     [4B] ExpressionCount  ([8B] DateTime.ToBinary) × ExpressionCount。並びは MorphExpressions と同じ。
         //     続けて ModifierStack の付帯（作成日時・出力・項目の利用シーンと点の成分数。WriteModifierStackExtras）。
         //     Version 11 以前の受信側は末尾のこの欄を読まずに終わる。
+        //   ※ Version 13 で末尾に処理列の印と項目の有効（ModifierStack.IsChain / ModifierStackStep.Enabled。
+        //     .mfproj の modifierStacks[].isChain / steps[].disabled と揃える。WriteModifierChainFlags）を追加。
+        //     Version 12 以前の受信側は末尾のこの欄を読まずに終わる。Version 12 以前を読むときは
+        //     処理列でない・有効のまま。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -168,7 +172,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)12);  // version 12: 表情の作成日時。version 11: シナリオの引数（ModifierStack.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ModifierStack ブロック
+                w.Write((byte)13);  // version 13: 処理列の印と項目の有効。version 12: 表情の作成日時。version 11: シナリオの引数（ModifierStack.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ModifierStack ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -322,6 +326,9 @@ namespace Poly_Ling.Remote
 
                 // ── version 12：ModifierStack の付帯（作成日時・出力・項目の利用シーンと点の成分数）
                 WriteModifierStackExtras(w, model);
+
+                // ── version 13：処理列の印と項目の有効
+                WriteModifierChainFlags(w, model);
 
                 return ms.ToArray();
             }
@@ -573,6 +580,10 @@ namespace Poly_Ling.Remote
                     ReadMorphExpressionCreatedAt(r, model);
                     ReadModifierStackExtras(r, model);
                 }
+
+                // ── version 13：処理列の印と項目の有効。v12 以前は処理列でない・有効のまま。
+                if (metaVersion >= 13)
+                    ReadModifierChainFlags(r, model);
 
                 return (modelIndex, model);
             }

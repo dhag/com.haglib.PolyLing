@@ -217,6 +217,9 @@ namespace Poly_Ling.Data
 
             sb.Append(PLParamAudit.Run().ToString());
             sb.Append('\n');
+            // 数値の引数の範囲の宣言漏れ。処理列の種類の分は完了条件（引数欄がスライダーを作れない）。
+            sb.Append(PLParamAudit.RunRanges().ToString());
+            sb.Append('\n');
             sb.Append(RunStructure().ToString());
 
             PanelCommandFactory.CountTools(out int usable, out int skipped);

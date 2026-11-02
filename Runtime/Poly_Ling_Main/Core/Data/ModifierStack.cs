@@ -401,6 +401,15 @@ namespace Poly_Ling.Data
         public int ProfileDim = CurrentProfileDim;
 
         /// <summary>
+        /// 有効か。既定 true（モディファイア枠組み計画 3.1）。
+        /// 処理列（ModifierStack.IsChain）の項目を一時的に外すための欄で、false の項目は流さない。
+        /// この欄を持たない旧版の保存データは有効として読む
+        /// （CSV は s 行の列が無ければ 1、JSON は disabled の欄が無ければ false、二進は PLRM v12 以前なら true）。
+        /// 処理列でないスタックでの扱いは評価器が決める（段 3）。
+        /// </summary>
+        public bool Enabled = true;
+
+        /// <summary>
         /// 索引で描画オブジェクトを指す Args のキー → その ObjectId 列。
         ///
         /// どのキーがこれに当たるかは PanelCommandFactory.MeshRefKeys が
@@ -566,6 +575,7 @@ namespace Poly_Ling.Data
                 Action          = Action,
                 Args            = new Dictionary<string, string>(StringComparer.Ordinal),
                 ProfileDim      = ProfileDim,
+                Enabled         = Enabled,
                 MeshRefIds      = new Dictionary<string, List<ulong>>(StringComparer.Ordinal),
                 OutputObjectIds = OutputObjectIds != null
                     ? new List<ulong>(OutputObjectIds) : new List<ulong>(),
@@ -688,6 +698,14 @@ namespace Poly_Ling.Data
         ///   保存の互換とパネルの表示のために残している。
         /// </summary>
         public bool AutoUpdate = false;
+
+        /// <summary>
+        /// 処理列か。既定 false（モディファイア枠組み計画 3.1）。
+        /// true のスタックは 1 つのオブジェクトに処理を積み重ねる列で、項目 1 つが処理 1 つ
+        /// （Action＝処理の種類名、Args＝引数と処理範囲 scope.*、MeshRefIds＝参照オブジェクト）。
+        /// 評価・グラフでの扱いは段 3。旧版の保存データは false として読む。
+        /// </summary>
+        public bool IsChain = false;
 
         /// <summary>作成日時。</summary>
         public DateTime CreatedAt = DateTime.Now;
@@ -1013,6 +1031,7 @@ namespace Poly_Ling.Data
                 StashObjectId = StashObjectId,
                 SourceDigest  = SourceDigest,
                 AutoUpdate    = AutoUpdate,
+                IsChain       = IsChain,
                 CreatedAt     = CreatedAt,
                 Goal          = Goal,
                 Steps         = new List<ModifierStackStep>(),

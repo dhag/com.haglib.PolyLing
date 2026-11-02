@@ -79,6 +79,21 @@ namespace Poly_Ling.Data
             => IsDirectlyParsable(t) || IsNestedType(t);
 
         /// <summary>
+        /// 入れ子の値をドット区切りのキーへ展開する（ToArgs と同じ規則）。
+        /// 処理列の種類の引数（MeshModifierRegistry）が使う。型の判定は IsSchemaRepresentable を使うこと。
+        /// </summary>
+        public static void FlattenNestedValue(object value, Type t, string prefix, Dictionary<string, string> dst)
+            => FlattenNested(value, t, prefix, 1, dst);
+
+        /// <summary>
+        /// ドット区切りのキーから入れ子の値を組み立てる（Create と同じ規則）。
+        /// 処理列の種類の引数（MeshModifierRegistry）が使う。
+        /// </summary>
+        public static bool TryBuildNestedValue(
+            Type t, string prefix, IReadOnlyDictionary<string, string> args, out object value, out string reason)
+            => TryBuildNested(t, prefix, args, 1, out value, out reason);
+
+        /// <summary>
         /// 入れ子として扱える型か。
         ///
         /// 条件は「PLParam の付いた書き込めるメンバーを 1 つ以上持つこと」。

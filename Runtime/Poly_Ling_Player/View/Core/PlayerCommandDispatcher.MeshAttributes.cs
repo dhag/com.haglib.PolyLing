@@ -526,6 +526,17 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) { Fail("no current model"); return true; }
                     if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return true; }
+                    // 処理列の結果の表示ミラーは処理列の「ミラー（表示）」の項目が持つ（段 8）。
+                    foreach (int mirIdx in c.MasterIndices)
+                    {
+                        var mirTarget = model.GetMeshContext(mirIdx);
+                        var mirChain  = Poly_Ling.Modifiers.ModifierChainOps.ChainOf(model, mirTarget);
+                        if (mirChain == null) continue;
+                        Poly_Ling.Modifiers.ModifierChainOps.ChainEnds(model, mirChain, out _, out var mirResult);
+                        if (!ReferenceEquals(mirResult, mirTarget)) continue;
+                        Fail($"{mirTarget.Name} は処理列 {mirChain.Name} の結果です。表示ミラーは処理列の「ミラー（表示）」の項目で付け外ししてください");
+                        return true;
+                    }
                     ApplyMirrorEnabled(model, c.MasterIndices, c.Enabled);
                     // ミラー側 MeshContext を作る／消すのでリスト構造が変わる。
                     // ApplyMirrorEnabled は ComputeWorldMatrices と _notifyPanels しか

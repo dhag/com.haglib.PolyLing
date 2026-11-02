@@ -12,7 +12,7 @@
 //
 // 【行の形】
 //   g  … スタック 1 件の頭
-//        g,name,action0,output0,stash,autoUpdate,sourceDigest,goal
+//        g,name,action0,output0,stash,autoUpdate,sourceDigest,goal,isChain
 //        action0 と output0 は項目 0 の要約で、version 1.0 の読み手が
 //        ここだけを見て 1 項目のスタックとして読めるようにしてある。
 //   gd … 作成日時（gd,ISO 8601）。g 行の直後に 1 行
@@ -22,7 +22,7 @@
 //   gv … 由来（gv,parentName,changeSummary,createdBy）
 //   ga … シナリオの引数 1 件（ga,name,default,description）。並びは宣言の順
 //   gr … シナリオの出力 1 件（gr,name,from,description）。並びは宣言の順
-//   s  … 項目の頭（s,action,scenarioItemId,kind,purpose,refName,expansionPolicy,usageScene,profileDim）。以降の o / a / r はこの項目に付く
+//   s  … 項目の頭（s,action,scenarioItemId,kind,purpose,refName,expansionPolicy,usageScene,profileDim,enabled）。以降の o / a / r はこの項目に付く
 //   o  … その項目の出力先 ObjectId 列
 //   a  … パラメータ 1 件
 //   r  … 描画オブジェクト参照 1 件（キーと ObjectId 列）
@@ -43,6 +43,9 @@
 //   1.7 … gr 行を追加（シナリオの出力）。行の無い 1.6 以前は出力なしとして読む。
 //   1.8 … gd 行を追加（スタックの作成日時。規約4：.mfproj の modifierStacks[].createdAt・
 //         バイナリ PLRM v12 と揃える）。行の無い 1.7 以前は読込時刻のまま。
+//   1.9 … g に isChain（処理列か。1/0）、s に enabled（項目が有効か。1/0）を追加
+//         （モディファイア枠組み計画 段 2。.mfproj の isChain / steps[].disabled・バイナリ PLRM v13 と揃える）。
+//         列の無い 1.8 以前は isChain=0・enabled=1 として読む。
 //   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 / 1.4 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
@@ -67,7 +70,7 @@ namespace Poly_Ling.Serialization
     public static class ModifierStackCsv
     {
         /// <summary>書き出す版。</summary>
-        public const string Version = "1.8";
+        public const string Version = "1.9";
 
         // ================================================================
         // 書き
@@ -95,7 +98,8 @@ namespace Poly_Ling.Serialization
                 sb.AppendLine(
                     $"g,{Esc(g.Name ?? "")},{Esc(first?.Action ?? "")}," +
                     $"{(first?.FirstOutputId ?? 0UL)},{g.StashObjectId}," +
-                    $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")},{Esc(g.Goal ?? "")}");
+                    $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")},{Esc(g.Goal ?? "")}," +
+                    $"{(g.IsChain ? 1 : 0)}");
 
                 sb.AppendLine($"gd,{Esc(g.CreatedAt.ToString("o", CultureInfo.InvariantCulture))}");
 
@@ -136,7 +140,8 @@ namespace Poly_Ling.Serialization
                     sb.AppendLine(
                         $"s,{Esc(st.Action ?? "")},{Esc(st.ScenarioItemId ?? "")}," +
                         $"{st.Kind},{Esc(st.Purpose ?? "")}," +
-                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")},{st.ProfileDim}");
+                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")},{st.ProfileDim}," +
+                        $"{(st.Enabled ? 1 : 0)}");
 
                     if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
                     {
@@ -231,6 +236,8 @@ namespace Poly_Ling.Serialization
                             AutoUpdate    = PInt(cols, 5) != 0,
                             SourceDigest  = cols.Length > 6 ? Unesc(cols[6]) : "",
                             Goal          = cols.Length > 7 ? Unesc(cols[7]) : "",
+                            // 列が無い（1.8 以前）なら処理列でない。
+                            IsChain       = PInt(cols, 8) != 0,
                         };
                         cur.Steps.Clear();
                         curStep = null;
@@ -303,6 +310,8 @@ namespace Poly_Ling.Serialization
                             UsageScene      = cols.Length > 7 ? Unesc(cols[7]) : "",
                             // 列が無い（1.4 以前）ならプロファイルは 2 成分。
                             ProfileDim      = cols.Length > 8 ? PInt(cols, 8) : 2,
+                            // 列が無い（1.8 以前）なら有効。
+                            Enabled         = cols.Length > 9 ? PInt(cols, 9) != 0 : true,
                         };
                         cur.Steps.Add(curStep);
                         break;
@@ -373,7 +382,7 @@ namespace Poly_Ling.Serialization
                 int max;
                 switch (cols[0])
                 {
-                    case "g":  max = 8; group = cols.Length > 1 ? Unesc(cols[1]) : ""; seenGv = false; break;
+                    case "g":  max = 9; group = cols.Length > 1 ? Unesc(cols[1]) : ""; seenGv = false; break;
                     case "gd":
                     case "gp":
                     case "gc":
@@ -388,7 +397,7 @@ namespace Poly_Ling.Serialization
                         }
                         seenGv = true;
                         break;
-                    case "s":  max = 9; break;
+                    case "s":  max = 10; break;
                     case "a":  max = 3; break;
                     default:   continue;
                 }

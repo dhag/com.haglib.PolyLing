@@ -489,19 +489,151 @@ namespace Poly_Ling.Player
                 indices.ToArray(), offsets.ToArray());
         }
 
+        // ================================================================
+        // 処理列への取り込み（モディファイア枠組み計画 段 7b）
+        // ================================================================
+
+        /// <summary>最後の「処理列へ取り込む」の結果（失敗ならその理由）。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "最後の「処理列へ取り込む」の結果（失敗ならその理由）")]
+        public string ChainImportMessage { get; private set; } = "";
+
+        /// <summary>
+        /// 変形中の格子を、処理列の項目「格子」（LatticeMeshModifier）として足す。
+        ///
+        /// 【空間】ツールの格子は作業軸（ワールド）のローカル、種類の格子は作業軸を元メッシュの
+        ///   ローカルへ移したもののローカル。ツールが表示に使った行列（TransformRowMatrix。
+        ///   DeformApplier がウェイトの無い頂点に使うもの）で作業軸を移す。行列の拡大は一様であること
+        ///   （作業軸に拡大は無いので、一様な拡大だけを中心・大きさ・ずれへ割り戻す）。
+        /// 【範囲】変形の対象と同じ集め方の頂点（DeformApplier.CollectSelectedVertices）。全頂点なら全体。
+        /// 【送り方】プレビューを取り消してから addMeshModifier を送る（Undo 1 件）。
+        ///   対象がすでに処理列の元メッシュならその処理列の末尾へ足し、無ければ処理列を作る。
+        /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "変形中の格子を処理列の項目「格子」として足す（プレビューは取り消す）")]
+        public void CommitToModifierChain()
+        {
+            string why = BuildChainCommand(out var cmd);
+            if (cmd == null)
+            {
+                ChainImportMessage = why ?? "取り込めませんでした";
+                NotifyChanged();
+                return;
+            }
+            Cancel();
+            SendCommand(cmd);
+            ChainImportMessage = "処理列へ取り込みました";
+            NotifyChanged();
+        }
+
+        /// <summary>取り込みの addMeshModifier を組み立てる。組めなければ cmd = null と理由。</summary>
+        private string BuildChainCommand(out Poly_Ling.Data.PanelCommand cmd)
+        {
+            cmd = null;
+            if (SendCommand == null) return "コマンドの送り口がありません";
+            if (State != LatticeState.Deform || !Grid.IsBuilt) return "変形中だけ取り込めます（「変形開始」の後）";
+
+            var model = GetModel?.Invoke();
+            var axis  = GetWorkAxis?.Invoke();
+            if (model == null || axis == null) return "モデルか作業軸がありません";
+
+            int target = -1;
+            foreach (int i in model.SelectedDrawableMeshIndices)
+            {
+                var c = model.GetMeshContext(i);
+                if (c?.MeshObject == null || !c.HasSelection) continue;
+                if (target >= 0) return "選択を持つオブジェクトが複数あります（処理列は 1 つのオブジェクトに付く）";
+                target = i;
+            }
+            if (target < 0) return "選択を持つオブジェクトがありません";
+            var mc = model.GetMeshContext(target);
+            var mo = mc.MeshObject;
+            if (mc.IsSkinned) return "スキンド化したオブジェクトには処理列を付けられません";
+
+            // 処理列：対象が元メッシュならその末尾、結果なら拒否、無ければ作る
+            string stackName = null;
+            var chain = Poly_Ling.Modifiers.ModifierChainOps.ChainOf(model, mc);
+            if (chain != null)
+            {
+                Poly_Ling.Modifiers.ModifierChainOps.ChainEnds(model, chain, out var src, out _);
+                if (!ReferenceEquals(src, mc)) return "処理列の結果には足せません（元メッシュを選んでください）";
+                stackName = chain.Name;
+            }
+
+            // 表示の行列（DeformApplier と同じ）を回転と一様な拡大に分ける
+            bool showBind = GetToolContext?.Invoke()?.ShowBindPose ?? false;
+            Matrix4x4 m = mc.TransformRowMatrix(showBind);
+            Vector3 c0 = m.GetColumn(0), c1 = m.GetColumn(1), c2 = m.GetColumn(2);
+            float sx = c0.magnitude, sy = c1.magnitude, sz = c2.magnitude;
+            float s  = (sx + sy + sz) / 3f;
+            if (s < 1e-8f) return "オブジェクトの行列が潰れています";
+            if (Mathf.Abs(sx - s) > 1e-4f * s || Mathf.Abs(sy - s) > 1e-4f * s || Mathf.Abs(sz - s) > 1e-4f * s)
+                return "オブジェクトの拡大が一様でないので取り込めません";
+            Vector3 n0 = c0 / sx, n1 = c1 / sy, n2 = c2 / sz;
+            if (Mathf.Abs(Vector3.Dot(n0, n1)) > 1e-4f || Mathf.Abs(Vector3.Dot(n1, n2)) > 1e-4f || Mathf.Abs(Vector3.Dot(n0, n2)) > 1e-4f)
+                return "オブジェクトの行列にせん断があるので取り込めません";
+            if (Vector3.Dot(Vector3.Cross(n0, n1), n2) < 0f) return "オブジェクトの行列が鏡映なので取り込めません";
+            Quaternion r = Quaternion.LookRotation(n2, n1);
+
+            Vector3 originLocal = m.inverse.MultiplyPoint3x4(axis.Origin);
+            Vector3 euler = (Quaternion.Inverse(r) * axis.Rotation).eulerAngles;
+            for (int k = 0; k < 3; k++) if (euler[k] > 180f) euler[k] -= 360f;
+            float inv = 1f / s;
+
+            var idx = new List<int>();
+            var off = new List<float>();
+            int n = Grid.ControlPointCount;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 d = Grid.GetCurrent(i) - Grid.GetBase(i);
+                if (d.sqrMagnitude < 1e-12f) continue;
+                idx.Add(i);
+                off.Add(d.x * inv); off.Add(d.y * inv); off.Add(d.z * inv);
+            }
+
+            // 範囲：変形の対象と同じ頂点
+            var verts = DeformApplier.CollectSelectedVertices(mc, mo);
+            Poly_Ling.Modifiers.MeshModifierScope scope;
+            if (verts.Count >= mo.VertexCount) scope = Poly_Ling.Modifiers.MeshModifierScope.All();
+            else
+            {
+                scope = Poly_Ling.Modifiers.MeshModifierScope.FromIndices(mo, verts, null, null, out int noId);
+                if (noId >= verts.Count)
+                    return "選択した頂点に頂点 ID がありません（repairVertexIds などで ID を付けてから取り込みます）";
+            }
+
+            var lat = new Poly_Ling.Modifiers.LatticeMeshModifier
+            {
+                AxisOrigin   = originLocal,
+                AxisRotation = euler,
+                CellsX = Grid.CellsX, CellsY = Grid.CellsY, CellsZ = Grid.CellsZ,
+                Center = Grid.BaseCenter * inv,
+                Size   = Grid.BaseSize * inv,
+                PointIndices = idx.ToArray(),
+                PointOffsets = off.ToArray(),
+            };
+            var args = Poly_Ling.Modifiers.MeshModifierRegistry.ToArgs(lat, scope);
+            var keys = new List<string>(args.Keys);
+            var vals = new List<string>();
+            foreach (var k in keys) vals.Add(args[k]);
+
+            cmd = new Poly_Ling.Data.AddMeshModifierCommand(
+                GetModelIndex?.Invoke() ?? 0, "lattice", stackName, stackName == null ? target : -1,
+                keys.ToArray(), vals.ToArray());
+            return null;
+        }
+
         /// <summary>
         /// 格子変形コマンドを実行する。
         ///
         /// 【マウス／パネル経路と同じ実装を通す】
         ///   状態遷移も変形も既存のものをそのまま順に呼ぶ。
-        ///   BeginPlacement → SetCells → SetBounds → BeginDeform →
-        ///   制御点を書く → ApplyDeform → Commit。
+        ///   BeginPlacement → LatticeDeformer.Configure（格子を組んで制御点を書く）→
+        ///   BeginDeform → ApplyDeform → Commit。
         ///   Undo 記録は Commit の中にある。
         ///
         /// 【基準格子はセル数と範囲から作り直す】
-        ///   SetCells / SetBounds がどちらも LatticeGrid.Rebuild を通すので、
-        ///   基準制御点は等間隔で再生成される。コマンドが持つのは
-        ///   そこからのずれだけでよい。
+        ///   Configure が LatticeGrid.Rebuild を通すので、基準制御点は等間隔で再生成される。
+        ///   コマンドが持つのはそこからのずれだけでよい。Configure は処理列の種類
+        ///   LatticeMeshModifier と共用（実装を二重に持たない。モディファイア枠組み計画 段 7b）。
         ///
         /// 【作業軸】
         ///   格子フレームは現在の WorkAxisContext。コマンドには載せていないので、
@@ -524,11 +656,8 @@ namespace Poly_Ling.Player
             { reason = "作業軸がありません。先に SetWorkAxisCommand で決めてください"; return false; }
 
             var idx = cmd.PointIndices;
-            var off = cmd.PointOffsets;
             if (idx == null || idx.Length == 0)
             { reason = "PointIndices が空です"; return false; }
-            if (off == null || off.Length != idx.Length * 3)
-            { reason = $"PointOffsets の長さは PointIndices の 3 倍にしてください（{idx.Length * 3} 個）"; return false; }
 
             // 途中まで進んでいるセッションが残っていたら捨てる。積み重ねないため。
             if (State != LatticeState.Idle) Cancel();
@@ -540,34 +669,20 @@ namespace Poly_Ling.Player
             if (!BeginPlacement())
             { reason = "選択された頂点がありません"; return false; }
 
-            // 値が変わらないときは false が返るが、それは失敗ではない。
-            SetCells(cmd.CellsX, cmd.CellsY, cmd.CellsZ);
-            SetBounds(cmd.Center, cmd.Size);
+            // 格子は引数から共用の組み立てで組む（処理列の種類 lattice と同じ。モディファイア枠組み計画 段 7b）。
+            // セル数 → 中心と大きさ → 作り直し → 動かした点の検査（長さ・索引の範囲）→ ずれを書く。
+            if (!_deformer.Configure(cmd.CellsX, cmd.CellsY, cmd.CellsZ, cmd.Center, cmd.Size,
+                                     idx, cmd.PointOffsets, out reason))
+            {
+                Cancel();
+                return false;
+            }
 
             if (!BeginDeform())
             {
                 Cancel();
                 reason = "格子変形へ移れませんでした";
                 return false;
-            }
-
-            int pointCount = Grid.ControlPointCount;
-            for (int k = 0; k < idx.Length; k++)
-            {
-                int pi = idx[k];
-                if (pi < 0 || pi >= pointCount)
-                {
-                    Cancel();
-                    reason = $"PointIndices[{k}] = {pi} が範囲外です（0〜{pointCount - 1}）";
-                    return false;
-                }
-            }
-
-            for (int k = 0; k < idx.Length; k++)
-            {
-                int pi = idx[k];
-                var d  = new Vector3(off[k * 3], off[k * 3 + 1], off[k * 3 + 2]);
-                Grid.SetCurrent(pi, Grid.GetBase(pi) + d);
             }
 
             ApplyDeform();

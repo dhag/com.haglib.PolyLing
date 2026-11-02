@@ -244,6 +244,24 @@ namespace Poly_Ling.Ops
 
             /// <summary>人に見せる名前「スタック名#項目番号」。</summary>
             public string Label => $"{Group?.Name}#{StepIndex}";
+
+            // ── 処理列（モディファイア枠組み計画 段 3。ModifierChainHandler）
+            /// <summary>処理列のスタックをまとめた節点か。Step は先頭の項目（目印だけ。意味は Group が持つ）。</summary>
+            public bool IsChain;
+
+            /// <summary>処理器を引くキー。処理列は ModifierChainHandler.Key、それ以外は Step.Action。</summary>
+            public string HandlerKey => IsChain ? Poly_Ling.Modifiers.ModifierChainHandler.Key : (Step?.Action ?? "");
+
+            /// <summary>人に見せる action 名。処理列は "chain"。</summary>
+            public string ActionLabel => IsChain ? "chain" : (Step?.Action ?? "");
+
+            /// <summary>この節点が項目 step を受け持つか。処理列はスタック単位、それ以外は項目の同一性。</summary>
+            public bool Owns(ModifierStackStep step)
+            {
+                if (step == null) return false;
+                if (IsChain) return Group?.Steps != null && Group.Steps.Contains(step);
+                return ReferenceEquals(Step, step);
+            }
         }
 
         /// <summary>入力 1 つぶんの署名。</summary>
@@ -343,6 +361,7 @@ namespace Poly_Ling.Ops
         static ModifierEvaluator()
         {
             Register(SubdivisionSync.Handler);
+            Register(Poly_Ling.Modifiers.ModifierChainHandler.Handler);
         }
 
         /// <summary>処理器を登録する。同じ action は後から登録したもので置き換える。</summary>
@@ -390,6 +409,7 @@ namespace Poly_Ling.Ops
         private static void AddGroup(List<Entry> list, Dictionary<ulong, MeshContext> map, ModifierStack g, int gi)
         {
             if (g?.Steps == null) return;
+            if (g.IsChain) { AddChainEntry(list, map, g, gi); return; }
             for (int si = 0; si < g.Steps.Count; si++)
             {
                 var s = g.Steps[si];
@@ -437,6 +457,74 @@ namespace Poly_Ling.Ops
 
                 list.Add(e);
             }
+        }
+
+        /// <summary>
+        /// 処理列のスタックを節点 1 つにまとめる（モディファイア枠組み計画 段 3）。
+        /// 入力＝全項目（無効な項目を含む）の MeshRefIds（元メッシュ ModifierChainHandler.SourceKey と参照）、
+        /// 出力＝全項目の OutputObjectIds（結果）。どちらも重複を除く。実行する項目が無ければ節点を作らない。
+        /// 無効な項目の参照も入れるのは、有効の切り替えでグラフの形を変えないため。
+        /// </summary>
+        private static void AddChainEntry(List<Entry> list, Dictionary<ulong, MeshContext> map, ModifierStack g, int gi)
+        {
+            Entry e = null;
+            var seenIn  = new HashSet<(string, ulong)>();
+            var seenOut = new HashSet<ulong>();
+            for (int si = 0; si < g.Steps.Count; si++)
+            {
+                var s = g.Steps[si];
+                if (s == null || !s.IsExecutable || string.IsNullOrEmpty(s.Action)) continue;
+                if (e == null)
+                    e = new Entry { Group = g, Step = s, GroupIndex = gi, StepIndex = si, IsChain = true };
+
+                foreach (var kv in s.SortedMeshRefIds())
+                {
+                    if (kv.Value == null) continue;
+                    foreach (ulong id in kv.Value)
+                    {
+                        if (id == 0UL || !seenIn.Add((kv.Key, id))) continue;
+                        if (map.TryGetValue(id, out var mc) && mc?.MeshObject != null)
+                            e.Inputs.Add(new KeyValuePair<string, MeshContext>(kv.Key, mc));
+                        else e.MissingRefs++;
+                    }
+                }
+                if (s.OutputObjectIds != null)
+                    foreach (ulong id in s.OutputObjectIds)
+                    {
+                        if (id == 0UL || !seenOut.Add(id)) continue;
+                        if (map.TryGetValue(id, out var mc) && mc != null) e.Outputs.Add(mc);
+                        else e.MissingRefs++;
+                    }
+            }
+            if (e == null) return;
+
+            // 参照オブジェクトの行列（段 7b）。処理器は参照を「参照 → 元メッシュ」の行列で読むので、
+            // 参照と元メッシュの行列の署名を取る（オブジェクトの移動を MarkMatrixChanged で拾う）。
+            // 参照が無い処理列では元メッシュも入れない（今までどおり位置の署名だけ）。
+            MeshContext src = null;
+            bool anyRef = false;
+            foreach (var kv in e.Inputs)
+            {
+                if (string.Equals(kv.Key, Poly_Ling.Modifiers.ModifierChainHandler.SourceKey, StringComparison.Ordinal))
+                { if (src == null) src = kv.Value; continue; }
+                e.MatrixInputs.Add(kv.Value);
+                anyRef = true;
+            }
+            if (anyRef && src != null) e.MatrixInputs.Add(src);
+            list.Add(e);
+        }
+
+        /// <summary>
+        /// 処理器が流した結果を項目の状態に書く（処理列の失敗の理由など。段 3）。
+        /// 控えが無ければ作る。出力の無い節点（StateId が 0）は何もしない。
+        /// </summary>
+        public static void SetHandlerResult(ModelContext model, Entry e, ModifierResult result, string message)
+        {
+            if (model == null || e == null || e.StateId == 0UL) return;
+            var states = States(model);
+            if (!states.TryGetValue(e.StateId, out var st)) { st = new State(); states[e.StateId] = st; TakeInputs(st, e); }
+            st.LastResult  = result;
+            st.LastMessage = message ?? "";
         }
 
         /// <summary>
@@ -624,7 +712,7 @@ namespace Poly_Ling.Ops
         {
             if (model == null || step == null) return;
             foreach (var e in GetGraph(model))
-                if (ReferenceEquals(e.Step, step)) { Prime(model, e); return; }
+                if (e.Owns(step)) { Prime(model, e); return; }
         }
 
         /// <summary>
@@ -661,7 +749,7 @@ namespace Poly_Ling.Ops
             var list = CachedGraph(model);
             if (list == null) return false;
             foreach (var e in list)
-                if (ReferenceEquals(e.Step, step))
+                if (e.Owns(step))
                     return e.StateId != 0UL && States(model).TryGetValue(e.StateId, out var st) && st.Dirty;
             return false;
         }
@@ -755,7 +843,9 @@ namespace Poly_Ling.Ops
             int n = 0;
             foreach (var e in GetGraph(model))
             {
-                if (e.Status != ModifierEntryStatus.Evaluate || e.StateId == 0UL) continue;
+                // 処理列の節点（処理器）も見る（段 7b。参照オブジェクトの移動。印は EvaluatePending が処理器で流す）。
+                bool chain = e.IsChain && e.Status == ModifierEntryStatus.Handler;
+                if ((e.Status != ModifierEntryStatus.Evaluate && !chain) || e.StateId == 0UL) continue;
                 if (!states.TryGetValue(e.StateId, out var st)) continue;
 
                 bool changed = false;
@@ -878,7 +968,7 @@ namespace Poly_Ling.Ops
         {
             if (model == null) return null;
             foreach (var e in GetGraph(model))
-                if (IsOutputEditPending(model, e)) return $"{e.Label} {e.Step?.Action}";
+                if (IsOutputEditPending(model, e)) return $"{e.Label} {e.ActionLabel}";
             return null;
         }
 
@@ -1013,7 +1103,7 @@ namespace Poly_Ling.Ops
 
             foreach (var e in entries)
             {
-                _handlers.TryGetValue(e.Step.Action, out var h);
+                _handlers.TryGetValue(e.HandlerKey, out var h);
                 ulong id = e.StateId;
 
                 if (id == 0UL)
@@ -1059,7 +1149,8 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 要評価の項目を依存の順に流す。
-        ///   ・流すのは状態が Evaluate のものだけ（Handler はきっかけで処理器が流す。Excluded・Cycle は流さない）
+        ///   ・流すのは状態が Evaluate のもの。Handler はふだんきっかけで処理器が流すが、印が立っていれば
+        ///     ここで処理器の Refresh を呼ぶ（ドラッグに追随しない処理列。段 6）。Excluded・Cycle は流さない
         ///   ・成功したら入力の署名を取り直して印を下ろし、出力が変わった下流に印を立てる
         ///   ・失敗したら入力の署名を控えて印を下ろす（入力が再び変わるまで流さない）
         ///   ・上流（たどった先を含む）に失敗した項目があるものは流さず、印を残す
@@ -1074,10 +1165,13 @@ namespace Poly_Ling.Ops
             var states = States(model);
 
             // 流すものが無ければ記録も残さない（毎コマンドの終わりに呼ばれるため）。
+            // 処理器の節点も見る：ドラッグに追随しない処理器の節点（面構成を変える項目を含む処理列。
+            // モディファイア枠組み計画 段 6）は、位置の同期（SyncFromInput）で印だけ立つ。位置だけの変更では
+            // GPU バッファの作り直し（RefreshModel）が起きないので、ここで流さないと結果が古いまま残る。
             bool any = false;
             foreach (var e in order)
             {
-                if (e.Status != ModifierEntryStatus.Evaluate || e.StateId == 0UL) continue;
+                if ((e.Status != ModifierEntryStatus.Evaluate && e.Status != ModifierEntryStatus.Handler) || e.StateId == 0UL) continue;
                 if (states.TryGetValue(e.StateId, out var st0) && st0.Dirty) { any = true; break; }
             }
             if (!any) return pass;
@@ -1123,6 +1217,31 @@ namespace Poly_Ling.Ops
 
                 foreach (var e in order)
                 {
+                    // 印の立った処理器の節点は、その処理器で流す（上の any の注記）。
+                    if (e.Status == ModifierEntryStatus.Handler && e.StateId != 0UL
+                        && states.TryGetValue(e.StateId, out var hst) && hst.Dirty
+                        && _handlers.TryGetValue(e.HandlerKey, out var hh))
+                    {
+                        try { hh.Refresh(model, e, true); }
+                        catch (Exception ex) { hst.LastResult = ModifierResult.Failed; hst.LastMessage = ex.Message; }
+                        TakeInputs(hst, e);
+                        hst.Dirty    = false;
+                        hst.LastPass = pass.Sequence;
+                        if (hst.LastResult == ModifierResult.Failed)
+                        {
+                            pass.Failed++;
+                            pass.Lines.Add($"{e.Label} {e.ActionLabel}: 失敗（{hst.LastMessage}）");
+                            blockedBy.Clear();
+                        }
+                        else
+                        {
+                            pass.Ran++;
+                            pass.Lines.Add($"{e.Label} {e.ActionLabel}: 処理器で作り直した");
+                            foreach (var d in e.Downstream) MarkIfChanged(states, d);
+                        }
+                        continue;
+                    }
+
                     if (e.Status != ModifierEntryStatus.Evaluate || e.StateId == 0UL) continue;
                     if (!states.TryGetValue(e.StateId, out var st) || !st.Dirty) continue;
 
@@ -1199,7 +1318,7 @@ namespace Poly_Ling.Ops
             var states = States(model);
             foreach (var e in GetGraph(model))
             {
-                if (!ReferenceEquals(e.Step, step)) continue;
+                if (!e.Owns(step)) continue;
                 if (e.StateId != 0UL)
                 {
                     if (!states.TryGetValue(e.StateId, out var st)) { st = new State(); states[e.StateId] = st; }
@@ -1233,7 +1352,7 @@ namespace Poly_Ling.Ops
             {
                 if (!ReferenceEquals(e.Group, group)) continue;
 
-                if (_handlers.TryGetValue(e.Step.Action, out var h))
+                if (_handlers.TryGetValue(e.HandlerKey, out var h))
                 {
                     h.Release(model, e);
                     released = true;
@@ -1294,14 +1413,21 @@ namespace Poly_Ling.Ops
             {
                 if (!e.HasInput(mc)) continue;
 
-                if (e.FollowsDrag && _handlers.TryGetValue(e.Step.Action, out var h))
+                // 処理列は項目の並び・有効・種類がグラフを作り直さずに変わるので、その時点の値で決める（段 3）。
+                bool follows = e.IsChain ? Poly_Ling.Modifiers.ModifierChainHandler.FollowsDrag(e) : e.FollowsDrag;
+                if (follows && _handlers.TryGetValue(e.HandlerKey, out var h))
                 {
                     h.SyncDrag(model, e, mc, upload);
+                    // 面構成を変える項目を追随の口で写した処理列（段 8）は、写しは位置だけ（法線・ミラー実体化の
+                    // 境界の組は最後の Evaluate のまま）なので、離したとき・コマンドの終わりに作り直す印も立てる。
+                    if (e.IsChain && Poly_Ling.Modifiers.ModifierChainHandler.HasTopologyItem(e)
+                        && e.StateId != 0UL && states.TryGetValue(e.StateId, out var cst))
+                        cst.Dirty = true;
                 }
                 else if (e.StateId != 0UL && states.TryGetValue(e.StateId, out var st))
                 {
                     // 追随しない項目は印だけ。署名はドラッグの毎フレームでは取らない。
-                    // 流すのは頂点ドラッグを離したとき・コマンドの終わり（EvaluatePending）。
+                    // 流すのは頂点ドラッグを離したとき・コマンドの終わり（EvaluatePending。処理器の節点もそこで流す）。
                     st.Dirty = true;
                 }
             }
