@@ -37,6 +37,30 @@ namespace Poly_Ling.Data
 {
     [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]   // PlayerCommandDispatcher.SpringBone.cs
+    [PLUiRoute("揺れものボーンのパネル（はしご）", "leftPane.fold.Primitive", "leftPane.liveSpringBonePrimitiveBtn",
+        "primitiveSpringBone.shape.SpringBoneLadder", "primitiveSpringBone.create",
+        Run = "primitiveSpringBone.create",
+        Note = "パネルの実行は鎖を作ったあと、揺れ方・鎖の先頭・段ごとのセットも設定する（入力欄の設定に従う）。このコマンドだけでは設定しない。取り込み元の一覧はパネルで図形を選んだ時点のもので、後から増えたオブジェクトは再取得のボタンで出す")]
+    [PLUiArg("sourceMasterIndex", "primitiveSpringBone.meshSource")]
+    [PLUiArg("method", "primitiveSpringBone.SBLadderMethod", Values = "AutoLadder,AutoRing,SelectionSet")]
+    [PLUiArg("setName", "primitiveSpringBone.SBLadderSetName")]
+    [PLUiArg("mode", "primitiveSpringBone.SBLadderMode", Values = "Strand,Stack")]
+    [PLUiArg("attachMasterIndex", "primitiveSpringBone.springBoneChain.attach")]
+    [PLUiArg("attachToSourceParent", "primitiveSpringBone.SBLadderAutoAttach")]
+    [PLUiArg("namePrefix", "primitiveSpringBone.SBPrefix")]
+    [PLUiArg("reverseChain", "primitiveSpringBone.SBLadderReverse")]
+    [PLUiArg("addTailBone", "primitiveSpringBone.SBAddTail")]
+    [PLUiArg("tailLength", "primitiveSpringBone.SBTailLengthValue")]
+    [PLUiArg("paintWeights", "primitiveSpringBone.SBLadderPaint")]
+    [PLUiArg("rungStride", "primitiveSpringBone.SBLadderRungStride")]
+    [PLUiArg("chainStride", "primitiveSpringBone.SBLadderChainStride")]
+    [PLUiArg("bundleMode", "primitiveSpringBone.SBLadderBundleMode", Values = "Thin,Merge")]
+    [PLUiArg("keepAsModifierStack", "primitiveSpringBone.SBLadderKeepAsModifierStack")]
+    [PLUiArg("makeMirrorChains", "primitiveSpringBone.SBLadderMakeMirror")]
+    [PLUiFixed("primitiveSpringBone.SBApplySpring", "false", Reason = "パネルの実行は揺れ方と鎖の先頭も設定する。この項目は鎖を置くだけなので外す")]
+    [PLUiFixed("primitiveSpringBone.SBMakeSets", "false", Reason = "パネルの実行は段ごとのセットも作る。この項目は鎖を置くだけなので外す")]
+    [PLUiNoField("モディファイアスタックの作り直しが内部で使う", "chainRootMasterIndices")]
+    [PLUiNoField("画面に欄が無い。シナリオとコマンドからだけ指定できる", "attachNearestPrefix")]
     public class PlaceSpringBoneLadderChainsCommand : PanelCommand
     {
         [PLParam(Description = "はしごの取り込み元になる描画オブジェクトの masterIndex",

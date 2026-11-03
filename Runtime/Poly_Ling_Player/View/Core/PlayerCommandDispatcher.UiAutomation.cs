@@ -50,11 +50,26 @@ namespace Poly_Ling.Player
         /// <summary>画面キャプチャの状態。</summary>
         public Func<UiCaptureStatusCommand, CommandResult> OnUiCaptureStatus;
 
+        /// <summary>頂点の撮影範囲での位置。</summary>
+        public Func<QueryCapturePositionCommand, CommandResult> OnQueryCapturePosition;
+
         /// <summary>ボタンの押下。</summary>
         public Func<UiClickCommand, CommandResult>         OnUiClick;
 
         /// <summary>登録状況の検査。</summary>
         public Func<QueryUiAutomationAuditCommand, CommandResult> OnQueryUiAutomationAudit;
+
+        /// <summary>コマンドの画面の操作の読み出し。</summary>
+        public Func<QueryCommandUiOperationCommand, CommandResult> OnQueryCommandUiOperation;
+
+        /// <summary>チュートリアルの作成の開始。</summary>
+        public Func<BuildScenarioTutorialCommand, CommandResult> OnBuildScenarioTutorial;
+
+        /// <summary>チュートリアルの作成の状態。</summary>
+        public Func<QueryScenarioTutorialBuildCommand, CommandResult> OnQueryScenarioTutorialBuild;
+
+        /// <summary>チュートリアルの原稿の下書き。</summary>
+        public Func<ExportScenarioTutorialDraftCommand, CommandResult> OnExportScenarioTutorialDraft;
 
         /// <summary>UI 自動操作コマンドなら処理して true を返す。</summary>
         private bool DispatchUiAutomation(PanelCommand cmd)
@@ -70,9 +85,22 @@ namespace Poly_Ling.Player
                 case UiClearHighlightsCommand c: RunUiAutomation(OnUiClearHighlights, c, "uiClearHighlights"); return true;
                 case UiCaptureCommand c:       RunUiAutomation(OnUiCapture,       c, "uiCapture");       return true;
                 case UiCaptureStatusCommand c: RunUiAutomation(OnUiCaptureStatus, c, "uiCaptureStatus"); return true;
+                case QueryCapturePositionCommand c: RunUiAutomation(OnQueryCapturePosition, c, "queryCapturePosition"); return true;
                 case UiClickCommand c:         RunUiAutomation(OnUiClick,         c, "uiClick");         return true;
                 case QueryUiAutomationAuditCommand c:
                     RunUiAutomation(OnQueryUiAutomationAudit, c, "queryUiAutomationAudit");
+                    return true;
+                case QueryCommandUiOperationCommand c:
+                    RunUiAutomation(OnQueryCommandUiOperation, c, "queryCommandUiOperation");
+                    return true;
+                case BuildScenarioTutorialCommand c:
+                    RunUiAutomation(OnBuildScenarioTutorial, c, "buildScenarioTutorial");
+                    return true;
+                case QueryScenarioTutorialBuildCommand c:
+                    RunUiAutomation(OnQueryScenarioTutorialBuild, c, "queryScenarioTutorialBuild");
+                    return true;
+                case ExportScenarioTutorialDraftCommand c:
+                    RunUiAutomation(OnExportScenarioTutorialDraft, c, "exportScenarioTutorialDraft");
                     return true;
                 default: return false;
             }

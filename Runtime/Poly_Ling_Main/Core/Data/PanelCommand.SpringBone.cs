@@ -629,6 +629,8 @@ namespace Poly_Ling.Data
     [PLResult("chains", PLResultKind.Integer, Description = "見つけた鎖の本数")]
     [PLResult("levels", PLResultKind.Integer, Description = "いちばん長い鎖の段数")]
     [PLResult("rootIndices", PLResultKind.IntegerArray, Description = "鎖の先頭ボーンの masterIndex")]
+    [PLUiManual("揺れもの編集パネルで鎖ごとに設定する", "leftPane.fold.BoneMorph", "leftPane.springBoneBtn",
+        Note = "接頭辞で鎖をまとめて選ぶ欄は無いので、鎖ごとに行う。鎖の先頭のボーンを選び、下をまとめて選ぶボタンを押し、揺れ方の欄を入れて適用し、先頭のボーンを選び直して、ここから揺らすボタンを押す")]
     public class ApplySpringBoneByPrefixCommand : PanelCommand
     {
         [PLParam(Description = "鎖のボーン名の接頭辞（placeSpringBoneLadderChains の namePrefix）", Required = true)]

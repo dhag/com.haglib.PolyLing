@@ -25,6 +25,9 @@ namespace Poly_Ling.Player
             public JobStatus Status;
             public string    Path;
             public string    Error;
+
+            /// <summary>矢印の結果。矢印を描く指定が無かった・撮れなかったときは null。</summary>
+            public CaptureCursorResult? Cursor;
         }
 
         private const int MaxJobs = 100;
@@ -46,13 +49,14 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>撮影結果を書く。ok なら message は保存パス、失敗なら理由。</summary>
-        public void Complete(string id, bool ok, string message)
+        public void Complete(string id, bool ok, string message, CaptureCursorResult? cursor)
         {
             if (string.IsNullOrEmpty(id) || !_jobs.TryGetValue(id, out var job)) return;
             if (ok)
             {
                 job.Status = JobStatus.Completed;
                 job.Path   = message;
+                job.Cursor = cursor;
             }
             else
             {

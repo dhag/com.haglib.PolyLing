@@ -1591,6 +1591,9 @@ namespace Poly_Ling.Player
         public static Lx T(string key) => new Lx(key, L.GetFrom(DictOf(key), key));
         public static string T(string key, params object[] args) => L.GetFrom(DictOf(key), key, args);
 
+        /// <summary>辞書にあるキーか。諸元の欄の ID はこのキーなので、宣言の ID の検査に使う。</summary>
+        public static bool HasKey(string key) => Texts.ContainsKey(key) || SandboxTexts.ContainsKey(key);
+
         /// <summary>キーを持つ辞書。どちらにも無ければサンドボックス側（L.GetFrom がキーをそのまま返す）。</summary>
         private static Dictionary<string, Dictionary<string, string>> DictOf(string key)
             => Texts.ContainsKey(key) ? Texts : SandboxTexts;

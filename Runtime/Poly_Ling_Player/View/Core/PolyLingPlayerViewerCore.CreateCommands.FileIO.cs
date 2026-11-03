@@ -32,7 +32,7 @@ namespace Poly_Ling.Player
         ///   原点 CSV も指定があれば同じ関門を通す。
         ///
         /// 【非同期】
-        ///   実際の読み込みは CommandQueue が後で流す。ここでは投入の成否だけを返す。
+        ///   読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。ここでは投入の成否だけを返す。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteImportPmxFile(Poly_Ling.Data.ImportPmxFileCommand cmd)
@@ -50,8 +50,7 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportPmx(path, cmd.Settings, post);
-            return null;
+            return RunImport(() => OnImportPmx(path, cmd.Settings, post));
         }
 
         /// <summary>
@@ -132,7 +131,7 @@ namespace Poly_Ling.Player
             return OnExportPmx(cmd.ModelIndex, path, settings);
         }
 
-        /// <summary>MQO 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <summary>MQO 読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteImportMqoFile(Poly_Ling.Data.ImportMqoFileCommand cmd)
         {
@@ -167,8 +166,7 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportMqo(path, settings, post);
-            return null;
+            return RunImport(() => OnImportMqo(path, settings, post));
         }
 
         /// <summary>MQO 書き出しコマンド。</summary>
@@ -188,7 +186,7 @@ namespace Poly_Ling.Player
                     0.01f, flipZ: false, flipX: true));
         }
 
-        /// <summary>OBJ 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <summary>OBJ 読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteImportObjFile(Poly_Ling.Data.ImportObjFileCommand cmd)
         {
@@ -205,8 +203,7 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportObj(path, cmd.Settings ?? Poly_Ling.OBJ.ObjImportSettings.CreateDefault(), post);
-            return null;
+            return RunImport(() => OnImportObj(path, cmd.Settings ?? Poly_Ling.OBJ.ObjImportSettings.CreateDefault(), post));
         }
 
         /// <summary>OBJ 書き出しコマンド。</summary>
@@ -224,7 +221,7 @@ namespace Poly_Ling.Player
                 path, cmd.Settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault());
         }
 
-        /// <summary>STL 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <summary>STL 読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteImportStlFile(Poly_Ling.Data.ImportStlFileCommand cmd)
         {
@@ -241,11 +238,10 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportStl(path, cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post);
-            return null;
+            return RunImport(() => OnImportStl(path, cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post));
         }
 
-        /// <summary>STL フォルダ一括読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <summary>STL フォルダ一括読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteImportStlFolder(Poly_Ling.Data.ImportStlFolderCommand cmd)
         {
@@ -264,9 +260,8 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportStlFolder(path, cmd.IncludeSubfolders,
-                cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post);
-            return null;
+            return RunImport(() => OnImportStlFolder(path, cmd.IncludeSubfolders,
+                cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post));
         }
 
         /// <summary>STL 書き出しコマンド。</summary>
@@ -303,7 +298,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// VRM 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        /// VRM 読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。
         ///
         /// 【関門】
         ///   入力は TryResolveRead。テクスチャを書き出す場合は、書き出し先フォルダ
@@ -341,8 +336,7 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportVrm(path, settings, post);
-            return null;
+            return RunImport(() => OnImportVrm(path, settings, post));
         }
 
         /// <summary>glTF（.glb / .gltf）書き出しコマンド。</summary>
@@ -398,7 +392,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// glTF（.glb / .gltf）読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        /// glTF（.glb / .gltf）読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。
         /// 関門は VRM と同じ（入力は TryResolveRead、テクスチャ書き出し先は TryResolveFolder）。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
@@ -432,12 +426,11 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportGltf(path, settings, post);
-            return null;
+            return RunImport(() => OnImportGltf(path, settings, post));
         }
 
         /// <summary>
-        /// FBX 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        /// FBX 読み込みコマンド。読み込みは CommandQueue が同期で流し、失敗は RunImport で返す。
         /// 関門は glTF と同じ（入力は TryResolveRead、テクスチャ書き出し先は TryResolveFolder）。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
@@ -468,8 +461,7 @@ namespace Poly_Ling.Player
                     out var post, out string postReason))
                 return postReason;
 
-            OnImportFbx(path, settings, post);
-            return null;
+            return RunImport(() => OnImportFbx(path, settings, post));
         }
 
         /// <summary>プロジェクト（.mfproj）保存コマンド。</summary>

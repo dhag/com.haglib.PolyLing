@@ -40,6 +40,14 @@ namespace Poly_Ling.Player
             StartCoroutine(EndOfFrame(action));
         }
 
+        /// <summary>
+        /// 何フレームにも渡る処理を 1 回だけ走らせる（チュートリアルの作成）。終われば何も残らない。
+        /// </summary>
+        public void Run(IEnumerator routine)
+        {
+            if (routine != null) StartCoroutine(routine);
+        }
+
         private IEnumerator EndOfFrame(Action action)
         {
             yield return new WaitForEndOfFrame();

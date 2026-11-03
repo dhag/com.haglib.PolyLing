@@ -44,6 +44,12 @@
 //   書き込みのあるコマンドの終わりに MarkMatrixChanged が取り直す（オブジェクト移動のドラッグも
 //   離したときに MoveObjectsCommand・RotateObjectsCommand として流れるので、ここを通る）。
 //   ポーズ（BonePoseData）は VertexToBindWorldMatrix に入らないので、歩かせても流れない。
+//
+// 【ウェイト】（チュートリアル計画 3.8）処理列の節点の入力だけ、署名にウェイトを混ぜる。
+//   処理列の結果は元メッシュのウェイトを写すが、それ以外の項目は（はしごへ塗る揺れボーンのように）
+//   入力のウェイトを自分で書くので、混ぜると自分の書き込みで要評価になる。
+//   ウェイトだけの変更は GPU バッファを作り直さないので、書き込みのあるコマンドの終わりと Undo・Redo の後に
+//   MarkChainWeightsChanged が取り直す。
 
 using System;
 using System.Collections.Generic;
@@ -271,6 +277,8 @@ namespace Poly_Ling.Ops
             public ulong Positions;
             /// <summary>モデル空間で読む入力だけ：VertexToBindWorldMatrix の署名（段 10）。それ以外は 0。</summary>
             public ulong Matrix;
+            /// <summary>処理列の節点の入力だけ：ボーンウェイトの署名（チュートリアル計画 3.8）。それ以外は 0。</summary>
+            public ulong Weights;
         }
 
         /// <summary>項目ごとの控え。保存しない。</summary>
@@ -802,7 +810,10 @@ namespace Poly_Ling.Ops
             int n = 0;
             foreach (var e in GetGraph(model))
             {
-                if (e.Status != ModifierEntryStatus.Evaluate || e.StateId == 0UL) continue;
+                // 処理列の節点も立てる（厚みの結果がはしごのウェイトを写す。チュートリアル計画 3.8）。
+                // スキンド化の Undo の記録より前に結果を揃えるため、ここで流す。
+                bool chain = e.IsChain && e.Status == ModifierEntryStatus.Handler;
+                if ((e.Status != ModifierEntryStatus.Evaluate && !chain) || e.StateId == 0UL) continue;
                 bool hit = false;
                 foreach (var kv in e.Inputs) if (ids.Contains(kv.Value.ObjectId)) { hit = true; break; }
                 if (!hit) continue;
@@ -817,16 +828,19 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// 入力 1 つの署名。model が true（モデル空間で読む入力。段 10）なら VertexToBindWorldMatrix も混ぜる。
         /// 呼ぶ前に ComputeWorldMatrices を済ませていること（行列は控えの値を読むだけ）。
+        /// weights が true（処理列の節点の入力）ならボーンウェイトも混ぜる。
         /// </summary>
-        private static Sig Take(MeshContext mc, bool model)
+        private static Sig Take(MeshContext mc, bool model, bool weights = false)
             => new Sig
             {
                 Topology  = MeshSignature.Topology(mc.MeshObject),
                 Positions = MeshSignature.Positions(mc),
                 Matrix    = model ? MeshSignature.Matrix(mc.VertexToBindWorldMatrix) : 0UL,
+                Weights   = weights ? MeshSignature.Weights(mc.MeshObject) : 0UL,
             };
 
-        private static Sig Take(Entry e, MeshContext mc) => Take(mc, e != null && e.MatrixInputs.Contains(mc));
+        private static Sig Take(Entry e, MeshContext mc)
+            => Take(mc, e != null && e.MatrixInputs.Contains(mc), e != null && e.IsChain);
 
         /// <summary>
         /// 評価器が流す項目（Evaluate）の、モデル空間で読む入力の行列の署名と、梯子の行列 M の出力の枠の署名
@@ -863,6 +877,42 @@ namespace Poly_Ling.Ops
                     ulong now = MeshSignature.Matrix(mc.VertexToBindWorldMatrix);
                     if (prev.Matrix == now) continue;
                     prev.Matrix = now;
+                    st.Inputs[id] = prev;
+                    changed = true;
+                }
+                if (!changed) continue;
+                st.Dirty = true;
+                n++;
+            }
+            return n;
+        }
+
+        /// <summary>
+        /// 処理列の節点の入力のウェイトの署名だけを取り直し、控えと違う節点に要評価の印を立てる
+        /// （チュートリアル計画 3.8）。ウェイトだけの変更（塗り・スキンド化・Undo）は GPU バッファの作り直しも
+        /// 位置の同期も通らないので、書き込みのあるコマンドの終わりに見る。
+        /// 走査するのは処理列の入力だけ。処理列が無いモデルでは何もしない。初めて見た節点は控えるだけ。
+        /// </summary>
+        /// <returns>印を立てた節点の数</returns>
+        public static int MarkChainWeightsChanged(ModelContext model)
+        {
+            if (model == null) return 0;
+            var states = States(model);
+            int n = 0;
+            foreach (var e in GetGraph(model))
+            {
+                if (!e.IsChain || e.Status != ModifierEntryStatus.Handler || e.StateId == 0UL) continue;
+                if (!states.TryGetValue(e.StateId, out var st)) continue;
+
+                bool changed = false;
+                foreach (var kv in e.Inputs)
+                {
+                    var mc = kv.Value;
+                    ulong id = mc.ObjectId;
+                    if (id == 0UL || !st.Inputs.TryGetValue(id, out var prev)) continue;
+                    ulong now = MeshSignature.Weights(mc.MeshObject);
+                    if (prev.Weights == now) continue;
+                    prev.Weights = now;
                     st.Inputs[id] = prev;
                     changed = true;
                 }
@@ -1027,7 +1077,7 @@ namespace Poly_Ling.Ops
                 {
                     if (!st.Inputs.TryGetValue(kv.Key, out var prev)
                         || prev.Topology != kv.Value.Topology || prev.Positions != kv.Value.Positions
-                        || prev.Matrix != kv.Value.Matrix)
+                        || prev.Matrix != kv.Value.Matrix || prev.Weights != kv.Value.Weights)
                     { changed = true; break; }
                 }
             }

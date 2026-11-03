@@ -154,6 +154,7 @@ namespace Poly_Ling.Player
                 () => ExecuteCapture(CaptureTarget.TriView));
             _shortcutController.Register(ShortcutMap.CmdCaptureWindow,
                 () => ExecuteCapture(CaptureTarget.Window));
+            TrackPointerForCapture();
 
             _shortcutController.Attach(_uiRoot);
         }

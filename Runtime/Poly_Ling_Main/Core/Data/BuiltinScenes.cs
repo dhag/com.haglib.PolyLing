@@ -267,9 +267,9 @@ namespace Poly_Ling.Data
 
             // ---- ヘルプ・チュートリアル作成
             list.Add(Make("ヘルプ・チュートリアル作成",
-                "パネルを表示し、値の設定・強調・キャプチャをして、ヘルプやチュートリアルの素材を作る段階。",
-                "",
-                new[] { "ui", "query" },
+                "パネルを表示し、値の設定・強調・キャプチャをして、ヘルプやチュートリアルの素材を作る段階。シナリオからチュートリアルの MD を作るときもこれを使う。",
+                "チュートリアルは queryScenarios で探す（確認済みが先に並ぶ）→ describeScenario で前提を今のモデルと照合する → 合う確認済みのシナリオはそのまま使い、順序を変えない。無ければ作るか forkScenario で派生させる。確認済みのシナリオは上書きしない。確認済みの印は人だけが付ける → exportScenarioTutorialDraft → gaps を見て読者向けに原稿を直す。画面の文字は差し込みと queryCommandUiOperation から読み、想像で書かない。画面に入口が無ければ作らず報告する → buildScenarioTutorial → queryScenarioTutorialBuild → 残った画像を read_image で見る。埋め込み済みの MD は読まない。報告には使ったシナリオ名を書き、確認済みでなければ「未確認」と明記する。手順の全部は MCP操作手順書.md の 5-7。",
+                new[] { "ui", "scenario", "query" },
                 null,
                 PLCommandVerification.Visual));
 

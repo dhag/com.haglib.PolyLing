@@ -46,7 +46,13 @@ namespace Poly_Ling.Player
         private void ShowScenarioGuideBar() => _layoutRoot?.RefreshRightAreas();
 
         /// <summary>経路のボタンや入力欄を見える状態にして、全部を枠で囲む。示せないボタンや入力欄があれば最初の理由。</summary>
-        private string ShowScenarioRoute(UiRoute route)
+        private string ShowScenarioRoute(UiRoute route) => ShowScenarioRoute(route, selectShape: false);
+
+        /// <param name="selectShape">
+        /// 経路の図形ボタンを押して選ぶ（チュートリアルの撮影）。図形の諸元の欄は図形を選ぶまで作られない。
+        /// 案内バーは押さない（人が押す場所を示すだけ）。
+        /// </param>
+        private string ShowScenarioRoute(UiRoute route, bool selectShape)
         {
             if (_uiAutomation == null) return UiAutomationNotReady;
             if (route == null || route.Items.Length == 0) return null;
@@ -56,6 +62,12 @@ namespace Poly_Ling.Player
             {
                 var r = _uiAutomation.Reveal(id, highlight: false, add: false);
                 if (r != null && !r.Success && err == null) err = $"{id}: {r.Reason}";
+
+                if (selectShape && r != null && r.Success && id.Contains(".shape."))
+                {
+                    var click = _uiAutomation.Click(id, allowDestructive: false);
+                    if (click != null && !click.Success && err == null) err = $"{id}: {click.Reason}";
+                }
             }
 
             bool first = true;

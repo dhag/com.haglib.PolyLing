@@ -21,6 +21,11 @@ namespace Poly_Ling.Data
     /// Undo 記録付き。変換後に GPU バッファを再構築する。
     /// </summary>
     [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights | PLCommandEffect.Hierarchy, Hazards = PLCommandHazard.AffectsMultipleObjects, Verification = PLCommandVerification.SkinWeights | PLCommandVerification.Visual, Writes = PLWriteScope.ModelWide, Description = "MeshFilter オブジェクト群をボーン+スキンドメッシュ構造に変換する。")]
+    [PLUiRoute("スキンド化のパネル", "leftPane.fold.BoneMorph", "leftPane.meshFilterToSkinnedBtn", "meshFilterToSkinned.convert",
+        Run = "meshFilterToSkinned.convert")]
+    [PLUiArg("swapAxisForRotated", "meshFilterToSkinned.swapAxisRotated")]
+    [PLUiArg("setAxisForIdentity", "meshFilterToSkinned.setAxisIdentity")]
+    [PLUiArg("tolerantMirrorBranch", "meshFilterToSkinned.tolerantMirror")]
     public class ConvertMeshFilterToSkinnedCommand : PanelCommand
     {
         /// <summary>回転ありボーンの軸をPMX軸 (Y→X) に入替える</summary>

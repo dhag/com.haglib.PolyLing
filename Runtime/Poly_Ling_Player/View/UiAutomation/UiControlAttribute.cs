@@ -157,6 +157,12 @@ namespace Poly_Ling.Player
         private readonly List<VisualElement> _rows = new List<VisualElement>();
         private string _group = "";
 
+        /// <summary>
+        /// ここに作られ得る ID か（パネル ID を除いた部分で判定する）。図形を選ぶまで・項目を選ぶまで作られない欄の
+        /// 宣言を、誤りと見分けるために使う（UiAutomationRegistry.StatusOf）。null は判定できない置き場。
+        /// </summary>
+        public Func<string, bool> IsPossibleId;
+
         /// <summary>今あるボタンや入力欄。</summary>
         public IReadOnlyList<Entry> Entries => _entries;
 

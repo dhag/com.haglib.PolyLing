@@ -186,7 +186,7 @@ namespace Poly_Ling.Player
             && !float.IsNaN(r.width) && !float.IsNaN(r.height)
             && r.width > 0f && r.height > 0f;
 
-        private static Rect Intersect(Rect a, Rect b)
+        internal static Rect Intersect(Rect a, Rect b)
         {
             float x0 = Mathf.Max(a.xMin, b.xMin);
             float y0 = Mathf.Max(a.yMin, b.yMin);

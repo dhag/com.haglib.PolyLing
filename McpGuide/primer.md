@@ -23,6 +23,7 @@
 
 ## 結果を見る
 - 見た目は unity_capture（target=MainView / TriView / Window）。数値より先に、見て確かめられるものは見る。
+- 画像に矢印を描くのは uiCapture の cursor（control / position / mouse）。頂点を指すときは queryCapturePosition の x・y を position へ渡す。詳しくは MCP操作手順書.md の 2-3。
 - ログは read_unity_log。操作の前に length=0 で next_offset を控え、後で offset に渡すと、その操作の分だけ読める。
 
 ## PolyLing のコマンド
@@ -36,6 +37,15 @@
 2. 言葉で答える（左の折り畳み名 → ボタン名 → 右で選ぶもの）。
 3. 画面でも示す：uiReveal controlId=leftPane.xxxBtn（折り畳みを開き赤枠）→ uiHighlight controlId=leftPane.fold.Xxx add=true（折り畳みの見出しにも枠）。
 - ボタンを押すのは uiClick（安全度 safeWrite のものだけ。unspecified は押せない）。
+- コマンドを画面で行うときの操作は queryCommandUiOperation（経路、入力欄と見出し、値の表記、uiSetValue に渡す値、実行のボタン）。画面の文字は想像で書かず、ここから読む。argBuilt が 0 の欄は、経路のとおりに開いてから読み直す。
+
+## シナリオと確認済みの印、チュートリアルの依頼
+- シナリオを使う・作る依頼では、最初に queryScenarios で探す。確認済み（reviewed が 1）が先に並ぶ。
+- 確認済みのシナリオは、describeScenario の前提が今のモデルと合えばそのまま使い、順序を変えない。上書きしない。変えるなら forkScenario で派生させる（派生は未確認になる）。未確認のシナリオは正解として扱わない。
+- シナリオパネルの「確認済みにする」（scenario.confirm）は人だけが押す。uiClick は拒否する。操作者に指示されない限り、コンピュータ操作でも押さない。ファイルへ #review 行を書かない。
+- チュートリアルの MD は exportScenarioTutorialDraft → 読者向けに原稿を直す → buildScenarioTutorial → queryScenarioTutorialBuild → 残った画像を read_image で見る。画面の文字は想像で書かず差し込む。画面に入口が無ければ作らず報告する。埋め込み済みの MD は読まない。
+- 報告には使ったシナリオ名を書き、確認済みでなければ「未確認」と明記する。
+- 手順の全部は MCP操作手順書.md の 5-7。使うコマンドは利用シーン「ヘルプ・チュートリアル作成」。
 
 ## 文書（読むきっかけ）
 - PolyLing_機能の場所.md … 機能・ボタンの場所を聞かれたとき。
@@ -43,7 +53,7 @@
 - PolyLing_姿勢_残件.md / PolyLing_残件.md … 残件・未確認事項を聞かれたとき、残件に手を付けるとき。直したら更新する。
 - PolyLing_サブツール作成ガイド.md … サブツール（右ペインのパネル）を作る・直すとき。
 - PolyLing_モディファイア作成ガイド.md … 処理列の種類（IMeshModifier）を作る・直すとき。
-- MCP操作手順書.md … MCP の道具の細かい使い方で迷ったとき。
+- MCP操作手順書.md … MCP の道具の細かい使い方で迷ったとき。チュートリアルを作るとき（5-7）。
 - 作業ログ.md … 過去の経緯を知りたいとき。
 
 ## 書ける場所と消し方

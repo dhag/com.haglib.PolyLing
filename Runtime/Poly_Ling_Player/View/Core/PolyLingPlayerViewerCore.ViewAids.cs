@@ -45,51 +45,77 @@ namespace Poly_Ling.Player
         /// ファイル名・保存フォルダはパネル未表示でも効くよう RecentPaths から読む。
         /// </summary>
         private void ExecuteCapture(CaptureTarget target)
-            => StartCapture(target, null, PlayerCaptureSubPanel.GetFileName(), null);
+        {
+            // 「マウスカーソルを描く」は人の操作（ボタンとショートカット）だけに効く。uiCapture は引数に従う。
+            var cursor = CaptureCursor.None;
+            if (PlayerCaptureSubPanel.GetDrawCursor()) TryGetMouseCursor(out cursor);
+            StartCapture(target, null, null, PlayerCaptureSubPanel.GetFileName(), 0, CaptureFormat.Png,
+                         PlayerScreenCapture.DefaultJpegQuality, cursor, null);
+        }
+
+        /// <summary>
+        /// 最後にポインタが動いた位置（パネル座標）。矢印の mouse に使う。動く前は null。
+        /// Input.mousePosition は使えない（プロジェクトの入力設定が Input System のみで、例外になる）。
+        /// UIToolkit のイベントなら入力設定に左右されない。
+        /// </summary>
+        private Vector2? _lastPointerPanelPosition;
+
+        /// <summary>ポインタの位置を控え始める。UI ルートの捕捉段階で受けるので、下のボタンや入力欄の処理に関わらず届く。</summary>
+        private void TrackPointerForCapture()
+        {
+            _uiRoot?.RegisterCallback<PointerMoveEvent>(
+                evt => _lastPointerPanelPosition = evt.position, TrickleDown.TrickleDown);
+        }
+
+        /// <summary>マウスの位置の矢印を作る。ポインタがまだ一度も動いていなければ false。</summary>
+        private bool TryGetMouseCursor(out CaptureCursor cursor)
+        {
+            cursor = CaptureCursor.None;
+            if (!_lastPointerPanelPosition.HasValue) return false;
+            if (!PlayerScreenCapture.TryPanelToScreenPixel(_uiRoot, _lastPointerPanelPosition.Value, out Vector2 pixel))
+                return false;
+            cursor = CaptureCursor.AtScreenPixel(pixel);
+            return true;
+        }
+
+        /// <summary>撮影範囲の要素を返す。null はウインドウ全体。</summary>
+        private VisualElement CaptureCropOf(CaptureTarget target)
+        {
+            switch (target)
+            {
+                case CaptureTarget.MainView: return _layoutRoot?.PerspectivePanel;
+                case CaptureTarget.TriView:  return _layoutRoot?.ViewportArea;
+                default:                     return null;
+            }
+        }
 
         /// <summary>
         /// 撮影の本体。ExecuteCapture と UI 自動操作（uiCapture）の共通経路。
+        /// cropOverride が非 null なら target ではなくその要素の矩形で切り出す（uiCapture の panelId が使う）。
         /// folder が空ならキャプチャパネルの設定フォルダ。呼び出し側で検査済みの実経路を渡すこと
         /// （uiCapture は PLSandbox.TryResolveFolder を通してから渡す）。
         /// baseName が空なら PlayerScreenCapture の既定名。
+        /// maxLongEdge・format・quality・cursor は PlayerScreenCapture の注記を参照。
         /// onDone は撮影後（フレーム終端）に呼ばれる。切り出し範囲が取れないときは
         /// この呼び出しの中で同期的に呼ばれる。キャプチャパネルの状態表示はどちらの場合も更新する。
         /// </summary>
         private void StartCapture(
-            CaptureTarget target, string folder, string baseName, Action<bool, string> onDone)
-            => StartCapture(target, null, folder, baseName, 0, CaptureFormat.Png,
-                            PlayerScreenCapture.DefaultJpegQuality, onDone);
-
-        /// <summary>
-        /// 撮影の本体。cropOverride が非 null なら target ではなくその要素の矩形で切り出す
-        /// （uiCapture の panelId が使う）。maxLongEdge・format・quality は PlayerScreenCapture の注記を参照。
-        /// </summary>
-        private void StartCapture(
             CaptureTarget target, VisualElement cropOverride, string folder, string baseName,
-            int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
+            int maxLongEdge, CaptureFormat format, int quality,
+            CaptureCursor cursor, Action<bool, string, CaptureCursorResult?> onDone)
         {
-            VisualElement crop = cropOverride;
-            if (crop == null)
-            {
-                switch (target)
-                {
-                    case CaptureTarget.MainView: crop = _layoutRoot?.PerspectivePanel; break;
-                    case CaptureTarget.TriView:  crop = _layoutRoot?.ViewportArea;     break;
-                    case CaptureTarget.Window:   crop = null;                          break;
-                }
-            }
-
             PlayerScreenCapture.Capture(
-                crop,
+                cropOverride ?? CaptureCropOf(target),
                 string.IsNullOrEmpty(folder) ? PlayerCaptureSubPanel.GetFolder() : folder,
                 baseName,
                 maxLongEdge,
                 format,
                 quality,
-                (ok, msg) =>
+                cursor,
+                (ok, msg, cursorResult) =>
                 {
                     _captureSubPanel?.SetStatus(ok ? $"保存しました: {msg}" : $"失敗: {msg}");
-                    onDone?.Invoke(ok, msg);
+                    onDone?.Invoke(ok, msg, cursorResult);
                 });
         }
 

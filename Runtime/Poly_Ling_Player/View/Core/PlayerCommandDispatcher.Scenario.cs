@@ -606,9 +606,15 @@ namespace Poly_Ling.Player
             var folders    = new List<string>();
             var goals      = new List<string>();
             var stepCounts = new List<int>();
+            var reviewed   = new List<int>();
             int total      = 0;
 
-            foreach (var e in index)
+            // 人間が確認済みのものを先に並べる（チュートリアル計画 3.7）。それぞれの中は登録順。
+            var ordered = new List<ScenarioLibrary.SearchEntry>(index.Count);
+            foreach (var e in index) if (e.Reviewed) ordered.Add(e);
+            foreach (var e in index) if (!e.Reviewed) ordered.Add(e);
+
+            foreach (var e in ordered)
             {
                 if (!ScenarioLibrary.FolderMatches(e.Folder, cmd.Folder)) continue;
                 if (usage != null && !ScenarioLibrary.UsesScene(e, usage)) continue;
@@ -622,6 +628,7 @@ namespace Poly_Ling.Player
                 folders.Add(e.Folder);
                 goals.Add(e.Goal);
                 stepCounts.Add(e.StepCount);
+                reviewed.Add(e.Reviewed ? 1 : 0);
             }
 
             ReportData(CommandDataJson.New()
@@ -634,6 +641,7 @@ namespace Poly_Ling.Player
                 .Texts("allFolders", ScenarioLibrary.Folders())
                 .Texts("goals",      goals)
                 .Ints ("stepCounts", stepCounts)
+                .Ints ("reviewed",   reviewed)
                 .Build());
         }
 
@@ -782,6 +790,8 @@ namespace Poly_Ling.Player
                     outDescs.Add(o.Description ?? "");
                 }
 
+            var review = ScenarioLibrary.ReviewOf(g.Name);
+
             var builder = CommandDataJson.New()
                 .Text ("name",              g.Name ?? "")
                 .Text ("detail",            d);
@@ -793,6 +803,9 @@ namespace Poly_Ling.Player
                 .Text ("parentName",        prov.ParentName ?? "")
                 .Text ("changeSummary",     prov.ChangeSummary ?? "")
                 .Text ("createdBy",         prov.CreatedBy ?? "")
+                .Flag ("reviewed",          review != null)
+                .Text ("reviewedBy",        review?.Reviewer ?? "")
+                .Text ("reviewedAt",        review?.ReviewedAt ?? "")
                 .Int  ("steps",             ordered.Count)
                 .Texts("preconditions",     g.Preconditions)
                 .Texts("successCriteria",   g.SuccessCriteria)
@@ -959,6 +972,9 @@ namespace Poly_Ling.Player
             };
 
             if (!ScenarioLibrary.Register(src, cmd.Overwrite, out string error, ScenarioLibrary.FolderOf(cmd.SourceName))) { Fail(error); return; }
+
+            // 派生は未確認（チュートリアル計画 3.6）。既存へ上書きしたときの印も外す。
+            ScenarioLibrary.ClearReview(src.Name);
 
             ReportData(CommandDataJson.New()
                 .Text("name",  src.Name)

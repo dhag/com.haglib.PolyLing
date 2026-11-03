@@ -24,7 +24,7 @@
 | Undo | 共通コマンドの受け口 |
 | 引数欄 | 処理列パネル（`PlayerModifierChainSubPanel`）が `ParamFieldBuilder` で `PLParam` から作る |
 | 処理範囲の絞り込み | `MeshModifierScope` を引き直して `MeshModifierInput.Scope` に渡す。位置だけの種類は範囲の外を枠組みが入力の位置へ戻す |
-| 評価のきっかけ | `ModifierChainHandler`（評価器の処理器 `@chain`）。変わった項目より前の結果は使い回す |
+| 評価のきっかけ | `ModifierChainHandler`（評価器の処理器 `@chain`）。変わった項目より前の結果は使い回す。元メッシュと参照の位置・面構成に加え、ボーンウェイトの変化でも流れる（コマンドの終わりと Undo・Redo に見る） |
 
 ---
 
@@ -114,6 +114,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 
 - 出力は 1 つのメッシュ。範囲の外の面はそのまま残す
 - 外した面だけが使っていた頂点は外し、索引を詰める。`LineGroup` の `Order`・`ParentVertex` も付け替える（`LineGroup` が使う頂点は外さない）
+- **作った頂点には元の頂点のボーンウェイトを写す。** 元メッシュのウェイトの変化で流れ直すので、写していれば、はしごへ塗る操作と処理列を足す操作の順序を問わない（`FaceGroupSolidifier` の `CloneShellVertex`）
 - **ID を新しく振らない。** `MeshObject.AddVertex`／`AddFace` は未設定の ID を自動で振るので、出力を組むときは `AddVertexRaw` と `Faces.Add` を使い、ID を元から写す
   - 作った頂点：元の頂点の ID（1 つの頂点から複数作れば同じ ID が複数になる。重複は許される）
   - 作った面：元の面があればその ID、無ければ 0（未設定）

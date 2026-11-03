@@ -104,6 +104,9 @@ namespace Poly_Ling.Player
             // 頂点の格納値を変えずにバインド姿勢を変える操作は、きっかけ 2 か所の位置の署名では拾えない。
             model.ComputeWorldMatrices();
             ModifierEvaluator.MarkMatrixChanged(model);
+            // 処理列の入力のウェイト（チュートリアル計画 3.8）。ウェイトだけの変更は
+            // GPU バッファの作り直しも位置の同期も通らない。
+            ModifierEvaluator.MarkChainWeightsChanged(model);
             double preMs = MsSince(t0);
 
             // 内訳（モディファイア高速化計画 段 7）。項目ごとに 作り直し・見張り・バッファ作り直しの回数。
@@ -154,6 +157,18 @@ namespace Poly_Ling.Player
             finally
             {
                 _undoController?.ResumeRecording();
+            }
+
+            // 処理列が書いた結果のウェイト・法線を GPU へ送る（チュートリアル計画 3.8）。
+            // 面の構成が同じならバッファは作り直されないので、部分転送を予約する。
+            var writtenResults = new List<MeshContext>();
+            Poly_Ling.Modifiers.ModifierChainHandler.DrainWrittenResults(writtenResults);
+            foreach (var written in writtenResults)
+            {
+                _viewportManager?.QueueVertexAttributesUpload(written);
+                var writtenPair = model.GetMirrorPair(written);
+                if (writtenPair != null && ReferenceEquals(writtenPair.Real, written))
+                    _viewportManager?.QueueVertexAttributesUpload(writtenPair.Mirror);
             }
 
             long td0 = System.Diagnostics.Stopwatch.GetTimestamp();

@@ -133,6 +133,9 @@ namespace Poly_Ling.Data
         public const string SearchKindCommand  = "command";
         public const string SearchKindScenario = "scenario";
 
+        /// <summary>確認済みのシナリオの点数に足す値。当たった語の点数より十分大きくする。</summary>
+        private const float ReviewedScenarioBonus = 100000f;
+
         /// <summary>検索の当たり 1 件。コマンドかシナリオのどちらか一方を持つ。</summary>
         private struct SearchHit
         {
@@ -222,6 +225,9 @@ namespace Poly_Ling.Data
                 float score = terms.Length == 0 ? 1f : Score(e.NameLower, e.Haystack, terms);
                 if (score <= 0f) continue;
 
+                // 当たった中で、人間が確認済みのシナリオを先に出す（チュートリアル計画 3.7）。
+                if (e.Reviewed) score += ReviewedScenarioBonus;
+
                 hits.Add(new SearchHit { Score = score, Name = e.Name, Scenario = e });
                 scenarioTotal++;
             }
@@ -305,6 +311,7 @@ namespace Poly_Ling.Data
                     sb.Append(",\"summary\":").Append(Quote(sc.Goal));
                     sb.Append(",\"folder\":").Append(Quote(sc.Folder));
                     sb.Append(",\"steps\":").Append(sc.StepCount.ToString(CultureInfo.InvariantCulture));
+                    if (sc.Reviewed) sb.Append(",\"reviewed\":true");
                     sb.Append('}');
                     continue;
                 }

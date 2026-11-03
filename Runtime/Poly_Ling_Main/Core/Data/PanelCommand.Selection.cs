@@ -49,6 +49,9 @@ namespace Poly_Ling.Data
     [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "選んだ描画オブジェクトの masterIndex", Optional = true)]
     [PLResult("objectIds",     PLResultKind.TextArray,    Description = "masterIndices と同じ並びの安定 ID。10 進の文字列", Optional = true)]
     [PLResult("names",         PLResultKind.TextArray,    Description = "masterIndices と同じ並びの名前", Optional = true)]
+    [PLUiManual("オブジェクトの一覧で行を押す", "rightPaneTop.meshList", "meshList.tree",
+        Note = "名前の行を押す。複数は Ctrl を押しながら押す。接頭辞で選ぶ欄は無いので、該当する行を押す",
+        ResultList = "names")]
     public class SelectDrawablesByNameCommand : PanelCommand
     {
         [PLParam(Description = "選ぶ描画オブジェクトの名前。完全一致。namePrefix と併せて指定してもよい")]

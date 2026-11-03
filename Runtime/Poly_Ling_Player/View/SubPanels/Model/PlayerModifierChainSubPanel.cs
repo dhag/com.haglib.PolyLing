@@ -74,7 +74,25 @@ namespace Poly_Ling.Player
         [UiControl(Ignore = true)]
         private VisualElement _argContainer;
         /// <summary>引数欄（ParamFieldBuilder が作る。ID は "modifierChain.arg.&lt;キー&gt;"）。</summary>
-        private readonly UiDynamicControls _argControls = new UiDynamicControls();
+        private readonly UiDynamicControls _argControls = new UiDynamicControls { IsPossibleId = IsPossibleArgId };
+
+        /// <summary>
+        /// 項目を選ぶまで作られない引数欄の ID か（"arg.&lt;キー&gt;"、スライダー・成分は後ろに続く）。
+        /// 欄の有無は種類の宣言で決まる（ParamFieldSpec.HasField）。
+        /// </summary>
+        private static bool IsPossibleArgId(string id)
+        {
+            const string Head = "arg.";
+            if (string.IsNullOrEmpty(id) || !id.StartsWith(Head, StringComparison.Ordinal)) return false;
+            string rest = id.Substring(Head.Length);
+            foreach (var info in MeshModifierRegistry.All)
+                foreach (var p in info.Params)
+                {
+                    if (!new ParamFieldSpec { Key = p.Key, Type = p.Type, Attr = p.Attr }.HasField) continue;
+                    if (rest == p.Key || rest.StartsWith(p.Key + ".", StringComparison.Ordinal)) return true;
+                }
+            return false;
+        }
 
         [UiControl("scope.kind", Description = "処理範囲（0 全体 / 1 登録した選択 / 2 パーツ選択辞書）")]
         private RadioButtonGroup _scopeKind;
@@ -159,8 +177,13 @@ namespace Poly_Ling.Player
             var addRow = new VisualElement();
             addRow.style.flexDirection = FlexDirection.Row;
             addRow.style.marginBottom  = 3;
-            _kindDropdown = new DropdownField(new List<string>(), -1);
+            _kindDropdown = new DropdownField("種類", new List<string>(), -1);
             _kindDropdown.style.flexGrow = 1;
+            _kindDropdown.style.flexShrink = 1;
+            _kindDropdown.style.minWidth = 0;
+            // 見出しの既定の幅だと、隣の「追加」が右へはみ出す。
+            _kindDropdown.labelElement.style.minWidth = 0;
+            _kindDropdown.labelElement.style.width = StyleKeyword.Auto;
             addRow.Add(_kindDropdown);
             _btnAdd = MkBtn("追加", OnAdd);
             _btnAdd.style.width = 50;

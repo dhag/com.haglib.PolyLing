@@ -73,6 +73,10 @@ namespace Poly_Ling.Player
         private ListView _listView;
         [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだシナリオの目的・前提・成功条件")]
         private Label    _detailLabel;
+        [UiControl("confirm", Safety = UiSafety.UserOnly, Description = "選んだシナリオを人間が確認済みにする。人だけが押せる")]
+        private Button   _btnConfirm;
+        [UiControl("confirmStatus", Safety = UiSafety.ReadOnly, Description = "確認済みにした結果、できなかった理由")]
+        private Label    _confirmStatusLabel;
         [UiControl("run", Safety = UiSafety.Destructive, Description = "選んだシナリオを先頭の項目から流す")]
         private Button   _btnRun;
         [UiControl("continue", Safety = UiSafety.Destructive, Description = "止まった所から続きを流す")]
@@ -239,6 +243,16 @@ namespace Poly_Ling.Player
             _detailLabel.style.marginBottom = 4;
             _root.Add(_detailLabel);
 
+            _btnConfirm = MkBtn("確認済みにする", OnConfirm);
+            _btnConfirm.style.marginBottom = 2;
+            _root.Add(_btnConfirm);
+
+            _confirmStatusLabel = new Label();
+            _confirmStatusLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _confirmStatusLabel.style.fontSize     = 10;
+            _confirmStatusLabel.style.marginBottom = 4;
+            _root.Add(_confirmStatusLabel);
+
             _paramBox = new VisualElement();
             _paramBox.style.marginBottom = 4;
             _root.Add(_paramBox);
@@ -366,6 +380,8 @@ namespace Poly_Ling.Player
         private void OnListSelection()
         {
             if (_suppressSelection) return;
+            // 確認の結果は押したシナリオの結果。別の行へ移ったら残さない（別のシナリオの結果に読める）。
+            if (_confirmStatusLabel != null) _confirmStatusLabel.text = "";
             int i = _listView.selectedIndex;
             if (i >= 0 && i < _rows.Count && _rows[i].Folder != null)
             {
@@ -569,7 +585,8 @@ namespace Poly_Ling.Player
             else _detailLabel.text =
                   $"目的: {Or(sel.Goal, "（無し）")}\n"
                 + $"前提: {Join(sel.Preconditions)}\n"
-                + $"成功条件: {Join(sel.SuccessCriteria)}";
+                + $"成功条件: {Join(sel.SuccessCriteria)}\n"
+                + ReviewText(sel.Name);
 
             RebuildParamFieldsIfChanged(sel);
 
@@ -657,6 +674,46 @@ namespace Poly_Ling.Player
             _btnRun.SetEnabled(!busy && sel != null);
             _btnContinue.SetEnabled(canContinue);
             _btnStop.SetEnabled(run != null);
+            _btnConfirm.SetEnabled(!busy && sel != null);
+        }
+
+        /// <summary>確認の状態の 1 行。</summary>
+        private static string ReviewText(string name)
+        {
+            var r = ScenarioLibrary.ReviewOf(name);
+            return r == null ? "確認: 未確認" : $"確認: 確認済み（{r.Reviewer}、{r.ReviewedAt}）";
+        }
+
+        /// <summary>queryScenarioAudit の結果のうち、指摘の数だけを読む。</summary>
+        [Serializable]
+        private sealed class ScenarioAuditIssues { public int issues = -1; }
+
+        /// <summary>
+        /// 選んだシナリオを確認済みにする（チュートリアル計画 3.6）。人のボタンからだけ呼ぶ。
+        /// 目的・前提・成功条件・項目の理由（ScenarioLibrary.ReviewProblems）と、queryScenarioAudit の指摘 0 を求める。
+        /// </summary>
+        private void OnConfirm()
+        {
+            var sel = Selected();
+            if (sel == null) return;
+
+            string error = null;
+            var problems = ScenarioLibrary.ReviewProblems(sel.Name);
+            var audit = RunCommand?.Invoke(new QueryScenarioAuditCommand(ModelIndex, sel.Name));
+            if (audit == null || !audit.Success)
+                problems.Add($"点検できません: {audit?.Reason ?? "実行の口が配線されていません"}");
+            else
+            {
+                int issues = JsonUtility.FromJson<ScenarioAuditIssues>(audit.Data ?? "{}")?.issues ?? -1;
+                if (issues != 0) problems.Add($"点検の指摘 {issues} 件（queryScenarioAudit）");
+            }
+
+            bool ok = problems.Count == 0
+                   && ScenarioLibrary.MarkReviewed(sel.Name, Environment.UserName, out error);
+            _confirmStatusLabel.text = ok ? "確認済みにしました"
+                                          : "確認済みにできません: " + (error ?? string.Join(" / ", problems));
+            _confirmStatusLabel.style.color = new StyleColor(ok ? new Color(0.6f, 0.9f, 0.6f) : new Color(1f, 0.55f, 0.45f));
+            UpdateView();
         }
 
         // ================================================================

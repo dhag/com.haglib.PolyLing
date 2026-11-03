@@ -83,11 +83,13 @@ namespace Poly_Ling.Player
             var cDescs  = new List<string>();
             var cSafety = new List<string>();
             var cWrite  = new List<int>();
+            var cLabels = new List<string>();
             foreach (var c in _registry.Controls)
             {
                 if (filter && c.PanelId != panelId) continue;
                 var e = c.Element;
                 cIds.Add(c.Id);
+                cLabels.Add(UiOperationCatalog.CaptionOf(e));
                 cPanels.Add(c.PanelId);
                 cTypes.Add(e != null ? e.GetType().Name : "(未構築)");
                 cDescs.Add(c.Description);
@@ -104,6 +106,7 @@ namespace Poly_Ling.Player
                 .Texts("controlDescriptions", cDescs)
                 .Texts("controlSafety",       cSafety)
                 .Ints ("controlWritable",     cWrite)
+                .Texts("controlLabels",       cLabels)
                 .Build());
         }
 
@@ -120,6 +123,31 @@ namespace Poly_Ling.Player
             Debug.Log($"{LogTag} ShowPanel: {panelId}");
             return CommandResult.Ok();
         }
+
+        /// <summary>
+        /// パネルが表示されていなければ開く。開くと枠が消え、欄が作り直されることがあるので、表示中なら何もしない。
+        /// </summary>
+        public CommandResult ShowPanelIfHidden(string panelId)
+        {
+            if (!_registry.TryGetPanel(panelId, out var p))
+                return CommandResult.Fail($"unknown panelId: {panelId}");
+            if (p.Section != null && IsDisplayed(p.Section)) return CommandResult.Ok();
+            return ShowPanel(panelId);
+        }
+
+        /// <summary>
+        /// パネルを開き直さず、ボタンや入力欄が見える位置までスクロールする。Reveal と違い枠を消さない。
+        /// 別のボタンや入力欄へ Reveal したあとで、矢印の先を見せるのに使う。
+        /// </summary>
+        public void ScrollControlIntoView(string controlId)
+        {
+            if (!_registry.TryGetControl(controlId, out var c) || c.Element == null) return;
+            CancelPendingScroll();
+            ScrollIntoView(c.Element);
+        }
+
+        /// <summary>レイアウトの確定を待っているスクロールがあるか。</summary>
+        public bool IsScrollPending => _pendingScrollTarget != null;
 
         public CommandResult Reveal(string controlId, bool highlight) => Reveal(controlId, highlight, add: false);
 
@@ -140,6 +168,7 @@ namespace Poly_Ling.Player
                 return CommandResult.Fail($"control is not attached to panel: {controlId}");
 
             bool wasDisplayed = element != null && IsDisplayed(element);
+            var elementBefore = element;
 
             // ShowXxxPanel → HideRightArea → OnRightPanelsHidden で
             // 前の強調と保留中のスクロールは消える。
@@ -157,7 +186,10 @@ namespace Poly_Ling.Player
             if (!IsDisplayed(element))
                 return CommandResult.Fail($"control is not displayed after reveal: {controlId}");
 
-            bool changed = !wasDisplayed || prepared || opened;
+            // パネルを開く処理が欄を作り直すと、新しい要素はまだレイアウトが無く、その場ではスクロールできない。
+            bool changed = !wasDisplayed || prepared || opened
+                        || !ReferenceEquals(elementBefore, element)
+                        || !UiAutomationHighlight.IsUsable(element.worldBound);
             if (changed) ScrollAfterLayout(element);
             else         ScrollIntoView(element);
 
@@ -346,7 +378,7 @@ namespace Poly_Ling.Player
         public static bool IsWritableType(VisualElement e)
             => e is Slider || e is SliderInt || e is FloatField || e is IntegerField
             || e is TextField || e is Toggle || e is DropdownField || e is EnumField
-            || e is Foldout || e is BaseListView || e is RadioButtonGroup;
+            || e is Foldout || e is BaseListView || e is BaseTreeView || e is RadioButtonGroup;
 
         public static string SafetyText(UiSafety s)
         {
@@ -384,6 +416,46 @@ namespace Poly_Ling.Player
                 error = $"control is not built: {controlId}";
                 return false;
             }
+            return true;
+        }
+
+        /// <summary>
+        /// ボタンや入力欄の見えている部分の中心（パネル座標）を返す。祖先のスクロールの見えている範囲で切るので、
+        /// 強調の枠の中心と同じ位置になる（UiAutomationHighlight.Place）。
+        /// 登録が無い・表示されていない・スクロールで隠れているときは理由を返す。
+        /// </summary>
+        public bool TryGetVisibleCenter(string controlId, out VisualElement element, out Vector2 center, out string error)
+        {
+            center = default;
+            if (!TryResolve(controlId, out _, out element, out error)) return false;
+
+            if (!IsDisplayed(element))
+            {
+                error = $"control is not displayed: {controlId}（uiReveal で出してから撮ること）";
+                return false;
+            }
+
+            Rect r = element.worldBound;
+            if (!UiAutomationHighlight.IsUsable(r))
+            {
+                error = $"control has no layout yet: {controlId}（レイアウトの確定後に撮ること）";
+                return false;
+            }
+
+            for (var p = element.parent; p != null; p = p.parent)
+            {
+                if (!(p is ScrollView sv)) continue;
+                Rect view = sv.contentViewport.worldBound;
+                if (!UiAutomationHighlight.IsUsable(view)) continue;
+                r = UiAutomationHighlight.Intersect(r, view);
+                if (r.width <= 0f || r.height <= 0f)
+                {
+                    error = $"control is scrolled out of view: {controlId}（uiReveal で出してから撮ること）";
+                    return false;
+                }
+            }
+
+            center = r.center;
             return true;
         }
 
@@ -431,6 +503,21 @@ namespace Poly_Ling.Player
             for (var v = e; v != null; v = v.parent)
                 if (v.style.display.value == DisplayStyle.None) return false;
             return true;
+        }
+
+        /// <summary>
+        /// 今の設定では出ない欄か（別の欄の値で行ごと隠している）。閉じた折り畳みの中は、人が開けるので隠れたうちに数えない。
+        /// </summary>
+        public static bool IsHiddenByPanel(VisualElement e)
+        {
+            if (e == null || e.panel == null) return true;
+            for (var v = e; v != null; v = v.parent)
+            {
+                if (v.style.display.value != DisplayStyle.None) continue;
+                if (v.parent is Foldout) continue;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>祖先の Foldout を全部開く。1 つでも開いたら true。</summary>
@@ -485,7 +572,7 @@ namespace Poly_Ling.Player
         // UI 型ごとの読み書き
         // ================================================================
 
-        private static bool TryReadValue(VisualElement e, out string text)
+        internal static bool TryReadValue(VisualElement e, out string text)
         {
             switch (e)
             {
@@ -582,6 +669,17 @@ namespace Poly_Ling.Player
                         return $"list index out of range: {idx}（-1 から {count - 1}）";
                     if (idx < 0) lv.ClearSelection();
                     else         lv.SetSelection(idx);
+                    return null;
+                }
+
+                case BaseTreeView tv:
+                {
+                    // 行番号は今見えている行の並び。選択の変更通知は利用者が行を押したときと同じ処理を通る。
+                    if (!TryParseInt(text, out int row)) return $"invalid int: {text}";
+                    if (row < -1 || row >= tv.GetTreeCount())
+                        return $"tree row out of range: {row}（-1 から {tv.GetTreeCount() - 1}）";
+                    if (row < 0) tv.ClearSelection();
+                    else         tv.SetSelection(row);
                     return null;
                 }
 

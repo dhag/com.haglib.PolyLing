@@ -655,8 +655,15 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUiCapture       = ExecuteUiCapture;
             _commandDispatcher.OnQueryActiveModes = CollectActiveModes;   // ActiveModes.cs
             _commandDispatcher.OnUiCaptureStatus = ExecuteUiCaptureStatus;
+            _commandDispatcher.OnQueryCapturePosition = ExecuteQueryCapturePosition;
             _commandDispatcher.OnUiClick         = ExecuteUiClick;
             _commandDispatcher.OnQueryUiAutomationAudit = ExecuteQueryUiAutomationAudit;
+            _commandDispatcher.OnQueryCommandUiOperation = cmd => _uiAutomationRegistry == null
+                ? CommandResult.Fail(UiAutomationNotReady)
+                : UiOperationCatalog.Describe(_uiAutomationRegistry, cmd.CommandName, cmd.ArgKeys, cmd.ArgValues);
+            _commandDispatcher.OnBuildScenarioTutorial      = ExecuteBuildScenarioTutorial;
+            _commandDispatcher.OnQueryScenarioTutorialBuild = ExecuteQueryScenarioTutorialBuild;
+            _commandDispatcher.OnExportScenarioTutorialDraft = ExecuteExportScenarioTutorialDraft;
 
             // シナリオの案内バー：人間の入力待ちで、人が項目のコマンドを実行したら次の項目へ進む。
             _commandDispatcher.OnScenarioUserStepAccepted = () => _scenarioGuideBar?.OnUserStepAccepted();
@@ -695,6 +702,8 @@ namespace Poly_Ling.Player
                 .Int ("unregisteredElements", r.UnregisteredElements)
                 .Int ("unknownRouteItems",    r.UnknownRouteItems)
                 .Int ("duplicateIds",         r.DuplicateIds)
+                .Int ("unknownOperationItems",    r.UnknownOperationItems)
+                .Int ("unverifiedOperationItems", r.UnverifiedOperationItems)
                 .Build());
         }
 
@@ -777,6 +786,10 @@ namespace Poly_Ling.Player
                         $"パネルが表示されていません: {cmd.PanelId}（uiShowPanel で開いてから撮ること）");
             }
 
+            // 矢印の指定は撮る前に解釈する。切り出し矩形と同じ時点の位置になる。
+            if (!TryBuildCaptureCursor(cmd, out CaptureCursor cursor, out string cursorError))
+                return CommandResult.Fail(cursorError);
+
             // 保存先を指定したときは作業フォルダの関門を通す。
             // TryResolveWrite は拡張子を検査するのでフォルダには使えない。
             // ファイル名は PlayerScreenCapture が区切り文字を除いて .png を付けるため、
@@ -793,15 +806,19 @@ namespace Poly_Ling.Player
             Debug.Log($"[UiAutomation] Capture start: id={id} target={target} baseName={cmd.BaseName}"
                 + $" folder={folder ?? "(キャプチャパネルの設定)"}");
 
-            StartCapture(target, cropOverride, folder, cmd.BaseName, cmd.MaxLongEdge, format, cmd.Quality, (ok, msg) =>
+            StartCapture(target, cropOverride, folder, cmd.BaseName, cmd.MaxLongEdge, format, cmd.Quality, cursor, (ok, msg, cursorResult) =>
             {
-                _uiCaptureJobs.Complete(id, ok, msg);
+                _uiCaptureJobs.Complete(id, ok, msg, cursorResult);
                 Debug.Log(ok
                     ? $"[UiAutomation] Capture completed: id={id} path={msg}"
                     : $"[UiAutomation] Capture failed: id={id} reason={msg}");
             });
 
             // 切り出し範囲が取れないときは StartCapture の中で同期的に失敗が返る。
+            // 状態の問い合わせを待たずに理由を返す（unity_capture は最初の応答が failed なら問い合わせない）。
+            if (job.Status == UiAutomationCaptureJobs.JobStatus.Failed)
+                return CommandResult.Fail(job.Error);
+
             return CommandResult.Ok(data: CommandDataJson.New()
                 .Text("captureId", id)
                 .Text("status",    UiAutomationCaptureJobs.StatusText(job.Status))
@@ -819,7 +836,117 @@ namespace Poly_Ling.Player
                 .Text("status",    UiAutomationCaptureJobs.StatusText(job.Status));
             if (job.Status == UiAutomationCaptureJobs.JobStatus.Completed) b.Text("path",  job.Path);
             if (job.Status == UiAutomationCaptureJobs.JobStatus.Failed)    b.Text("error", job.Error);
+            if (job.Cursor.HasValue)
+            {
+                b.Num ("cursorX",      job.Cursor.Value.X);
+                b.Num ("cursorY",      job.Cursor.Value.Y);
+                b.Flag("cursorInside", job.Cursor.Value.Inside);
+            }
             return CommandResult.Ok(data: b.Build());
+        }
+
+        /// <summary>uiCapture の矢印の指定を解釈する。撮れない指定は理由を返す（撮ってから失敗させない）。</summary>
+        private bool TryBuildCaptureCursor(UiCaptureCommand cmd, out CaptureCursor cursor, out string error)
+        {
+            cursor = CaptureCursor.None;
+            error  = null;
+
+            switch ((cmd.Cursor ?? "none").Trim().ToLowerInvariant())
+            {
+                case "":
+                case "none":
+                    return true;
+
+                case "control":
+                {
+                    if (string.IsNullOrEmpty(cmd.CursorControlId))
+                    {
+                        error = "cursor=control には cursorControlId が要る";
+                        return false;
+                    }
+                    if (_uiAutomation == null)
+                    {
+                        error = UiAutomationNotReady;
+                        return false;
+                    }
+                    if (!_uiAutomation.TryGetVisibleCenter(cmd.CursorControlId, out var element, out Vector2 center, out error))
+                        return false;
+                    if (!PlayerScreenCapture.TryPanelToScreenPixel(element, center, out Vector2 pixel))
+                    {
+                        error = $"control is not on a panel: {cmd.CursorControlId}";
+                        return false;
+                    }
+                    cursor = CaptureCursor.AtScreenPixel(pixel);
+                    return true;
+                }
+
+                case "position":
+                    if (!(cmd.CursorX >= 0f && cmd.CursorX <= 1f && cmd.CursorY >= 0f && cmd.CursorY <= 1f))
+                    {
+                        error = $"cursor=position の cursorX・cursorY は 0〜1 で指定する: {cmd.CursorX}, {cmd.CursorY}";
+                        return false;
+                    }
+                    cursor = CaptureCursor.AtRangeRatio(cmd.CursorX, cmd.CursorY);
+                    return true;
+
+                case "mouse":
+                    if (!TryGetMouseCursor(out cursor))
+                    {
+                        error = "マウスの位置が分からない（ポインタがまだ PolyLing の画面の上で動いていない）";
+                        return false;
+                    }
+                    return true;
+
+                default:
+                    error = $"unknown cursor: {cmd.Cursor}（none / control / position / mouse）";
+                    return false;
+            }
+        }
+
+        private CommandResult ExecuteQueryCapturePosition(QueryCapturePositionCommand cmd)
+        {
+            if (cmd == null) return CommandResult.Fail("コマンドが null");
+            if (!TryParseCaptureTarget(cmd.Target, out CaptureTarget target))
+                return CommandResult.Fail(
+                    $"unknown capture target: {cmd.Target}（MainView / TriView / Window）");
+
+            var project = ActiveProject;
+            var model   = project?.GetModel(cmd.ModelIndex);
+            if (model == null) return CommandResult.Fail($"no model at index {cmd.ModelIndex}");
+            if (model != project.CurrentModel)
+                return CommandResult.Fail($"model {cmd.ModelIndex} はカレントのモデルではないので描かれていない");
+
+            var mc = model.GetMeshContext(cmd.MasterIndex);
+            if (mc?.MeshObject == null) return CommandResult.Fail($"no object at masterIndex {cmd.MasterIndex}");
+            if (cmd.VertexIndex < 0 || cmd.VertexIndex >= mc.MeshObject.Vertices.Count)
+                return CommandResult.Fail(
+                    $"vertexIndex {cmd.VertexIndex} is out of range（{mc.Name} の頂点は {mc.MeshObject.Vertices.Count} 個）");
+
+            if (!_viewportManager.TryReadPerspectiveVertex(
+                    cmd.MasterIndex, cmd.VertexIndex, out Vector2 viewRatio, out bool projected, out bool front, out string error))
+                return CommandResult.Fail(error);
+
+            var result = CommandDataJson.New();
+
+            // 隠した頂点とカメラの後ろの頂点は画面の位置が無い。
+            if (!projected)
+            {
+                return CommandResult.Ok(data: result
+                    .Num ("x", -1).Num("y", -1).Flag("inside", false).Flag("visible", false).Build());
+            }
+
+            var view = _layoutRoot?.PerspectivePanel;
+            if (view == null || view.panel == null || !UiAutomationHighlight.IsUsable(view.worldBound))
+                return CommandResult.Fail("メイン 3D 画面が表示されていない（Game ビューが小さいと領域が無くなる）");
+
+            Rect wb = view.worldBound;
+            Vector2 panelPoint = new Vector2(wb.x + viewRatio.x * wb.width, wb.y + viewRatio.y * wb.height);
+            if (!PlayerScreenCapture.TryPanelToScreenPixel(view, panelPoint, out Vector2 pixel)
+             || !PlayerScreenCapture.TryScreenPixelToRangeRatio(CaptureCropOf(target), pixel, out Vector2 ratio, out bool inside))
+                return CommandResult.Fail($"撮影範囲を取得できない: {target}");
+
+            return CommandResult.Ok(data: result
+                .Num ("x", ratio.x).Num("y", ratio.y).Flag("inside", inside).Flag("visible", front).Build());
         }
 
         /// <summary>

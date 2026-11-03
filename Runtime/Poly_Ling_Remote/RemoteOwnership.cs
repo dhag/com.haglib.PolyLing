@@ -616,8 +616,14 @@ namespace Poly_Ling.Remote
                 case UiHighlightCommand _:
                 case UiCaptureCommand _:
                 case UiCaptureStatusCommand _:
+                case QueryCapturePositionCommand _:
                 case UiClickCommand _:
                 case QueryUiAutomationAuditCommand _:
+                case QueryCommandUiOperationCommand _:
+                // チュートリアルの作成はホストのファイルへ書き、画面を撮る。
+                case BuildScenarioTutorialCommand _:
+                case QueryScenarioTutorialBuildCommand _:
+                case ExportScenarioTutorialDraftCommand _:
                     return true;
                 default:
                     return false;

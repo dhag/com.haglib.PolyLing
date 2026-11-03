@@ -331,8 +331,10 @@ namespace Poly_Ling.Data
                 }
                 bool byShape = t.GetCustomAttribute<PLUiRouteByShapeAttribute>(inherit: true) != null;
                 bool noUi    = a != null && a.NoUi;
+                bool manual  = t.GetCustomAttribute<PLUiManualAttribute>(inherit: false) != null;
                 if (any && noUi) badRoute.Add(t.Name + " : 経路と NoUi の両方がある");
-                if (!any && !byShape && !noUi) noRoute.Add(t.Name);
+                if (!any && !byShape && !noUi && !manual) noRoute.Add(t.Name);
+                CollectUiOperationBad(t, badRoute);
             }
 
             sb.Append('\n')
@@ -347,6 +349,23 @@ namespace Poly_Ling.Data
             {
                 sb.Append('\n').Append("── PLUiRoute も NoUi も無い ──");
                 foreach (var n in noRoute) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // 【参考】画面の操作の宣言（実行のボタン・引数と入力欄の対応）の漏れ。経路を宣言したコマンドだけを数える。
+            // 図形生成（PLUiRouteByShape）は諸元が図形ごとに違うので対象にしない。全コマンドへの宣言が済むまでは完了条件に入れない。
+            var noOperation = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                string miss = MissingUiOperation(t);
+                if (miss != null) noOperation.Add(t.Name + " : " + miss);
+            }
+            sb.Append('\n')
+              .Append("[参考] 経路はあるが画面の操作の宣言が足りないコマンド ").Append(noOperation.Count)
+              .Append("（完了条件ではない）");
+            if (noOperation.Count > 0)
+            {
+                sb.Append('\n').Append("── PLUiRoute.Run・PLUiArg・PLUiNoField が足りない ──");
+                foreach (var n in noOperation) sb.Append('\n').Append("  ").Append(n);
             }
 
             // 機能カテゴリ（PLCommand.Category）。未設定と、正典（PLCommandCategories）に無い綴りを数える。
@@ -490,6 +509,91 @@ namespace Poly_Ling.Data
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 画面の操作の宣言の書き方の誤りを集める。引数名がコマンドに無い、Values が列挙の名前でない、
+        /// 同じ引数を 2 度宣言した、など。ID の誤りは画面側の検査（queryUiAutomationAudit）が見る。
+        /// </summary>
+        private static void CollectUiOperationBad(Type t, List<string> bad)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var a in t.GetCustomAttributes<PLUiArgAttribute>(inherit: false))
+            {
+                if (!PanelCommandFactory.TryGetArgParam(t, a.Arg, out Type argType, out _))
+                {
+                    bad.Add(t.Name + " : PLUiArg の引数がコマンドに無い: " + a.Arg);
+                    continue;
+                }
+                if (!seen.Add(a.Arg)) bad.Add(t.Name + " : 同じ引数を 2 度宣言した: " + a.Arg);
+                if (string.IsNullOrEmpty(a.Control)) bad.Add(t.Name + " : PLUiArg の ID が空: " + a.Arg);
+                if (string.IsNullOrEmpty(a.Values) || !argType.IsEnum) continue;
+                foreach (var v in a.Values.Split(','))
+                    if (!Enum.IsDefined(argType, v))
+                        bad.Add(t.Name + " : Values が " + argType.Name + " の名前でない: " + a.Arg + "=" + v);
+            }
+
+            foreach (var n in t.GetCustomAttributes<PLUiNoFieldAttribute>(inherit: false))
+            {
+                if (string.IsNullOrEmpty(n.Reason)) bad.Add(t.Name + " : PLUiNoField の理由が空");
+                foreach (var k in n.Args)
+                {
+                    if (!PanelCommandFactory.TryGetArgParam(t, k, out _, out _))
+                        bad.Add(t.Name + " : PLUiNoField の引数がコマンドに無い: " + k);
+                    else if (!seen.Add(k))
+                        bad.Add(t.Name + " : 同じ引数を 2 度宣言した: " + k);
+                }
+            }
+
+            var list = t.GetCustomAttribute<PLUiArgListAttribute>(inherit: false);
+            if (list != null)
+            {
+                foreach (var k in new[] { list.KeysArg, list.ValuesArg })
+                {
+                    if (!PanelCommandFactory.TryGetArgParam(t, k, out _, out _))
+                        bad.Add(t.Name + " : PLUiArgList の引数がコマンドに無い: " + k);
+                    else if (!seen.Add(k))
+                        bad.Add(t.Name + " : 同じ引数を 2 度宣言した: " + k);
+                }
+                if (list.ControlFormat.IndexOf("{0}", StringComparison.Ordinal) < 0)
+                    bad.Add(t.Name + " : PLUiArgList の ID の形に {0} が無い");
+            }
+
+            var manual = t.GetCustomAttribute<PLUiManualAttribute>(inherit: false);
+            if (manual != null && (string.IsNullOrEmpty(manual.Name) || manual.Items.Length == 0))
+                bad.Add(t.Name + " : PLUiManual の名前かボタンや入力欄が空");
+        }
+
+        /// <summary>経路を宣言したコマンドで足りない宣言。足りていれば null。</summary>
+        private static string MissingUiOperation(Type t)
+        {
+            var parts = new List<string>();
+            foreach (var r in t.GetCustomAttributes<PLUiRouteAttribute>(inherit: false))
+                if (string.IsNullOrEmpty(r.Run)) { parts.Add("実行のボタン"); break; }
+            bool routed = false;
+            foreach (var _ in t.GetCustomAttributes<PLUiRouteAttribute>(inherit: false)) { routed = true; break; }
+            if (!routed) return null;
+
+            parts.AddRange(UndeclaredUiArgs(t));
+
+            return parts.Count == 0 ? null : string.Join(", ", parts);
+        }
+
+        /// <summary>入力欄の対応も「欄が無い」の宣言も無い引数のキー。チュートリアルの差し込みの検査も使う。</summary>
+        public static List<string> UndeclaredUiArgs(Type t)
+        {
+            var declared = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var a in t.GetCustomAttributes<PLUiArgAttribute>(inherit: false)) declared.Add(a.Arg);
+            foreach (var n in t.GetCustomAttributes<PLUiNoFieldAttribute>(inherit: false))
+                foreach (var k in n.Args) declared.Add(k);
+            var list = t.GetCustomAttribute<PLUiArgListAttribute>(inherit: false);
+            if (list != null) { declared.Add(list.KeysArg); declared.Add(list.ValuesArg); }
+
+            var missing = new List<string>();
+            foreach (var p in PanelCommandFactory.EnumerateArgParams(t))
+                if (!declared.Contains(p.Key)) missing.Add(p.Key);
+            return missing;
         }
 
         /// <summary>全コマンド型について、一般化器で扱えるかを静的に調べる。</summary>

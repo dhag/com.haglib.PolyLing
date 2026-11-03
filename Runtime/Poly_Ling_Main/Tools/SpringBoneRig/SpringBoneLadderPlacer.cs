@@ -380,6 +380,8 @@ namespace Poly_Ling.Tools.SpringBoneRig
                         result.WeightedVertexCount = PaintWeights(mesh, result.Chains, weights);
                         if (mode == SpringBoneLadderMode.Stack)
                             result.WeightedVertexCount += PaintRootCap(model, mesh, bundles, result.Chains);
+                        else
+                            result.WeightedVertexCount += PaintStrandTipCap(mesh, bundles);
                     }
 
                     result.Ok      = true;
@@ -454,6 +456,8 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 result.WeightedVertexCount = PaintWeights(mesh, result.Chains, weights);
                 if (mode == SpringBoneLadderMode.Stack)
                     result.WeightedVertexCount += PaintRootCap(model, mesh, bundles, result.Chains);
+                else
+                    result.WeightedVertexCount += PaintStrandTipCap(mesh, bundles);
             }
 
             result.Ok        = true;
@@ -1427,6 +1431,51 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 mesh.Vertices[vi].BoneWeight =
                     SkinWeightOps.NormalizeBoneWeight(SkinWeightOps.Pack(slots));
                 count++;
+            }
+
+            if (count > 0) mesh.RecomputeSkinKind();
+            return count;
+        }
+
+        /// <summary>
+        /// 髪系（Strand）のはしごの先端の三角形の、段に載っていない頂点へ、
+        /// 最後の段の頂点と同じウェイトを写す。
+        ///
+        /// 【なぜ要るか】
+        ///   はしごの取り込みは四角形だけを辿るので、先端の三角形の頂点はウェイトを受けない。
+        ///   そのまま厚みを付けると、この頂点だけが元の位置に残り、鎖が揺れると面が長く伸びる
+        ///   （roboF のアホ毛用はしごの頂点 21 で実測）。
+        ///   最後の段は線の末尾（reverseChain で入れ替えたときもそれに従う）。
+        /// 戻り値は書き換えた頂点数。
+        /// </summary>
+        private static int PaintStrandTipCap(MeshObject mesh, List<List<GridLine>> bundles)
+        {
+            if (mesh == null || bundles == null) return 0;
+
+            int count = 0;
+            foreach (var bundle in bundles)
+            {
+                foreach (var line in bundle)
+                {
+                    if (line.Count == 0) continue;
+                    int[] rail = line.Nodes[line.Count - 1].Verts;
+                    if (rail == null || rail.Length < 2) continue;
+
+                    for (int fi = 0; fi < mesh.FaceCount; fi++)
+                    {
+                        var vs = mesh.Faces[fi]?.VertexIndices;
+                        if (vs == null || vs.Count != 3) continue;
+                        if (!vs.Contains(rail[0]) || !vs.Contains(rail[1])) continue;
+
+                        foreach (int v in vs)
+                        {
+                            if (v == rail[0] || v == rail[1] || !InRange(mesh, v)) continue;
+                            if (!InRange(mesh, rail[0])) continue;
+                            mesh.Vertices[v].BoneWeight = mesh.Vertices[rail[0]].BoneWeight;
+                            count++;
+                        }
+                    }
+                }
             }
 
             if (count > 0) mesh.RecomputeSkinKind();

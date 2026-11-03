@@ -217,12 +217,30 @@ namespace Poly_Ling.Player
         /// <summary>流している途中の状態（パネルの表示用）。流していなければ null。</summary>
         public ScenarioRunState ScenarioRun => _scenarioRun;
 
+        /// <summary>
+        /// 流しを占有している作業の名前（チュートリアルの作成）。占有中は、外からの runScenario /
+        /// continueScenario / stopScenarioRun を断る。断らないと流しの状態が差し替わり、作業が別の流れを進める。
+        /// </summary>
+        public string ScenarioRunOwner;
+
+        /// <summary>占有している作業自身の呼び出しの間だけ立てる。</summary>
+        public bool ScenarioRunOwnerCalling;
+
+        private bool RefuseIfScenarioRunOwned()
+        {
+            if (ScenarioRunOwner == null || ScenarioRunOwnerCalling) return false;
+            Fail($"{ScenarioRunOwner}がシナリオを流している途中です。終わるまで流しの操作はできません");
+            return true;
+        }
+
         // ================================================================
         // コマンド
         // ================================================================
 
         private void RunRunScenario(RunScenarioCommand cmd)
         {
+            if (RefuseIfScenarioRunOwned()) return;
+
             var g = ScenarioLibrary.Get(cmd.Name);
             if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
 
@@ -249,6 +267,8 @@ namespace Poly_Ling.Player
 
         private void RunContinueScenario(ContinueScenarioCommand cmd)
         {
+            if (RefuseIfScenarioRunOwned()) return;
+
             var run = _scenarioRun;
             if (run == null) { Fail("流しているシナリオがありません。runScenario で始めてください"); return; }
             if (run.Stop == ScenarioRunStop.Finished) { Fail($"「{run.RootName}」は最後まで終わっています"); return; }
@@ -314,6 +334,8 @@ namespace Poly_Ling.Player
 
         private void RunStopScenarioRun(StopScenarioRunCommand cmd)
         {
+            if (RefuseIfScenarioRunOwned()) return;
+
             var run = _scenarioRun;
             bool had = run != null;
 
@@ -644,51 +666,9 @@ namespace Poly_Ling.Player
             reason = null;
             waitCallNo = 0;
 
-            var args = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var kv in step.SortedArgs()) args[kv.Key] = kv.Value ?? "";
-
-            if (run.OverrideKeys != null && run.OverrideValues != null)
-            {
-                for (int i = 0; i < run.OverrideKeys.Length && i < run.OverrideValues.Length; i++)
-                {
-                    if (string.IsNullOrEmpty(run.OverrideKeys[i])) continue;
-                    args[run.OverrideKeys[i]] = run.OverrideValues[i] ?? "";
-                }
-            }
+            if (!TryResolveRunStepArgs(run, scenarioName, frameParams, step, out var args, out reason)) return false;
 
             var cmdType = PanelCommandFactory.ResolveType(step.Action);
-            var keys = new List<string>(args.Keys);
-            foreach (var key in keys)
-            {
-                // 文字列の配列（argKeys / argValues など）は、要素ごとに丸ごとの ${名前} / @… を置き換える。
-                // 値の一部は置き換えない規則（ScenarioParam）は要素の単位で守る。
-                if (PanelCommandFactory.IsStringArrayParam(cmdType, key)
-                    && !ScenarioParam.TryParseRef(args[key], out _)
-                    && (args[key].IndexOf(ScenarioParam.RefOpen, StringComparison.Ordinal) >= 0 || args[key].IndexOf('@') >= 0))
-                {
-                    var parts = PanelCommandFactory.SplitQuotedCsv(args[key]);
-                    var outParts = new List<string>(parts.Length);
-                    foreach (var part in parts)
-                    {
-                        if (!ScenarioParam.TrySubstitute(part, frameParams ?? EmptyParams, out string ps, out string pe))
-                        { reason = pe; return false; }
-                        if (!TryExpandPrev(run, ps, scenarioName, out string px, out string pw))
-                        { reason = pw; return false; }
-                        outParts.Add(PanelCommandFactory.EscCsvItem(px));
-                    }
-                    args[key] = string.Join(",", outParts);
-                    continue;
-                }
-
-                // 引数が結ばれていない段（古い流れ）でも、${…} が残ったまま撃たないよう空の辞書で照合する。
-                if (!ScenarioParam.TrySubstitute(args[key], frameParams ?? EmptyParams, out string substituted, out string perr))
-                { reason = perr; return false; }
-                args[key] = substituted;
-
-                if (!TryExpandPrev(run, args[key], scenarioName, out string expanded, out string why))
-                { reason = why; return false; }
-                args[key] = expanded;
-            }
 
             // モデル番号は項目を実行する時点のカレントモデルにする。
             //   流しの途中で createEmptyModel などがカレントを切り替える。ほとんどのコマンドは
@@ -736,6 +716,77 @@ namespace Poly_Ling.Player
             run.PrevData   = result?.Data;
             run.Results[ScenarioRunState.Key(scenarioName, step.ScenarioItemId)] =
                 (result?.MasterIndices, result?.ObjectIds, result?.Data);
+            return true;
+        }
+
+        /// <summary>
+        /// いま居る項目の引数を、実行するときと同じ規則で値にする（チュートリアルの差し込み）。
+        /// @prev / @&lt;項目 ID&gt; は前の項目の結果を引くので、この項目を実行する直前に呼ぶ。
+        /// </summary>
+        public bool TryResolveCurrentStepArgs(out Dictionary<string, string> args, out string reason)
+        {
+            args   = null;
+            reason = null;
+            var run  = _scenarioRun;
+            var step = run?.CurrentStep;
+            if (step == null || !step.IsExecutable) { reason = "実行する項目に居ません"; return false; }
+            return TryResolveRunStepArgs(run, run.CurrentScenario, run.Top?.Params, step, out args, out reason);
+        }
+
+        /// <summary>
+        /// 項目の引数に continueScenario で渡した差し替えを重ね、${名前} をこの段の引数の値に、
+        /// @prev / @&lt;項目 ID&gt; を流れの控えから直す。
+        /// </summary>
+        private bool TryResolveRunStepArgs(
+            ScenarioRunState run, string scenarioName, IReadOnlyDictionary<string, string> frameParams,
+            ModifierStackStep step, out Dictionary<string, string> args, out string reason)
+        {
+            reason = null;
+            args = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in step.SortedArgs()) args[kv.Key] = kv.Value ?? "";
+
+            if (run.OverrideKeys != null && run.OverrideValues != null)
+            {
+                for (int i = 0; i < run.OverrideKeys.Length && i < run.OverrideValues.Length; i++)
+                {
+                    if (string.IsNullOrEmpty(run.OverrideKeys[i])) continue;
+                    args[run.OverrideKeys[i]] = run.OverrideValues[i] ?? "";
+                }
+            }
+
+            var cmdType = PanelCommandFactory.ResolveType(step.Action);
+            var keys = new List<string>(args.Keys);
+            foreach (var key in keys)
+            {
+                // 文字列の配列（argKeys / argValues など）は、要素ごとに丸ごとの ${名前} / @… を置き換える。
+                // 値の一部は置き換えない規則（ScenarioParam）は要素の単位で守る。
+                if (PanelCommandFactory.IsStringArrayParam(cmdType, key)
+                    && !ScenarioParam.TryParseRef(args[key], out _)
+                    && (args[key].IndexOf(ScenarioParam.RefOpen, StringComparison.Ordinal) >= 0 || args[key].IndexOf('@') >= 0))
+                {
+                    var parts = PanelCommandFactory.SplitQuotedCsv(args[key]);
+                    var outParts = new List<string>(parts.Length);
+                    foreach (var part in parts)
+                    {
+                        if (!ScenarioParam.TrySubstitute(part, frameParams ?? EmptyParams, out string ps, out string pe))
+                        { reason = pe; return false; }
+                        if (!TryExpandPrev(run, ps, scenarioName, out string px, out string pw))
+                        { reason = pw; return false; }
+                        outParts.Add(PanelCommandFactory.EscCsvItem(px));
+                    }
+                    args[key] = string.Join(",", outParts);
+                    continue;
+                }
+
+                // 引数が結ばれていない段（古い流れ）でも、${…} が残ったまま撃たないよう空の辞書で照合する。
+                if (!ScenarioParam.TrySubstitute(args[key], frameParams ?? EmptyParams, out string substituted, out string perr))
+                { reason = perr; return false; }
+                args[key] = substituted;
+
+                if (!TryExpandPrev(run, args[key], scenarioName, out string expanded, out string why))
+                { reason = why; return false; }
+                args[key] = expanded;
+            }
             return true;
         }
 

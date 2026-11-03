@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>登録済みのシナリオを一覧する。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "登録済みのシナリオを一覧する。名前・目的・項目数を同じ並びの配列で返す。query を指定すると、名前・目的・札・項目のコマンド名で絞り込む。usageScene を指定すると、その利用シーンを項目に持つシナリオと、利用シーンの relatedScenarios に挙がったシナリオだけを返す。folder を指定するとそのフォルダ（下のフォルダも含む）だけを返す。offset / limit で一部だけ返せる（数が多いときに使う）。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "登録済みのシナリオを一覧する。名前・目的・項目数・確認済みかを同じ並びの配列で返す。人間が確認済みのものを先に並べる。query を指定すると、名前・目的・札・前提・成功条件・項目のコマンド名で絞り込む。usageScene を指定すると、その利用シーンを項目に持つシナリオと、利用シーンの relatedScenarios に挙がったシナリオだけを返す。folder を指定するとそのフォルダ（下のフォルダも含む）だけを返す。offset / limit で一部だけ返せる（数が多いときに使う）。")]
     [PLResult("count",      PLResultKind.Integer,      Description = "返したシナリオの数（names の長さ）")]
     [PLResult("total",      PLResultKind.Integer,      Description = "条件に合うシナリオの総数（offset / limit を掛ける前）")]
     [PLResult("hasMore",    PLResultKind.Flag,         Description = "offset + count の先にまだあるか")]
@@ -42,6 +42,7 @@ namespace Poly_Ling.Data
     [PLResult("allFolders", PLResultKind.TextArray,    Description = "すべてのフォルダ（空のフォルダも含む）。名前順", Optional = true)]
     [PLResult("goals",      PLResultKind.TextArray,    Description = "シナリオの目的。names と同じ並び", Optional = true)]
     [PLResult("stepCounts", PLResultKind.IntegerArray, Description = "シナリオの項目数。names と同じ並び", Optional = true)]
+    [PLResult("reviewed",   PLResultKind.IntegerArray, Description = "人間が確認済みなら 1（確認の後に中身が変わったものは 0）。names と同じ並び", Optional = true)]
     public sealed class QueryScenariosCommand : PanelCommand
     {
         [PLParam(Description = "ファイルから読み直してから返す。手で編集したあとに使う")]
@@ -85,6 +86,9 @@ namespace Poly_Ling.Data
     [PLResult("parentName",      PLResultKind.Text,         Description = "元にしたシナリオの名前。空 = 元がない")]
     [PLResult("changeSummary",   PLResultKind.Text,         Description = "元から何を変えたか")]
     [PLResult("createdBy",       PLResultKind.Text,         Description = "作った者")]
+    [PLResult("reviewed",        PLResultKind.Flag,         Description = "人間が確認済みか。確認の後に中身（呼び出す子シナリオを含む）が変わると false")]
+    [PLResult("reviewedBy",      PLResultKind.Text,         Description = "確認者。確認済みでなければ空")]
+    [PLResult("reviewedAt",      PLResultKind.Text,         Description = "確認した日時。確認済みでなければ空")]
     [PLResult("steps",           PLResultKind.Integer,      Description = "返した項目の数")]
     [PLResult("preconditions",   PLResultKind.TextArray,    Description = "使う前に満たしているべきこと", Optional = true)]
     [PLResult("successCriteria", PLResultKind.TextArray,    Description = "終わったときに確かめること", Optional = true)]

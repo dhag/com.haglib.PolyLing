@@ -487,6 +487,38 @@ namespace Poly_Ling.Modifiers
                   part == null ? e2 : $"頂点 {part.Vertices.Count}・面 {part.Faces.Count}");
             Check(lines, ref failures, "厚みは入力を書き換えない", a.Vertices.Count == 6 && a.Faces.Count == 2, null);
 
+            // ── 3b. ウェイトの署名と写し（チュートリアル計画 3.8） ─────────
+            var wm = BuildTestMesh(false);
+            ulong sigNone = Poly_Ling.Ops.MeshSignature.Weights(wm);
+            Check(lines, ref failures, "ウェイトの署名：同じ中身なら同じ（写しでも）",
+                  sigNone == Poly_Ling.Ops.MeshSignature.Weights(wm.Clone()), null);
+            for (int vi = 0; vi < wm.Vertices.Count; vi++)
+                wm.Vertices[vi].BoneWeight = new BoneWeight { boneIndex0 = vi + 1, weight0 = 1f };
+            ulong sigPainted = Poly_Ling.Ops.MeshSignature.Weights(wm);
+            Check(lines, ref failures, "ウェイトの署名：塗ると変わる", sigNone != sigPainted, null);
+            wm.Vertices[0].BoneWeight = new BoneWeight { boneIndex0 = 1, weight0 = 0.5f, boneIndex1 = 2, weight1 = 0.5f };
+            Check(lines, ref failures, "ウェイトの署名：重みだけ変えても変わる",
+                  sigPainted != Poly_Ling.Ops.MeshSignature.Weights(wm), null);
+            wm.Vertices[0].BoneWeight = new BoneWeight { boneIndex0 = 1, weight0 = 1f };
+            Check(lines, ref failures, "ウェイトの署名：元へ戻すと元の値",
+                  sigPainted == Poly_Ling.Ops.MeshSignature.Weights(wm), null);
+            wm.Vertices[0].MirrorBoneWeight = new BoneWeight { boneIndex0 = 9, weight0 = 1f };
+            Check(lines, ref failures, "ウェイトの署名：ミラー側のウェイトも見る",
+                  sigPainted != Poly_Ling.Ops.MeshSignature.Weights(wm), null);
+            wm.Vertices[0].MirrorBoneWeight = null;
+
+            var wThick = th.Evaluate(new MeshModifierInput { Source = wm, Scope = ResolvedMeshModifierScope.CreateAll() }, out string eW);
+            bool weightsCopied = wThick != null;
+            if (wThick != null)
+                foreach (var ov in wThick.Vertices)
+                {
+                    var from = wm.Vertices.FirstOrDefault(sv => sv.Id == ov.Id);
+                    if (from == null || !ov.BoneWeight.HasValue || !from.BoneWeight.HasValue
+                        || ov.BoneWeight.Value.boneIndex0 != from.BoneWeight.Value.boneIndex0)
+                    { weightsCopied = false; break; }
+                }
+            Check(lines, ref failures, "厚み：作った頂点が元の頂点のウェイトを写す", weightsCopied, wThick == null ? eW : null);
+
             // ── 4. ベベル（段 7a）────────────────────────────────────
             // 共有の辺 (1,2)（ID 12-13）を分割 1 でベベル：辺の両端 2 頂点が 4 頂点に置き換わり、面が 1 枚増える。
             var bv = new BevelMeshModifier { Amount = 0.1f, Segments = 1 };

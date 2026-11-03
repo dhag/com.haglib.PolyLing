@@ -33,6 +33,8 @@ namespace Poly_Ling.Player
         public string   Name  = "";
         public string[] Items = new string[0];
         public string   Note  = "";
+        /// <summary>最後に押す実行のボタンの ID。宣言が無ければ空。</summary>
+        public string   Run   = "";
         public int      Order;
 
         /// <summary>最後のボタンや入力欄のパネル ID。ボタンや入力欄が無ければ空。</summary>
@@ -74,6 +76,7 @@ namespace Poly_Ling.Player
                     Name  = a.Name ?? "",
                     Items = a.Items ?? new string[0],
                     Note  = a.Note ?? "",
+                    Run   = a.Run ?? "",
                     Order = a.Order,
                 });
             }
@@ -160,6 +163,7 @@ namespace Poly_Ling.Player
                 Name  = $"図形生成（{label}）",
                 Items = new[] { fold, button, $"{panel}.shape.{shape}", $"{panel}.create" },
                 Note  = "図形を選び、諸元を合わせてから作成を押す",
+                Run   = $"{panel}.create",
             };
         }
 

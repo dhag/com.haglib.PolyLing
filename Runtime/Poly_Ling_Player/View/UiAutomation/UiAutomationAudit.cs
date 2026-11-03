@@ -41,6 +41,10 @@ namespace Poly_Ling.Player
             public int    UnknownRouteItems;
             /// <summary>動的なボタンや入力欄で、画面に付いている別々の要素が同じ ID を持つもの。</summary>
             public int    DuplicateIds;
+            /// <summary>画面の操作の宣言（実行のボタン・PLUiArg・PLUiManual）の誤った ID。</summary>
+            public int    UnknownOperationItems;
+            /// <summary>画面の操作の宣言の ID のうち、判定を持たない置き場にあって開くまで確かめられないもの。問題には数えない。</summary>
+            public int    UnverifiedOperationItems;
             public int    Controls;
             public int    Panels;
             public string Report;
@@ -53,7 +57,8 @@ namespace Poly_Ling.Player
                 UnregisteredSections > 0 || MissingAttributes    > 0 ||
                 RegistrationErrors   > 0 || UnspecifiedSafety    > 0 ||
                 UnsupportedTypes     > 0 || UnregisteredElements > 0 ||
-                UnknownRouteItems    > 0 || DuplicateIds         > 0;
+                UnknownRouteItems    > 0 || DuplicateIds         > 0 ||
+                UnknownOperationItems > 0;
 
             /// <summary>問題の件数を 1 行にまとめる。0 のものは省く。</summary>
             public string ProblemSummary()
@@ -67,6 +72,7 @@ namespace Poly_Ling.Player
                 if (UnregisteredElements > 0) parts.Add($"未登録のボタンや入力欄 {UnregisteredElements}");
                 if (UnknownRouteItems    > 0) parts.Add($"経路の未登録のボタンや入力欄 {UnknownRouteItems}");
                 if (DuplicateIds         > 0) parts.Add($"ID の重複 {DuplicateIds}");
+                if (UnknownOperationItems > 0) parts.Add($"画面の操作の宣言の誤った ID {UnknownOperationItems}");
                 return string.Join(" / ", parts);
             }
         }
@@ -148,6 +154,11 @@ namespace Poly_Ling.Player
             var unknownRoute = CollectUnknownRouteItems(registry);
             r.UnknownRouteItems = unknownRoute.Count;
 
+            // ── 画面の操作の宣言（PLUiRouteAttribute.cs）───────────
+            CollectOperationItems(registry, out var unknownOperation, out var unverifiedOperation);
+            r.UnknownOperationItems    = unknownOperation.Count;
+            r.UnverifiedOperationItems = unverifiedOperation.Count;
+
             // ── ID の重複（動的なボタンや入力欄）─────────────────────────
             var duplicates = registry.CollectDuplicateDynamicIds();
             r.DuplicateIds = duplicates.Count;
@@ -159,9 +170,12 @@ namespace Poly_Ling.Player
                         + $" / 登録失敗 {r.RegistrationErrors} / 安全度未指定のボタン {r.UnspecifiedSafety}"
                         + $" / 未対応の型 {r.UnsupportedTypes} / 未登録のボタンや入力欄 {r.UnregisteredElements}"
                         + $" / 経路の未登録のボタンや入力欄 {r.UnknownRouteItems}"
-                        + $" / ID の重複 {r.DuplicateIds}");
+                        + $" / ID の重複 {r.DuplicateIds}"
+                        + $" / 画面の操作の宣言の誤った ID {r.UnknownOperationItems}");
             AppendList(sb, "ID の重複", duplicates);
             AppendList(sb, "経路の未登録のボタンや入力欄", unknownRoute);
+            AppendList(sb, "画面の操作の宣言の誤った ID", unknownOperation);
+            AppendList(sb, "[参考] 画面の操作の宣言のうち、開くまで確かめられない ID", unverifiedOperation);
             AppendList(sb, "未登録のセクション", unregistered);
             AppendList(sb, "対象外にしたセクション", excluded);
             AppendList(sb, "属性の付け忘れ", missing);
@@ -183,13 +197,55 @@ namespace Poly_Ling.Player
                 {
                     foreach (var id in route.Items)
                     {
-                        if (registry.TryGetControl(id, out _)) continue;
-                        if (registry.TryGetDynamicPanelFor(id, out _)) continue;
+                        if (registry.StatusOf(id) != UiAutomationRegistry.IdStatus.Unknown) continue;
                         list.Add($"{t.Name} / {route.Name} : {id}");
                     }
                 }
             }
             return list;
+        }
+
+        /// <summary>
+        /// 画面の操作の宣言の ID を確かめる。図形を選ぶまで・項目を選ぶまで作られない ID は
+        /// 置き場の判定（UiAutomationRegistry.StatusOf）で誤りと見分ける。
+        /// </summary>
+        private static void CollectOperationItems(
+            UiAutomationRegistry registry, out List<string> unknown, out List<string> unverified)
+        {
+            var bad = new List<string>();
+            var open = new List<string>();
+
+            void Check(Type t, string what, string id)
+            {
+                if (string.IsNullOrEmpty(id)) return;
+                switch (registry.StatusOf(id))
+                {
+                    case UiAutomationRegistry.IdStatus.Unknown:    bad.Add($"{t.Name} / {what} : {id}");  break;
+                    case UiAutomationRegistry.IdStatus.Unverified: open.Add($"{t.Name} / {what} : {id}"); break;
+                }
+            }
+
+            foreach (var t in Poly_Ling.Data.PLParamAudit.FindCommandTypes())
+            {
+                foreach (var route in UiRouteCatalog.RoutesOf(t))
+                    Check(t, "実行のボタン", route.Run);
+                foreach (var a in t.GetCustomAttributes<Poly_Ling.Data.PLUiArgAttribute>(inherit: false))
+                    Check(t, a.Arg, a.Control);
+                var list = t.GetCustomAttribute<Poly_Ling.Data.PLUiArgListAttribute>(inherit: false);
+                if (list != null)
+                {
+                    Check(t, list.KeysArg, list.Fallback);
+                    Check(t, list.KeysArg, list.SelectLast);
+                }
+                var manual = t.GetCustomAttribute<Poly_Ling.Data.PLUiManualAttribute>(inherit: false);
+                if (manual != null)
+                    foreach (var id in manual.Items) Check(t, manual.Name, id);
+                foreach (var f in t.GetCustomAttributes<Poly_Ling.Data.PLUiFixedAttribute>(inherit: false))
+                    Check(t, "決まった値の欄", f.Control);
+            }
+
+            unknown    = bad;
+            unverified = open;
         }
 
         // ================================================================

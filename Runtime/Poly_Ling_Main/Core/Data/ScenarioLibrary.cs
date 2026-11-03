@@ -41,6 +41,12 @@
 //   1 ファイルへ分け、旧ファイルは scenarios.csv.bak へ名前を変えて残す。
 //   1 ファイルに複数入っている旧「まとまり」は、ファイル名のフォルダへ 1 本ずつ分け、
 //   元のファイルは .bak へ名前を変えて残す。
+//
+// 【人間確認の印】（PolyLing_チュートリアル計画.md 3.6）
+//   シナリオのファイルにだけ #review 行で持つ。ModifierStack の欄にしないので、Clone・書き出し
+//   （TryExport）・forkScenario には載らない。付けられるのは画面のボタン（UserOnly）だけで、コマンドは作らない。
+//   ダイジェストは中身（由来と作成日時を除く）と呼び出す子シナリオから求める。編集すると合わなくなり、
+//   確認済みでなくなる。ファイルを書き換えれば偽れる。誤って確認済みにしないための印で、改ざんは防がない。
 
 using System;
 using System.Collections.Generic;
@@ -114,6 +120,7 @@ namespace Poly_Ling.Data
             _items   = new List<ModifierStack>();
             _fileOf  = new Dictionary<string, string>(StringComparer.Ordinal);
             _folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _reviewOf = new Dictionary<string, ScenarioReview>(StringComparer.Ordinal);
 
             try
             {
@@ -133,7 +140,12 @@ namespace Poly_Ling.Data
                 foreach (var path in files)
                 {
                     List<ModifierStack> list;
-                    try { list = ModifierStackCsv.Parse(File.ReadAllLines(path, Encoding.UTF8)); }
+                    string[] fileLines;
+                    try
+                    {
+                        fileLines = File.ReadAllLines(path, Encoding.UTF8);
+                        list = ModifierStackCsv.Parse(fileLines);
+                    }
                     catch (Exception e)
                     {
                         Debug.LogError($"{LogTag} 読み込みに失敗しました: {path}: {e.Message}");
@@ -144,7 +156,14 @@ namespace Poly_Ling.Data
                     // 1 ファイルに複数入っているのは旧形式のまとまり。同名のフォルダへ 1 本ずつ分ける。
                     if (list.Count > 1) { SplitBundleFile(path, list); continue; }
 
-                    AddLoaded(list[0], ToRel(path), path);
+                    if (!AddLoaded(list[0], ToRel(path), path)) continue;
+
+                    foreach (var line in fileLines)
+                        if (ModifierStackCsv.TryParseReviewLine(line, out string by, out string at, out string digest))
+                        {
+                            _reviewOf[list[0].Name] = new ScenarioReview { Reviewer = by, ReviewedAt = at, Digest = digest };
+                            break;
+                        }
                 }
             }
             catch (Exception e)
@@ -233,7 +252,10 @@ namespace Poly_Ling.Data
             {
                 string path = ToAbs(file);
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, ModifierStackCsv.Build(new List<ModifierStack> { g }, Header), Encoding.UTF8);
+                string text = ModifierStackCsv.Build(new List<ModifierStack> { g }, Header);
+                if (_reviewOf.TryGetValue(g.Name, out var review))
+                    text += ModifierStackCsv.BuildReviewLine(review.Reviewer, review.ReviewedAt, review.Digest) + Environment.NewLine;
+                File.WriteAllText(path, text, Encoding.UTF8);
                 return true;
             }
             catch (Exception e)
@@ -578,6 +600,124 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
+        // 人間確認の印（チュートリアル計画 3.6）
+        // ================================================================
+
+        /// <summary>人間確認の印 1 件。</summary>
+        public sealed class ScenarioReview
+        {
+            public string Reviewer   = "";
+            public string ReviewedAt = "";
+            public string Digest     = "";
+        }
+
+        /// <summary>シナリオの名前 → 印。中身と合っているかは見ていない（IsReviewed が見る）。</summary>
+        private static Dictionary<string, ScenarioReview> _reviewOf;
+
+        /// <summary>
+        /// 確認の対象の中身のダイジェスト。由来と作成日時は除く（手順が変わらないため）。
+        /// 列を足しても追随するよう、保存と同じ本文から求める。呼び出す子シナリオの中身も混ぜる。
+        /// </summary>
+        private static string ComputeDigest(ModifierStack g, List<string> path = null)
+        {
+            var c = g.Clone();
+            c.Provenance = new ModifierStackProvenance();
+            c.CreatedAt  = default;
+
+            var sb = new StringBuilder(ModifierStackCsv.Build(new List<ModifierStack> { c }, Header));
+            path = path ?? new List<string>();
+            path.Add(g.Name);
+            if (g.Steps != null)
+                foreach (var s in g.Steps)
+                {
+                    if (s == null || !s.IsScenarioRef) continue;
+                    sb.Append("\nref,").Append(s.RefName).Append(',');
+                    var child = FindIn(_items, s.RefName);
+                    if (child == null)                sb.Append("missing");
+                    else if (path.Contains(s.RefName)) sb.Append("cycle");
+                    else                               sb.Append(ComputeDigest(child, path));
+                }
+            path.RemoveAt(path.Count - 1);
+
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+                return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+            }
+        }
+
+        /// <summary>確認済みなら印を返す。印が無い・中身と合わないときは null。</summary>
+        public static ScenarioReview ReviewOf(string name)
+        {
+            var g = FindInternal(name);
+            if (g == null) return null;
+            lock (_lock)
+            {
+                if (!_reviewOf.TryGetValue(name, out var r)) return null;
+                return string.Equals(r.Digest, ComputeDigest(g), StringComparison.Ordinal) ? r : null;
+            }
+        }
+
+        /// <summary>
+        /// 確認済みにできない理由。無ければ空。
+        /// 目的・前提・成功条件が埋まっていて、実行する項目すべてに理由（Purpose）があること。
+        /// queryScenarioAudit の指摘はここでは見ない（Player 層のコマンド。ボタンの処理が見る）。
+        /// </summary>
+        public static List<string> ReviewProblems(string name)
+        {
+            var problems = new List<string>();
+            var g = FindInternal(name);
+            if (g == null) { problems.Add($"シナリオがありません: {name}"); return problems; }
+
+            if (string.IsNullOrWhiteSpace(g.Goal)) problems.Add("目的が空");
+            if (g.Preconditions == null || g.Preconditions.Count == 0) problems.Add("前提が空");
+            if (g.SuccessCriteria == null || g.SuccessCriteria.Count == 0) problems.Add("成功条件が空");
+            if (g.Steps != null)
+                foreach (var s in g.Steps)
+                    if (s != null && (s.IsExecutable || s.IsScenarioRef) && string.IsNullOrWhiteSpace(s.Purpose))
+                        problems.Add($"項目 {s.ScenarioItemId} に理由が無い");
+            return problems;
+        }
+
+        /// <summary>
+        /// 確認済みの印を付ける。画面のボタンからだけ呼ぶ（コマンドにしない）。
+        /// ReviewProblems の検査に落ちたら付けない。
+        /// </summary>
+        public static bool MarkReviewed(string name, string reviewer, out string error)
+        {
+            error = null;
+            var problems = ReviewProblems(name);
+            if (problems.Count > 0) { error = string.Join(" / ", problems); return false; }
+
+            lock (_lock)
+            {
+                var g = FindInternal(name);
+                _reviewOf[name] = new ScenarioReview
+                {
+                    Reviewer   = reviewer ?? "",
+                    ReviewedAt = DateTime.Now.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    Digest     = ComputeDigest(g),
+                };
+                Revision++;
+                if (!WriteOne(g)) { error = $"書き込めませんでした: {name}"; return false; }
+            }
+            return true;
+        }
+
+        /// <summary>印を外す（派生で上書きしたとき）。無ければ何もしない。</summary>
+        public static void ClearReview(string name)
+        {
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (string.IsNullOrEmpty(name) || !_reviewOf.Remove(name)) return;
+                Revision++;
+                var g = FindInternal(name);
+                if (g != null) WriteOne(g);
+            }
+        }
+
+        // ================================================================
         // 検索の索引
         // ================================================================
         //
@@ -605,6 +745,8 @@ namespace Poly_Ling.Data
             public string Haystack;
             /// <summary>項目が属する利用シーンの名前（重複なし）。</summary>
             public List<string> UsageScenes;
+            /// <summary>人間が確認済みか（印があり、中身と合っている）。</summary>
+            public bool Reviewed;
         }
 
         private static List<SearchEntry> _searchIndex;
@@ -641,6 +783,7 @@ namespace Poly_Ling.Data
                         StepCount   = g.StepCount,
                         Haystack    = SearchText(g).ToLowerInvariant(),
                         UsageScenes = scenes,
+                        Reviewed    = _reviewOf.ContainsKey(g.Name ?? "") && ReviewOf(g.Name) != null,
                     });
                 }
 
@@ -887,6 +1030,11 @@ namespace Poly_Ling.Data
                 if (at >= 0) _items[at] = copy;
                 else         _items.Add(copy);
 
+                // 中身が変わったら印を外す（元の中身へ戻しても確認済みに戻さない）。
+                if (_reviewOf.TryGetValue(copy.Name, out var oldReview)
+                    && !string.Equals(oldReview.Digest, ComputeDigest(copy), StringComparison.Ordinal))
+                    _reviewOf.Remove(copy.Name);
+
                 _fileOf[copy.Name] = file;
                 AddFolderChain(FolderOfFile(file));
                 // 中身はもう差し替えた。書き込みに失敗しても版は進める（索引・queryRevisions が見逃さないように）。
@@ -922,6 +1070,7 @@ namespace Poly_Ling.Data
                     }
 
                     _items.RemoveAt(i);
+                    _reviewOf.Remove(name);
                     _fileOf.TryGetValue(name, out var oldFile);
                     _fileOf.Remove(name);
                     DeleteFile(oldFile);
@@ -1100,6 +1249,7 @@ namespace Poly_Ling.Data
                 {
                     if (!_fileOf.ContainsKey(copy.Name)) _fileOf[copy.Name] = NewFileFor(copy.Name, target);
                     AddFolderChain(FolderOfFile(_fileOf[copy.Name]));
+                    _reviewOf.Remove(copy.Name);   // 取り込んだものは未確認（チュートリアル計画 3.6）
                     WriteOne(copy);
                 }
                 Revision++;

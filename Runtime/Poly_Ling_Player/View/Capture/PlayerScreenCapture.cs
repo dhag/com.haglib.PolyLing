@@ -32,8 +32,81 @@ namespace Poly_Ling.Player
         Window,     // ウインドウ全体
     }
 
+    /// <summary>
+    /// 撮影画像に描く矢印の位置の指定。実際のカーソルは撮らない（OS のカーソルは画面キャプチャに写らず、
+    /// UI 自動操作はマウスを使わない）ので、PolyLing が画像へ描く。
+    /// </summary>
+    public readonly struct CaptureCursor
+    {
+        private enum Space { None, ScreenPixel, RangeRatio }
+
+        private readonly Space   _space;
+        private readonly Vector2 _value;
+
+        private CaptureCursor(Space space, Vector2 value)
+        {
+            _space = space;
+            _value = value;
+        }
+
+        /// <summary>描かない。</summary>
+        public static CaptureCursor None => default;
+
+        /// <summary>画面のピクセル位置（左下原点）。ボタンや入力欄の中心とマウスの位置に使う。</summary>
+        public static CaptureCursor AtScreenPixel(Vector2 pixel) => new CaptureCursor(Space.ScreenPixel, pixel);
+
+        /// <summary>撮影範囲に対する比率（左上原点）。</summary>
+        public static CaptureCursor AtRangeRatio(float x, float y) => new CaptureCursor(Space.RangeRatio, new Vector2(x, y));
+
+        public bool IsNone => _space == Space.None;
+
+        /// <summary>
+        /// 切り出し後の画像の中のピクセル位置（左下原点）を返す。
+        /// origin は切り出し矩形の左下（ウインドウ全体なら 0,0）。
+        /// </summary>
+        internal Vector2 ToImagePixel(Vector2Int origin, int width, int height)
+        {
+            if (_space == Space.RangeRatio)
+                return new Vector2(_value.x * width, (1f - _value.y) * height);
+            return new Vector2(_value.x - origin.x, _value.y - origin.y);
+        }
+    }
+
+    /// <summary>矢印の位置の結果。Inside が false なら描いていない。X・Y は撮影範囲に対する比率（左上原点）。</summary>
+    public readonly struct CaptureCursorResult
+    {
+        public readonly float X;
+        public readonly float Y;
+        public readonly bool  Inside;
+
+        public CaptureCursorResult(float x, float y, bool inside)
+        {
+            X = x;
+            Y = y;
+            Inside = inside;
+        }
+    }
+
     public static class PlayerScreenCapture
     {
+        /// <summary>矢印の高さ[px]。保存する画像の上でこの大きさになるよう、縮小の前に大きめに描く。</summary>
+        private const float CursorHeight = 24f;
+
+        /// <summary>矢印の縁取りの太さ[px]。保存する画像の上での値。</summary>
+        private const float CursorBorder = 1.5f;
+
+        /// <summary>矢印の形。先端が原点で、x は右、y は下。高さ 1 に揃えてある。</summary>
+        private static readonly Vector2[] CursorShape =
+        {
+            new Vector2(0f,    0f),
+            new Vector2(0f,    0.85f),
+            new Vector2(0.2f,  0.65f),
+            new Vector2(0.35f, 1f),
+            new Vector2(0.5f,  0.95f),
+            new Vector2(0.35f, 0.6f),
+            new Vector2(0.6f,  0.6f),
+        };
+
         /// <summary>保存先フォルダの既定値。</summary>
         public static string DefaultFolder
             => Path.Combine(Application.persistentDataPath, "PolyLing", "Captures");
@@ -63,6 +136,17 @@ namespace Poly_Ling.Player
         public static void Capture(
             VisualElement crop, string folder, string baseName,
             int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
+            => Capture(crop, folder, baseName, maxLongEdge, format, quality, CaptureCursor.None,
+                       (ok, msg, _) => onDone?.Invoke(ok, msg));
+
+        /// <summary>
+        /// 矢印を描いて撮る。cursor が None なら画像は変えない。
+        /// 矢印の結果は onDone の第 3 引数で返す（描く指定が無い・撮れなかったときは null）。
+        /// </summary>
+        public static void Capture(
+            VisualElement crop, string folder, string baseName,
+            int maxLongEdge, CaptureFormat format, int quality,
+            CaptureCursor cursor, Action<bool, string, CaptureCursorResult?> onDone)
         {
             if (string.IsNullOrWhiteSpace(folder))   folder   = DefaultFolder;
             if (string.IsNullOrWhiteSpace(baseName)) baseName = DefaultFileName;
@@ -74,14 +158,17 @@ namespace Poly_Ling.Player
             {
                 if (!TryGetScreenRect(crop, out var r))
                 {
-                    onDone?.Invoke(false, "切り出し範囲を取得できませんでした。");
+                    onDone?.Invoke(false,
+                        $"切り出し範囲を取得できませんでした（{(string.IsNullOrEmpty(crop.name) ? crop.GetType().Name : crop.name)}: "
+                        + (crop.panel == null ? "パネルに載っていません" : $"矩形 {crop.worldBound}")
+                        + "）。", null);
                     return;
                 }
                 rect = r;
             }
 
             PlayerCaptureRunner.Instance.RunAtEndOfFrame(
-                () => Shoot(rect, folder, baseName, maxLongEdge, format, quality, onDone));
+                () => Shoot(rect, folder, baseName, maxLongEdge, format, quality, cursor, onDone));
         }
 
         // ================================================================
@@ -90,7 +177,8 @@ namespace Poly_Ling.Player
 
         private static void Shoot(
             RectInt? rect, string folder, string baseName,
-            int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
+            int maxLongEdge, CaptureFormat format, int quality,
+            CaptureCursor cursor, Action<bool, string, CaptureCursorResult?> onDone)
         {
             Texture2D shot   = null;
             Texture2D cut    = null;
@@ -100,23 +188,34 @@ namespace Poly_Ling.Player
                 shot = ScreenCapture.CaptureScreenshotAsTexture();
                 if (shot == null)
                 {
-                    onDone?.Invoke(false, "画面のキャプチャに失敗しました。");
+                    onDone?.Invoke(false, "画面のキャプチャに失敗しました。", null);
                     return;
                 }
 
                 Texture2D src = shot;
+                Vector2Int origin = Vector2Int.zero;
                 if (rect.HasValue)
                 {
                     var r = ClampRect(rect.Value, shot.width, shot.height);
                     if (r.width <= 0 || r.height <= 0)
                     {
-                        onDone?.Invoke(false, "切り出し範囲が画面外です。");
+                        onDone?.Invoke(false, "切り出し範囲が画面外です。", null);
                         return;
                     }
                     cut = new Texture2D(r.width, r.height, TextureFormat.RGBA32, false);
                     cut.SetPixels(shot.GetPixels(r.x, r.y, r.width, r.height));
                     cut.Apply();
                     src = cut;
+                    origin = new Vector2Int(r.x, r.y);
+                }
+
+                CaptureCursorResult? cursorResult = null;
+                if (!cursor.IsNone)
+                {
+                    Vector2 tip = cursor.ToImagePixel(origin, src.width, src.height);
+                    bool inside = tip.x >= 0f && tip.x <= src.width && tip.y >= 0f && tip.y <= src.height;
+                    if (inside) DrawCursor(src, tip, maxLongEdge);
+                    cursorResult = new CaptureCursorResult(tip.x / src.width, 1f - tip.y / src.height, inside);
                 }
 
                 if (maxLongEdge > 0 && Mathf.Max(src.width, src.height) > maxLongEdge)
@@ -128,19 +227,19 @@ namespace Poly_Ling.Player
                 byte[] bytes = format == CaptureFormat.Jpeg ? src.EncodeToJPG(quality) : src.EncodeToPNG();
                 if (bytes == null || bytes.Length == 0)
                 {
-                    onDone?.Invoke(false, $"{(format == CaptureFormat.Jpeg ? "JPEG" : "PNG")} への変換に失敗しました。");
+                    onDone?.Invoke(false, $"{(format == CaptureFormat.Jpeg ? "JPEG" : "PNG")} への変換に失敗しました。", null);
                     return;
                 }
 
                 Directory.CreateDirectory(folder);
                 string path = NextPath(folder, baseName, format == CaptureFormat.Jpeg ? ".jpg" : ".png");
                 File.WriteAllBytes(path, bytes);
-                onDone?.Invoke(true, path);
+                onDone?.Invoke(true, path, cursorResult);
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[PlayerScreenCapture] キャプチャ失敗: {e.Message}");
-                onDone?.Invoke(false, e.Message);
+                onDone?.Invoke(false, e.Message, null);
             }
             finally
             {
@@ -148,6 +247,72 @@ namespace Poly_Ling.Player
                 if (cut  != null) UnityEngine.Object.Destroy(cut);
                 if (shot != null) UnityEngine.Object.Destroy(shot);
             }
+        }
+
+        /// <summary>
+        /// 矢印を描く。先端が tip（左下原点のピクセル）に来る。白地に黒の縁取りで、縁取りは形の内側に取る
+        /// （外側に取ると先端が指定の位置より先へ出る）。
+        /// 縮小で同じ大きさに見えるよう、保存する画像での大きさから描く大きさを決める。
+        /// </summary>
+        private static void DrawCursor(Texture2D tex, Vector2 tip, int maxLongEdge)
+        {
+            int longEdge = Mathf.Max(tex.width, tex.height);
+            float scale = maxLongEdge > 0 && longEdge > maxLongEdge ? (float)longEdge / maxLongEdge : 1f;
+            float height = CursorHeight * scale;
+            float border = CursorBorder * scale;
+
+            // 形を画像の向き（x は右、y は下）のまま大きさだけ合わせる。y の反転は画素を読むときに行う。
+            var shape = new Vector2[CursorShape.Length];
+            float maxX = 0f;
+            for (int i = 0; i < shape.Length; i++)
+            {
+                shape[i] = CursorShape[i] * height;
+                if (shape[i].x > maxX) maxX = shape[i].x;
+            }
+
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(tip.x) - 1);
+            int x1 = Mathf.Min(tex.width,  Mathf.CeilToInt(tip.x + maxX) + 1);
+            int y0 = Mathf.Max(0, Mathf.FloorToInt(tip.y - height) - 1);
+            int y1 = Mathf.Min(tex.height, Mathf.CeilToInt(tip.y) + 1);
+            int w = x1 - x0, h = y1 - y0;
+            if (w <= 0 || h <= 0) return;
+
+            var pixels = tex.GetPixels(x0, y0, w, h);
+            for (int j = 0; j < h; j++)
+            {
+                float py = tip.y - (y0 + j + 0.5f);
+                int row = j * w;
+                for (int i = 0; i < w; i++)
+                {
+                    float d = SignedDistance(new Vector2(x0 + i + 0.5f - tip.x, py), shape);
+                    float cover = Mathf.Clamp01(0.5f - d);
+                    if (cover <= 0f) continue;
+                    float white = Mathf.Clamp01(-d - border + 0.5f);
+                    var c = new Color(white, white, white, 1f);
+                    pixels[row + i] = Color.Lerp(pixels[row + i], c, cover);
+                }
+            }
+            tex.SetPixels(x0, y0, w, h, pixels);
+            tex.Apply();
+        }
+
+        /// <summary>多角形までの符号付き距離。内側が負。</summary>
+        private static float SignedDistance(Vector2 p, Vector2[] poly)
+        {
+            float best = float.MaxValue;
+            bool inside = false;
+            for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+            {
+                Vector2 a = poly[j], b = poly[i];
+                Vector2 ab = b - a;
+                float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+                float dist = (p - (a + ab * t)).sqrMagnitude;
+                if (dist < best) best = dist;
+                if ((a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * ab.x / ab.y)
+                    inside = !inside;
+            }
+            best = Mathf.Sqrt(best);
+            return inside ? -best : best;
         }
 
         /// <summary>
@@ -229,6 +394,46 @@ namespace Poly_Ling.Player
             int y    = Screen.height - yTop;
 
             rect = new RectInt(x, y, w, h);
+            return true;
+        }
+
+        /// <summary>
+        /// パネル座標（左上原点・ポイント単位）を画面ピクセル（左下原点）へ変換する。
+        /// 切り出し矩形と同じ式。panelOwner はパネルに載っている要素。
+        /// </summary>
+        public static bool TryPanelToScreenPixel(VisualElement panelOwner, Vector2 panelPoint, out Vector2 pixel)
+        {
+            pixel = default;
+            if (panelOwner == null || panelOwner.panel == null) return false;
+
+            float ppp = panelOwner.panel.scaledPixelsPerPoint;
+            if (ppp <= 0f) ppp = 1f;
+
+            pixel = new Vector2(panelPoint.x * ppp, Screen.height - panelPoint.y * ppp);
+            return true;
+        }
+
+        /// <summary>
+        /// 画面ピクセル（左下原点）を撮影範囲に対する比率（左上原点）へ変換する。
+        /// crop が null ならウインドウ全体。撮影のときと同じ矩形で計算する。
+        /// </summary>
+        public static bool TryScreenPixelToRangeRatio(VisualElement crop, Vector2 pixel, out Vector2 ratio, out bool inside)
+        {
+            ratio  = default;
+            inside = false;
+
+            var r = new RectInt(0, 0, Screen.width, Screen.height);
+            if (crop != null)
+            {
+                if (!TryGetScreenRect(crop, out var cropRect)) return false;
+                r = ClampRect(cropRect, Screen.width, Screen.height);
+                if (r.width <= 0 || r.height <= 0) return false;
+            }
+
+            float x = pixel.x - r.x;
+            float y = pixel.y - r.y;
+            inside = x >= 0f && x <= r.width && y >= 0f && y <= r.height;
+            ratio  = new Vector2(x / r.width, 1f - y / r.height);
             return true;
         }
 

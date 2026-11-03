@@ -190,6 +190,19 @@ namespace Poly_Ling.Data
     /// 生成物の追加は AddGeneratedMeshCommand が担う（ここでは作るところまで）。
     /// </summary>
     [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択面に厚みを付けて別メッシュとして生成する。")]
+    [PLUiRoute("厚み付けパネル", "leftPane.fold.Topology", "leftPane.solidifyBtn", "solidify.run",
+        Run = "solidify.run",
+        Note = "編集対象のオブジェクトで面を選んでから実行する")]
+    [PLUiArg("thickness", "solidify.thickness")]
+    [PLUiArg("segmentsFront", "solidify.segmentsFront")]
+    [PLUiArg("segmentsBack", "solidify.segmentsBack")]
+    [PLUiArg("edgeSizeFront", "solidify.edgeSizeFront")]
+    [PLUiArg("edgeSizeBack", "solidify.edgeSizeBack")]
+    [PLUiArg("edgeInward", "solidify.edgeInward")]
+    [PLUiArg("meshName", "solidify.meshName")]
+    [PLUiArg("addToExisting", "solidify.addToExisting")]
+    [PLUiArg("addTargetIndex", "solidify.addTarget", ValueKind = PLUiValueKind.Object)]
+    [PLUiNoField("編集対象のオブジェクトで決まる", "masterIndices", "objectIds")]
     public class SolidifyCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,

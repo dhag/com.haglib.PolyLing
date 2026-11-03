@@ -22,7 +22,11 @@ namespace Poly_Ling.Data
     [PLResult("state",       PLResultKind.Text, Description = "処理列の評価の結果と理由")]
     [PLUiRoute("処理列パネル（種類を選んで追加）", "leftPane.fold.Select", "leftPane.modifierChainBtn",
         "modifierChain.kind", "modifierChain.add",
-        Note = "編集対象のオブジェクトを選んでから開く。処理列が無ければ追加で新しく作る")]
+        Run = "modifierChain.add",
+        Note = "編集対象のオブジェクトを選んでから開く。処理列が無ければ追加で新しく作る。引数は追加のあと項目を選ぶと欄が出る")]
+    [PLUiArg("kind", "modifierChain.kind", ValueKind = PLUiValueKind.ModifierKind)]
+    [PLUiArgList("argKeys", "argValues", "modifierChain.arg.{0}", Fallback = "modifierChain.detailValue", SelectLast = "modifierChain.items")]
+    [PLUiNoField("編集対象のオブジェクトとその処理列で決まる", "stackName", "sourceMasterIndex")]
     public class AddMeshModifierCommand : PanelCommand
     {
         [PLParam(TextKey = "ModifierStackName", Description = "足す先の処理列のスタック名。省くと新しく作る")]

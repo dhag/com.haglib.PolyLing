@@ -54,6 +54,7 @@
   引数なしの `CaptureMeshObjectSnapshot()` は捕獲元を持たず、取り消しが「その時点で先頭に選ばれているメッシュ」へ
   書き戻される。索引で対象を受けるコマンドでは選択と対象が一致しないので使わない
 - **頂点 ID・面 ID を自動で振らない（`AssignMissingIds` を呼ばない）。**
+- **画面から行えるコマンドには、経路（`PLUiRoute`）と一緒に画面の操作を宣言する。** 実行のボタンは `Run`、引数と入力欄は `PLUiArg`（選択式は `Values`）、画面に欄が無い引数は `PLUiNoField`。画面の文字は書かない。パネルから送られないコマンドは `PLUiManual` で人の操作へ置き換える。パネルの実行がコマンド単体より多くのことをするなら、それを止める欄を `PLUiFixed` で宣言する。画面に見出しが無い欄は `PLUiArg` の `Unlabeled` に呼び方を書く。漏れは `queryCommandAudit` の「[参考]」に、誤った ID は `queryUiAutomationAudit` に出る
 
 ### 既にある口（作る前に探す）
 

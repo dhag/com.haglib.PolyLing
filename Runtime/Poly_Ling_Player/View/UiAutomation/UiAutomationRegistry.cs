@@ -270,6 +270,40 @@ namespace Poly_Ling.Player
             return false;
         }
 
+        /// <summary>宣言された ID の状態。</summary>
+        public enum IdStatus
+        {
+            /// <summary>どこにも無く、作られることもない。誤った ID。</summary>
+            Unknown = 0,
+            /// <summary>今ある。</summary>
+            Exists = 1,
+            /// <summary>今は無いが、置き場の判定（UiDynamicControls.IsPossibleId）が作られ得ると言う。</summary>
+            Possible = 2,
+            /// <summary>今は無く、判定を持たない置き場の ID。開くまで確かめられない。</summary>
+            Unverified = 3,
+        }
+
+        /// <summary>
+        /// 宣言された ID の状態を返す。パネルで図形を選ぶまで・項目を選ぶまで作られない欄を誤りと見分ける。
+        /// TryGetDynamicPanelFor はパネル ID の頭が合えば通すので、誤った ID の検査には使わない。
+        /// </summary>
+        public IdStatus StatusOf(string controlId)
+        {
+            if (string.IsNullOrEmpty(controlId)) return IdStatus.Unknown;
+            if (TryGetControl(controlId, out _)) return IdStatus.Exists;
+
+            bool unverified = false;
+            foreach (var ds in _dynamicSources)
+            {
+                string head = ds.Head;
+                if (!controlId.StartsWith(head, StringComparison.Ordinal)) continue;
+                var judge = ds.Controls.IsPossibleId;
+                if (judge == null) { unverified = true; continue; }
+                if (judge(controlId.Substring(head.Length))) return IdStatus.Possible;
+            }
+            return unverified ? IdStatus.Unverified : IdStatus.Unknown;
+        }
+
         /// <summary>RegisterObject に渡したオブジェクト。</summary>
         public IReadOnlyList<ObjectEntry> Objects => _objects;
 

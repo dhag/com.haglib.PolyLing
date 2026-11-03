@@ -363,6 +363,31 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// 指定スロットの GPU バッファから、頂点 1 個のスクリーン座標と頂点カリングの結果を読む。
+        /// _screenPositions（slot に分かれていない単一配列）も全頂点のキャッシュも上書きしない。
+        /// 呼出前に該当スロットの計算（DispatchCullingForDisplay）を実行しておくこと。
+        /// 座標は左上原点のカメラの画素。w が 0 なら画面の位置が無い（隠した頂点・カメラの後ろの頂点）。
+        /// </summary>
+        public bool ReadVertexScreenState(int slot, int globalIndex, out Vector4 screenPos, out bool culled)
+        {
+            screenPos = default;
+            culled    = false;
+            if (globalIndex < 0 || globalIndex >= _totalVertexCount) return false;
+
+            var screenBuf = GetSlotScreenPosBuffer(slot);
+            var culledBuf = GetVertexCulledBuffer(slot);
+            if (screenBuf == null || culledBuf == null) return false;
+
+            var screen = new Vector4[1];
+            var flag   = new uint[1];
+            screenBuf.GetData(screen, 0, globalIndex, 1);
+            culledBuf.GetData(flag,   0, globalIndex, 1);
+            screenPos = screen[0];
+            culled    = flag[0] != 0u;
+            return true;
+        }
+
+        /// <summary>
         /// 指定スロットの GPU 面カリングバッファ (_FaceCulledBuffer) を
         /// CPU キャッシュ (_faceCulledCache) に読み戻す。ReadBackVertexCulled と同型。
         /// 呼出前に該当スロットの ComputeScreenPositions + DispatchFaceVisibility を実行しておくこと。

@@ -30,6 +30,29 @@ namespace Poly_Ling.Player
 {
     public partial class PolyLingPlayerViewerCore
     {
+        /// <summary>今の読み込みの失敗理由。RunImport が始めに消す。</summary>
+        private string _importFailure;
+
+        /// <summary>
+        /// 読み込みの失敗を状態表示へ書き、コマンドへ返せるように控える。
+        /// 読み込みは CommandQueue.Enqueue の中で同期で走る（CommandQueue.cs）ので、
+        /// RunImport の戻り値でコマンドの失敗にできる。
+        /// </summary>
+        private void ReportImportFailure(string message)
+        {
+            _status        = message;
+            _importFailure = message;
+        }
+
+        /// <summary>読み込みを始めて、失敗理由を返す。成功時は null。</summary>
+        private string RunImport(Action start)
+        {
+            if (_editOps == null) return "読み込みの口がありません（_editOps が null）";
+            _importFailure = null;
+            start();
+            return _importFailure;
+        }
+
         private void OnImportPmx(string filePath, PMXImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {
@@ -68,14 +91,14 @@ namespace Poly_Ling.Player
                     if (mode == PMXImportMode.Replace && target != null)
                     {
                         string err = ReplaceCurrentModelWithImported(model, filePath, "PMX");
-                        if (err != null) { _status = $"PMX読込失敗: {err}"; return; }
+                        if (err != null) { ReportImportFailure($"PMX読込失敗: {err}"); return; }
                         ApplyImportPostOptions(post);
                         return;
                     }
                     _localLoader.LoadModel(filePath, model);
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"PMX読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"PMX読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -137,7 +160,7 @@ namespace Poly_Ling.Player
                     if (mode == MQOImportMode.Replace && target != null)
                     {
                         string err = ReplaceCurrentModelWithImported(model, filePath, "MQO");
-                        if (err != null) { _status = $"MQO読込失敗: {err}"; return; }
+                        if (err != null) { ReportImportFailure($"MQO読込失敗: {err}"); return; }
                         ApplyImportPostOptions(post);
                         return;
                     }
@@ -146,7 +169,7 @@ namespace Poly_Ling.Player
                     UnityEngine.Debug.Log("[LoadDbg] 16 after-LoadModel");
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"MQO読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"MQO読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
             UnityEngine.Debug.Log("[LoadDbg] 17 after-Enqueue");
         }
@@ -586,7 +609,7 @@ namespace Poly_Ling.Player
                     _localLoader.LoadModel(filePath, model);
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"OBJ読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"OBJ読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -606,7 +629,7 @@ namespace Poly_Ling.Player
                         (result.DroppedDegenerateFaces > 0 ? $" / 縮退で除外 {result.DroppedDegenerateFaces}面" : "") + ")";
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"STL読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"STL読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -636,7 +659,7 @@ namespace Poly_Ling.Player
                         UnityEngine.Debug.LogWarning($"[ImportStlFolder] 失敗: {rel}: {reason}");
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"STLフォルダ読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"STLフォルダ読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -656,7 +679,7 @@ namespace Poly_Ling.Player
                         $"Humanoid {result.HumanoidBoneCount}ボーン / 表情 {result.ExpressionCount})" +
                         (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
                 },
-                onError:  msg       => _status = $"VRM読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"VRM読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -676,7 +699,7 @@ namespace Poly_Ling.Player
                         (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"glTF読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"glTF読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
@@ -696,7 +719,7 @@ namespace Poly_Ling.Player
                         (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
                     ApplyImportPostOptions(post);
                 },
-                onError:  msg       => _status = $"FBX読込失敗: {msg}");
+                onError:  msg       => ReportImportFailure($"FBX読込失敗: {msg}"));
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 

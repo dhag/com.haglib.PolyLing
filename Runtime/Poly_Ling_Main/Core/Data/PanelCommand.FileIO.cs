@@ -77,6 +77,37 @@ namespace Poly_Ling.Data
     /// 決めるので持たない。
     /// </summary>
     [PLCommand(Category = "io.import", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.AddOnly, Description = "MQO ファイルを読み込む。作業フォルダの下だけを読める。")]
+    [PLUiRoute("MQO の読み込みパネル", "leftPane.fold.File", "leftPane.mqoLoadBtn", "importMqo.open",
+        Run = "importMqo.open",
+        Note = "実行のボタンはファイル選択のダイアログを開き、選ぶと読み込む。パス欄はダイアログの初期値")]
+    [PLUiArg("filePath", "importMqo.path", Unlabeled = "読み込むファイル")]
+    [PLUiArg("settings.importMode", "importMqo.importMode", Values = "NewModel,Append,Replace")]
+    [PLUiArg("settings.scale", "importMqo.scale")]
+    [PLUiArg("settings.flipX", "importMqo.flipX")]
+    [PLUiArg("settings.flipZ", "importMqo.flipZ")]
+    [PLUiArg("settings.flipUV_V", "importMqo.flipUvV")]
+    [PLUiArg("settings.importMaterials", "importMqo.materials")]
+    [PLUiArg("settings.skipHiddenObjects", "importMqo.skipHiddenObjects")]
+    [PLUiArg("settings.skipEmptyObjects", "importMqo.skipEmptyObjects")]
+    [PLUiArg("settings.mergeObjects", "importMqo.mergeObjects")]
+    [PLUiArg("settings.setMeshHierarchyParent", "importMqo.setMeshHierarchyParent")]
+    [PLUiArg("settings.autoDetectMirrorBranchRoot", "importMqo.autoDetectMirrorBranchRoot")]
+    [PLUiArg("settings.bakeMirror", "importMqo.bakeMirror")]
+    [PLUiArg("settings.alphaCutoff", "importMqo.alphaCutoff")]
+    [PLUiArg("settings.alphaConflict", "importMqo.alphaConflict", Values = "PreferTransparent,PreferAlphaClip")]
+    [PLUiArg("settings.normalMode", "importMqo.normalMode", Values = "FaceNormal,Smooth,Unity,SmoothFacet")]
+    [PLUiArg("settings.smoothingAngle", "importMqo.smoothingAngle")]
+    [PLUiArg("settings.useMqoFacet", "importMqo.useMqoFacet")]
+    [PLUiArg("settings.skipMqoBoneIndices", "importMqo.skipMqoBoneIndices")]
+    [PLUiArg("settings.skipMqoBoneWeights", "importMqo.skipMqoBoneWeights")]
+    [PLUiArg("settings.importBonesFromArmature", "importMqo.importBonesFromArmature")]
+    [PLUiArg("settings.convertToTPose", "importMqo.convertToTPose")]
+    [PLUiArg("humanoidAutoMap", "importMqo.post.humanoidAutoMap")]
+    [PLUiArg("applyOriginCsv", "importMqo.post.applyOriginCsv")]
+    [PLUiArg("originCsvIncludeRotation", "importMqo.post.originCsvIncludeRotation")]
+    [PLUiNoField("パスは画面ではファイル選択のダイアログで選ぶ", "boneWeightCsvPath", "boneCsvPath", "originCsvPath")]
+    [PLUiNoField("画面に欄が無い。既定値のまま読む", "settings.importVerticesAsWorldSpace", "settings.boneScale",
+        "settings.debugVertexInfo", "settings.debugVertexNearUVCount")]
     public class ImportMqoFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む MQO のパス。作業フォルダからの相対でも絶対でもよい",

@@ -76,6 +76,29 @@ namespace Poly_Ling.Serialization
         // 書き
         // ================================================================
 
+        /// <summary>シナリオのファイルの、人間確認の印の行の頭（チュートリアル計画 3.6）。</summary>
+        private const string ReviewLineHead = "#review";
+
+        /// <summary>
+        /// 人間確認の印の行（#review,確認者,日時,ダイジェスト）を作る。
+        /// スタックの中身ではないので Build には入らない。先頭が # なので Parse は読み飛ばす。
+        /// </summary>
+        public static string BuildReviewLine(string reviewer, string reviewedAt, string digest)
+            => $"{ReviewLineHead},{Esc(reviewer ?? "")},{Esc(reviewedAt ?? "")},{Esc(digest ?? "")}";
+
+        /// <summary>人間確認の印の行を読む。印の行でなければ false。</summary>
+        public static bool TryParseReviewLine(string line, out string reviewer, out string reviewedAt, out string digest)
+        {
+            reviewer = reviewedAt = digest = "";
+            if (string.IsNullOrEmpty(line) || !line.StartsWith(ReviewLineHead + ",", StringComparison.Ordinal)) return false;
+            var cols = Split(line);
+            if (cols.Length < 4) return false;
+            reviewer   = Unesc(cols[1]);
+            reviewedAt = Unesc(cols[2]);
+            digest     = Unesc(cols[3]);
+            return digest.Length > 0;
+        }
+
         /// <summary>スタック列を CSV 本文にする。</summary>
         /// <param name="header">先頭の # 行に入れる名前。</param>
         public static string Build(IEnumerable<ModifierStack> groups, string header = "PolyLing_ModifierStacks")

@@ -6,6 +6,8 @@
 //   Topology  … 頂点数・面構成・材質・UV。位置は含まない。
 //   Positions … 頂点の位置（作業中オフセット WorkingPositions を足したもの）と頂点 ID。
 //   Matrix    … 行列（モデル空間で読む入力の VertexToBindWorldMatrix。段 10）。
+//   Weights   … 頂点のボーンウェイト（BoneWeight と MirrorBoneWeight）。処理列だけが使う
+//                （結果が入力のウェイトを写すため。チュートリアル計画 3.8）。
 //   面構成が変わったか・位置だけ変わったかで、処理器の手間が違う（サブディビジョンは
 //   前者で作り直し、後者はステンシルを掛けるだけ）。
 //
@@ -83,6 +85,43 @@ namespace Poly_Ling.Ops
                 }
             }
             return h;
+        }
+
+        /// <summary>
+        /// 頂点のボーンウェイトの署名（BoneWeight と MirrorBoneWeight）。
+        /// 重みは位置と同じく 1e-5 単位へ丸める。ウェイトの無い頂点も「無い」として混ぜる。
+        /// </summary>
+        public static ulong Weights(MeshObject mo)
+        {
+            if (mo == null) return 0UL;
+
+            ulong h = Offset;
+            var vs = mo.Vertices;
+            for (int i = 0; i < vs.Count; i++)
+            {
+                var v = vs[i];
+                h = MixWeight(h, v?.BoneWeight);
+                h = MixWeight(h, v?.MirrorBoneWeight);
+            }
+            return h;
+        }
+
+        private static ulong MixWeight(ulong h, BoneWeight? weight)
+        {
+            unchecked
+            {
+                if (!weight.HasValue) return (h ^ 0xFFFFFFFFUL) * Prime;
+                var w = weight.Value;
+                h = (h ^ (uint)w.boneIndex0) * Prime;
+                h = (h ^ (uint)w.boneIndex1) * Prime;
+                h = (h ^ (uint)w.boneIndex2) * Prime;
+                h = (h ^ (uint)w.boneIndex3) * Prime;
+                h = (h ^ (uint)Mathf.RoundToInt(w.weight0 * 100000f)) * Prime;
+                h = (h ^ (uint)Mathf.RoundToInt(w.weight1 * 100000f)) * Prime;
+                h = (h ^ (uint)Mathf.RoundToInt(w.weight2 * 100000f)) * Prime;
+                h = (h ^ (uint)Mathf.RoundToInt(w.weight3 * 100000f)) * Prime;
+                return h;
+            }
         }
 
         /// <summary>頂点位置（作業中オフセット込み）と頂点 ID の署名。</summary>

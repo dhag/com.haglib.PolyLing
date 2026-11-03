@@ -21,6 +21,7 @@ namespace Poly_Ling.Player
 
         public const string KeyFileName = "Capture.FileName";
         public const string KeyTarget   = "Capture.Target";
+        public const string KeyCursor   = "Capture.Cursor";
 
         /// <summary>書き込み先フォルダのキー。他のパネルと同じ規約（SaveDest.cs）に従う。</summary>
         public const string KeyFolder = SaveDest.Keys.Capture;
@@ -47,6 +48,12 @@ namespace Poly_Ling.Player
             return CaptureTarget.MainView;
         }
 
+        /// <summary>
+        /// 人の操作（パネルのボタンとショートカット）で撮るときにマウスの位置へ矢印を描くか。既定は切。
+        /// uiCapture には効かない（引数に従う）。
+        /// </summary>
+        public static bool GetDrawCursor() => RecentPaths.Get(KeyCursor, "") == "1";
+
         // ================================================================
         // コールバック
         // ================================================================
@@ -69,6 +76,8 @@ namespace Poly_Ling.Player
         private PlayerSaveDestRow _saveDest;
         [UiControl("target", Description = "撮影範囲")]
         private DropdownField     _targetDropdown;
+        [UiControl("cursor", Description = "パネルのボタンとショートカットで撮るとき、マウスの位置に矢印を描く")]
+        private Toggle            _cursorToggle;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の保存先、または失敗理由")]
         private Label         _statusLabel;
         [UiControl("run", Safety = UiSafety.FileOperation, Description = "設定どおりに撮影して PNG を保存する")]
@@ -153,6 +162,11 @@ namespace Poly_Ling.Player
                 e => RecentPaths.Set(KeyTarget, TargetOf(e.newValue).ToString()));
             parent.Add(_targetDropdown);
 
+            _cursorToggle = new Toggle("マウスカーソルを描く") { value = GetDrawCursor() };
+            _cursorToggle.style.marginBottom = 4;
+            _cursorToggle.RegisterValueChangedCallback(e => RecentPaths.Set(KeyCursor, e.newValue ? "1" : "0"));
+            parent.Add(_cursorToggle);
+
             // ── 実行 ───────────────────────────────────────────────
             var runBtn = new Button(() => OnCapture?.Invoke(TargetOf(_targetDropdown.value)))
             {
@@ -183,6 +197,7 @@ namespace Poly_Ling.Player
             _nameField     .SetValueWithoutNotify(GetFileName());
             _saveDest      ?.Refresh();
             _targetDropdown.SetValueWithoutNotify(LabelOf(GetTarget()));
+            _cursorToggle  ?.SetValueWithoutNotify(GetDrawCursor());
         }
 
         /// <summary>直近の保存先・失敗理由を表示する。</summary>

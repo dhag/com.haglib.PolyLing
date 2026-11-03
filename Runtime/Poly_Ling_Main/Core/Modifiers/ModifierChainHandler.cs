@@ -28,6 +28,13 @@
 //   項目の指紋に混ぜる。オブジェクトの移動は頂点の格納値を変えないので、評価器が MatrixInputs
 //   （AddChainEntry が参照と元メッシュを入れる）の行列の署名で印を立て（MarkMatrixChanged）、ここで指紋が変われば流す。
 //
+// 【ウェイト】（チュートリアル計画 3.8）結果は元メッシュのウェイトを写す（厚みなら FaceGroupSolidifier）。
+//   元メッシュ・参照の署名（MeshSig）と書いた結果の署名（ContentSig）にウェイトを混ぜるので、
+//   はしごへ塗る操作と処理列を足す操作の順序を気にしなくてよい。入力のウェイトの変化は評価器が
+//   コマンドの終わりに見る（ModifierEvaluator.MarkChainWeightsChanged）。
+//   面の構成が同じ書き戻しは GPU のバッファが作り直されないので、書いた結果を控え（DrainWrittenResults）、
+//   呼び出し側がウェイト・法線の部分転送を予約する。
+//
 // 【処理範囲】項目の Args の scope.* を MeshModifierScope で読み、元メッシュのパーツ選択辞書で
 //   その項目の入力へ引き直す。位置だけの種類は、範囲の外の頂点を枠組みが入力の位置へ戻す。
 //   面構成を変える種類は範囲の外を通すのを作者が受け持つ。
@@ -104,6 +111,19 @@ namespace Poly_Ling.Modifiers
         public static IReadOnlyList<ItemState> ItemStates(MeshContext result)
             => result != null && _cache.TryGetValue(result, out var c) ? c.States : new List<ItemState>();
 
+        /// <summary>前回の取り出しの後に中身を書いた結果の控え（DrainWrittenResults が空にする）。</summary>
+        private static readonly HashSet<MeshContext> _writtenResults = new HashSet<MeshContext>();
+
+        /// <summary>
+        /// 前回の取り出しの後に中身を書いた結果を into へ移す。面の構成が同じ書き戻しは GPU のバッファが
+        /// 作り直されないので、呼び出し側（評価のパス）がウェイト・法線の部分転送を予約するのに使う。
+        /// </summary>
+        public static void DrainWrittenResults(ICollection<MeshContext> into)
+        {
+            foreach (var r in _writtenResults) into?.Add(r);
+            _writtenResults.Clear();
+        }
+
         /// <summary>
         /// 有効な項目がすべて、位置だけ（MeshModifierChange.PositionsOnly）か、
         /// ドラッグ中の追随の口（IMeshModifierDragFollow。段 8）を持つか。
@@ -157,12 +177,13 @@ namespace Poly_Ling.Modifiers
         }
 
         private static ulong MeshSig(MeshContext mc)
-            => mc?.MeshObject == null ? 0UL : Mix(MeshSignature.Topology(mc.MeshObject), MeshSignature.Positions(mc));
+            => mc?.MeshObject == null ? 0UL
+             : Mix(Mix(MeshSignature.Topology(mc.MeshObject), MeshSignature.Positions(mc)), MeshSignature.Weights(mc.MeshObject));
 
         private static ulong ContentSig(MeshObject mo)
         {
             if (mo == null) return 0UL;
-            ulong h = MeshSignature.Topology(mo);
+            ulong h = Mix(MeshSignature.Topology(mo), MeshSignature.Weights(mo));
             unchecked
             {
                 foreach (var v in mo.Vertices)
@@ -462,6 +483,7 @@ namespace Poly_Ling.Modifiers
 
                 var final = steps.Count == 0 ? c.SourceMesh : c.Items[steps.Count - 1].Output;
                 WriteResult(model, result, final);
+                _writtenResults.Add(result);
                 c.WrittenFp = finalFp;
                 c.WrittenSig = ContentSig(result.MeshObject);
                 c.FailedFp = 0UL;

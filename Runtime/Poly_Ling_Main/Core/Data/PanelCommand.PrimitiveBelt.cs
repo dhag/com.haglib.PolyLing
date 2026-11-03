@@ -960,6 +960,9 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "object.model", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.AddOnly, Description = "空のモデルを 1 つ足してカレントにする。既存のモデルは残す。")]
     [PLResult("modelIndex", PLResultKind.Integer, Description = "作ったモデルの索引")]
     [PLResult("modelName",  PLResultKind.Text,    Description = "作ったモデルの名前")]
+    [PLUiManual("読み込みで新しいモデルを作る", "leftPane.fold.File", "leftPane.mqoLoadBtn", "importMqo.importMode",
+        Note = "空のモデルだけを作る画面は無い。読み込みのモードを新規モデルにすると、読み込みが新しいモデルを作る")]
+    [PLUiFixed("importMqo.importMode", "0", Reason = "読み込みが新しいモデルを作るようにする（選択肢の先頭）")]
     public class CreateEmptyModelCommand : PanelCommand
     {
         [PLParam(Description = "モデルの名前。空にすると自動で付ける")]

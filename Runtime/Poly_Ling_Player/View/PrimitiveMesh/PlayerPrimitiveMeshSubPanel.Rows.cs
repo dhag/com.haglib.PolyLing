@@ -178,19 +178,34 @@ namespace Poly_Ling.Player
         /// 行ヘルパ（SR / IR / TR / V3F / SB）が、ローカライズのキーを ID にして登録する。
         /// 組はカテゴリ名（ViewerCore がカテゴリごとに別パネルとして登録する）。
         /// </summary>
-        private readonly UiDynamicControls _uiDynamic = new UiDynamicControls();
+        private readonly UiDynamicControls _uiDynamic = new UiDynamicControls { IsPossibleId = IsPossibleDynamicId };
 
         /// <summary>
         /// 図形を選ぶボタン。カテゴリを変えるたびに作り直すので、諸元とは別の置き場に持つ。
         /// ID は "shape.&lt;図形のキー&gt;"。
         /// </summary>
-        private readonly UiDynamicControls _uiDynamicShapes = new UiDynamicControls();
+        private readonly UiDynamicControls _uiDynamicShapes = new UiDynamicControls { IsPossibleId = IsPossibleDynamicId };
 
         /// <summary>
         /// 図形に依らない固定部分（姿勢・材質・足し方など）の置き場。
         /// Build のときに一度だけ作るので、図形を選び直しても消してはいけない。
         /// </summary>
-        private readonly UiDynamicControls _uiDynamicFixed = new UiDynamicControls();
+        private readonly UiDynamicControls _uiDynamicFixed = new UiDynamicControls { IsPossibleId = IsPossibleDynamicId };
+
+        /// <summary>
+        /// 図形を選ぶまで作られない諸元の ID か。行ヘルパは辞書のキーをそのまま ID にする（数値欄はキー + "Value"）。
+        /// キーでない固定の ID はここに書く。宣言に使う ID がここに無ければ queryUiAutomationAudit が誤りとして出す。
+        /// </summary>
+        private static bool IsPossibleDynamicId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            if (id.StartsWith("shape.", StringComparison.Ordinal)
+                && PrimitiveMeshTexts.HasKey(id.Substring("shape.".Length))) return true;
+            if (id == "meshSource" || id == "meshSource.refresh" || id == "meshSourceMulti.refresh") return true;
+            if (PrimitiveMeshTexts.HasKey(id)) return true;
+            return id.EndsWith("Value", StringComparison.Ordinal)
+                && PrimitiveMeshTexts.HasKey(id.Substring(0, id.Length - "Value".Length));
+        }
 
         /// <summary>
         /// 行ヘルパ（SR / IR / TR / V3F / SB）が今どちらへ登録するか。

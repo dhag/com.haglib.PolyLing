@@ -42,6 +42,65 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 頂点がメイン 3D 画面のどこに映るかを読む（queryCapturePosition）。
+        ///
+        /// GetScreenPositions() は使わない。読み戻しは PresentAll の末尾の 1 か所だけで、
+        /// ポインタ移動かカメラ変更が一度も無いと走らず、値は最後に触ったビューのカメラのものになる。
+        /// ここではメイン 3D の slot をこの呼び出しのときに計算し直し、その頂点 1 個だけを読む。
+        /// slot を計算し直しても、カメラも設定も同じなので表示は変わらない。_screenPositions も変えない。
+        ///
+        /// viewRatio は画面に対する比率（左上原点）。projected が false なら画面の位置が無い。
+        /// frontFacing は背面カリングの判定で、カリングを切っているビューでは常に true。
+        /// </summary>
+        public bool TryReadPerspectiveVertex(
+            int contextMeshIndex, int localVertexIndex,
+            out Vector2 viewRatio, out bool projected, out bool frontFacing, out string error)
+        {
+            viewRatio   = default;
+            projected   = false;
+            frontFacing = false;
+            error       = null;
+
+            var adapter = _renderer?.GetAdapter(0);
+            var bm      = adapter?.BufferManager;
+            var cam     = PerspectiveViewport?.Cam;
+            if (adapter == null || !adapter.IsInitialized || bm == null || cam == null)
+            {
+                error = "描画の準備ができていない";
+                return false;
+            }
+            if (!bm.GpuComputeAvailable)
+            {
+                error = "GPU 計算が使えないので頂点の画面位置を読めない";
+                return false;
+            }
+
+            int unified = adapter.ContextToUnifiedMeshIndex(contextMeshIndex);
+            int global  = bm.LocalToGlobalVertexIndex(unified, localVertexIndex);
+            if (global < 0)
+            {
+                error = $"描画のバッファに無い頂点: masterIndex={contextMeshIndex} vertexIndex={localVertexIndex}";
+                return false;
+            }
+
+            adapter.DispatchCullingForDisplay(
+                cam, _displaySettings[SlotPerspective].BackfaceCulling, SlotPerspective, readback: false);
+
+            if (!bm.ReadVertexScreenState(SlotPerspective, global, out Vector4 screen, out bool culled))
+            {
+                error = "頂点の画面位置を読めない";
+                return false;
+            }
+
+            projected = screen.w > 0.5f;
+            if (!projected) return true;
+
+            viewRatio   = new Vector2(screen.x / cam.pixelWidth, screen.y / cam.pixelHeight);
+            frontFacing = !culled;
+            return true;
+        }
+
+        /// <summary>
         /// グローバル頂点インデックスが背面カリングで可視かどうかを返す。
         /// ReadBackVertexFlags() の後に有効。
         ///
