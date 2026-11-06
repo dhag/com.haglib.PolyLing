@@ -216,6 +216,7 @@ namespace Poly_Ling.Player
             _notifyPanels     = notifyPanels     ?? throw new ArgumentNullException(nameof(notifyPanels));
             _rebuildModelList = rebuildModelList ?? throw new ArgumentNullException(nameof(rebuildModelList));
             _undoController   = undoController;
+            ModifierEvaluator.GeneratorDragFollower = FollowGeneratorDrag;
             _commandQueue     = commandQueue;
             _structureNotifyCount = structureNotifyCount;
         }
@@ -583,6 +584,9 @@ namespace Poly_Ling.Player
 
         /// <summary>作業軸の状態差し替えコマンドの実行。</summary>
         public Func<SetWorkAxisCommand, string> OnSetWorkAxis;
+
+        /// <summary>処理列の項目のハンドルのモードへ入る・抜ける（モディファイア操作統合計画 段 8）。</summary>
+        public Func<ShowModifierGizmoCommand, string> OnShowModifierGizmo;
 
         /// <summary>作業軸ライブラリ呼び出しコマンドの実行。</summary>
         public Func<RecallWorkAxisCommand, string> OnRecallWorkAxis;
@@ -1380,6 +1384,7 @@ namespace Poly_Ling.Player
             bool createsOwnProject =
                    cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
                 || cmd is AddMeshFromArraysCommand   || cmd is CreateMagicCircleCommand
+                || cmd is CreateSweepMeshCommand
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
                 || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
                 || cmd is ImportStlFileCommand       || cmd is ImportStlFolderCommand

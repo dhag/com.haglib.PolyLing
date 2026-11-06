@@ -93,6 +93,19 @@ namespace Poly_Ling.Player
                     });
                     return true;
 
+                case SubdivideCurveCommand c:
+                {
+                    int scAdded = 0;
+                    RunLineGroupEdit(project, model, c.MasterIndex, "カーブの点を増やす", mo =>
+                    {
+                        var sel = model.GetMeshContext(c.MasterIndex)?.Selection;
+                        bool ok = LineGroupEditOps.SubdivideLines(mo, sel?.Lines, out scAdded, out string r);
+                        return (ok, r, -1);
+                    },
+                    extraData: d => d.Int("addedPoints", scAdded));
+                    return true;
+                }
+
                 case DeleteLineGroupCommand c:
                     RunLineGroupEdit(project, model, c.MasterIndex, "線分群の削除", mo =>
                     {

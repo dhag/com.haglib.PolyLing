@@ -1,5 +1,7 @@
 // MirrorDisplayMeshModifier.cs
-// 処理列の種類「ミラー（表示）」（末尾固定・並べ替え不可）。結果オブジェクトの表示ミラーを持つ。
+// 処理列の種類「ミラー」の MQO の属性で持つ形（末尾固定・並べ替え不可）。結果オブジェクトの表示ミラーを持つ。
+// 追加メニューには出さない。ミラー（mirrorBake）のカードの詳細のチェック（setMeshModifierMirrorAttribute）で切り替える。
+// 既存のシナリオ・保存データのために種類名 mirrorDisplay と addMeshModifier での追加は残す。
 // Runtime/Poly_Ling_Main/Core/Modifiers/Kinds/ に配置
 //
 // 【正本】PolyLing_モディファイア枠組み計画.md 3.6・段 8
@@ -24,13 +26,13 @@ namespace Poly_Ling.Modifiers
     public enum MirrorDisplayType
     {
         /// <summary>分離（MirrorType 1）。</summary>
-        Separate = 1,
+        [InspectorName("分離")] Separate = 1,
         /// <summary>結合（MirrorType 2）。</summary>
-        Merge = 2,
+        [InspectorName("結合")] Merge = 2,
     }
 
-    [PLMeshModifier("mirrorDisplay", DisplayName = "ミラー（表示）", Category = "mirror", Change = MeshModifierChange.PositionsOnly,
-                    PinnedLast = true,
+    [PLMeshModifier("mirrorDisplay", DisplayName = "ミラー", Category = "mirror", Change = MeshModifierChange.PositionsOnly,
+                    PinnedLast = true, HideFromMenu = true, WholeMeshOnly = true,
                     Description = "結果オブジェクトに表示ミラーを付ける（ミラー側は結果から派生する別オブジェクト）。メッシュは変えない。列の最後に 1 つだけ置け、並べ替えできない")]
     public sealed class MirrorDisplayMeshModifier : IMeshModifier, IMeshModifierPositions
     {

@@ -82,6 +82,9 @@ namespace Poly_Ling.STL
                 if (settings.ExportVerticesInWorldSpace)
                     model.ComputeWorldMatrices();
 
+                // モディファイアの元と結果を 1 つのオブジェクトにして書く（ワールド行列を最新化した後で写す）。
+                model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+
                 var solids = Collect(model, settings);
 
                 int triCount = 0;

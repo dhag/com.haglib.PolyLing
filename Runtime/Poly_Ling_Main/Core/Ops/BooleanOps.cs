@@ -182,6 +182,7 @@ namespace Poly_Ling.Ops
 
                 float actualMergeThreshold = mergeVertices ? mergeThreshold : 0f;
                 int postprocessAttempts = 0;
+                string attemptLog = "";
                 if (mergeVertices)
                 {
                     while (true)
@@ -200,11 +201,10 @@ namespace Poly_Ling.Ops
                         // 大きすぎる結合距離は別の頂点まで潰してしまう。
                         // BSPを再演算せず、未結合の結果から後処理だけを最大4回試す。
                         // 破れた結果を正常扱いして A を置き換えたり B を削除したりしない。
+                        attemptLog += $"（結合距離 {actualMergeThreshold:G6}: 三角形分割 {(triangulated ? "成功" : "失敗")} / 境界辺 {topology.BoundaryEdges} / " +
+                                $"3面以上の共有辺 {topology.NonManifoldEdges} / 同方向の共有辺 {topology.InconsistentWindingEdges}）";
                         if (postprocessAttempts >= 4 || actualMergeThreshold <= 1e-7f)
-                            return Fail($"接続検証に失敗: 三角形分割 {(triangulated ? "成功" : "失敗")} / 境界辺 {topology.BoundaryEdges} / " +
-                                $"3面以上の共有辺 {topology.NonManifoldEdges} / " +
-                                $"同方向の共有辺 {topology.InconsistentWindingEdges} " +
-                                $"（結合距離 {actualMergeThreshold:G6}）");
+                            return Fail("接続検証に失敗（入力が閉じた立体でない、または面が交差していると起きます）: " + attemptLog);
 
                         actualMergeThreshold = Mathf.Max(1e-7f, actualMergeThreshold * 0.1f);
                         result = new MeshObject(name);

@@ -84,6 +84,14 @@ namespace Poly_Ling.MeshListV2
             topRow.Add(_showMirrorSideToggle);
             root.Add(topRow);
 
+            // 診断用。モディファイアの結果は既定で一覧に出さない（操作統合計画 段 2）。
+            // 上の行は既に横に長いので別の行に置く。
+            _showModifierResultsToggle = new Toggle("モディファイアの結果も表示") { name = "show-modifier-results-toggle", value = false };
+            _showModifierResultsToggle.style.color = new StyleColor(Color.white);
+            _showModifierResultsToggle.tooltip = "モディファイアの結果の行も出す（診断用）。選ぶと元が選ばれる";
+            _showModifierResultsToggle.style.marginBottom = 3;
+            root.Add(_showModifierResultsToggle);
+
             // ── 選択色の固定
             //    組み込みテーマは選択行をフォーカスの有無で描き分ける
             //    （あり=青 rgb(58,114,176) / なし=白っぽい灰 rgb(174,174,174)）。

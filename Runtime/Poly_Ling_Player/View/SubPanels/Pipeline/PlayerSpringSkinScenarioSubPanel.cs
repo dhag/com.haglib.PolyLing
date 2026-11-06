@@ -201,7 +201,7 @@ namespace Poly_Ling.Player
             @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\ローカル原点MoldelFKDL_5T.csv";
 
         private const string DefaultProfileCsvPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\線分プロファイルなど。\frill_profile_cos.csv";
+            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\データ\線分プロファイルなど。\frill_profile_cos.csv";
 
         private const string DefaultVrmPath =
             @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\サンドボックス_シナリオ用\MCPで自動生成\tmpp.vrm";

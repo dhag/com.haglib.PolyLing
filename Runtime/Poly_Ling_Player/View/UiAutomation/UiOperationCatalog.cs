@@ -289,7 +289,9 @@ namespace Poly_Ling.Player
             {
                 bool has = given.TryGetValue(a.Arg, out string raw);
                 if (given.Count > 0 && !has) continue;
-                ops.Add(MakeOp(registry, t, a.Arg, a.Control, a.Values, a.ValueKind, raw ?? ""));
+                var aop = MakeOp(registry, t, a.Arg, a.Control, a.Values, a.ValueKind, raw ?? "");
+                if (aop.Built && aop.Label.Length == 0) aop.Label = a.Unlabeled ?? "";
+                ops.Add(aop);
             }
 
             var list = t.GetCustomAttribute<PLUiArgListAttribute>(inherit: false);
@@ -342,6 +344,13 @@ namespace Poly_Ling.Player
         private static ArgOp MakeOp(UiAutomationRegistry registry, Type t, string arg, string control,
                                     string values, PLUiValueKind kind, string raw)
         {
+            // 種類ごとにボタンがある欄（モディファイアの追加メニュー）は、値から ID を作る。
+            if (kind == PLUiValueKind.ModifierKind && control.IndexOf("{0}", StringComparison.Ordinal) >= 0)
+            {
+                if (string.IsNullOrEmpty(raw)) return new ArgOp { Arg = arg, Control = control };
+                control = string.Format(CultureInfo.InvariantCulture, control, raw);
+            }
+
             var op = new ArgOp { Arg = arg, Control = control, Raw = raw };
 
             if (!registry.TryGetControl(control, out var c) || c.Element == null)
@@ -356,6 +365,15 @@ namespace Poly_Ling.Player
             if (c.Getter != null) op.Current = c.Getter() ?? "";
             else if (UiAutomationService.TryReadValue(e, out string cur)) op.Current = cur;
             if (string.IsNullOrEmpty(raw)) return op;
+
+            // 種類のボタン：ボタンの文字が値の表記。見出しは宣言の Unlabeled（ReadArgs・Describe が入れる）。
+            if (kind == PLUiValueKind.ModifierKind && e is Button)
+            {
+                op.ValueLabel = op.Label;
+                op.Label      = "";
+                op.UiValue    = raw;
+                return op;
+            }
 
             PanelCommandFactory.TryGetArgParam(t, arg, out Type argType, out PLParamAttribute attr);
             if (kind == PLUiValueKind.Auto && string.IsNullOrEmpty(values) && attr != null && attr.IsMeshRef)

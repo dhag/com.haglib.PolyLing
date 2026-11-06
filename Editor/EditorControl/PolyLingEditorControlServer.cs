@@ -346,7 +346,8 @@ namespace Poly_Ling.EditorControl
         //                                  |"tools_generic"|"tools_search"|"tools_describe"
         //                                  |"refresh"|"recompile"
         //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"
-        //                                  |"prefab_add_component"|"build_player"|"build_all"}
+        //                                  |"prefab_add_component"|"build_player"|"build_all"
+        //                                  |"scene_*"（SceneObjectOps。scene_help で一覧）}
         //       call と prefab_*・build_* は "params" を伴う（HandleCall・「プレファブ」「build_player」節の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
@@ -419,8 +420,29 @@ namespace Poly_Ling.EditorControl
                 }
 
                 default:
+                    // scene_* … 開いているシーンのオブジェクト操作（MCP の unity_scene_call）。
+                    //   名前の一覧は SceneObjectOps が持つ。MCP サーバは "scene_" を付けて転送するだけ。
+                    if (op.StartsWith(ScenePrefix, StringComparison.Ordinal))
+                        return LogResponse(HandleScene(op, msg));
                     return LogResponse(BuildError(op, $"unknown action: {op}"));
             }
+        }
+
+        /// <summary>シーン操作の action の頭。</summary>
+        private const string ScenePrefix = "scene_";
+
+        /// <summary>
+        /// scene_* を SceneObjectOps へ渡す。scene_help 以外は Edit モードで待機中のときだけ受ける
+        /// （Play 中に作った GameObject は Play 終了で破棄される。止めるのは要求元の役目）。
+        /// </summary>
+        private static string HandleScene(string op, RemoteMessage msg)
+        {
+            string name = op.Substring(ScenePrefix.Length);
+
+            if (name != "help" && !CheckEditModeIdle(op, out string busy)) return busy;
+
+            bool ok = Poly_Ling.EditorIO.SceneObjectOps.Run(name, msg?.Params, out string message);
+            return ok ? BuildOk(op, message) : BuildError(op, message);
         }
 
         /// <summary>生成した応答 JSON をコンソールへ出力し、そのまま返す。</summary>
@@ -730,6 +752,7 @@ namespace Poly_Ling.EditorControl
             ReadBool(raw, "attachSpringBones",         ref opt.AttachSpringBones,         ref err);
             ReadBool(raw, "writeAttach",               ref opt.WriteAttach,               ref err);
             ReadBool(raw, "tolerantMirrorBranch",      ref opt.TolerantMirrorBranch,      ref err);
+            ReadBool(raw, "applyModifiers",            ref opt.ApplyModifiers,            ref err);
             if (err != null) return BuildError(op, err);
 
             if (TryGetParam(raw, "rendererMode", out string rendererMode))

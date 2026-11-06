@@ -1,12 +1,13 @@
 // MirrorBakeMeshModifier.cs
-// 処理列の種類「ミラー（実体化）」（面構成を変える）。入力を平面で鏡映した半身を同じメッシュの中に足す。
+// 処理列の種類「ミラー」（面構成を変える）。入力を平面で鏡映した半身を同じメッシュの中に足す。Blender の Mirror に当たる。
+// MQO の属性で持つ形（mirrorDisplay）へは、カードの詳細のチェック（setMeshModifierMirrorAttribute）で切り替える。
 // Runtime/Poly_Ling_Main/Core/Modifiers/Kinds/ に配置
 //
 // 【正本】PolyLing_モディファイア枠組み計画.md 3.6・段 8
 //
 // 【実処理】MirrorBaker.BakeMirror（bakeMirror コマンドと同じもの）を 1 回呼ぶ。境界はしきい値で決める
 //   （平面からの距離が threshold 未満の頂点を元とミラーで 1 つにする）。列のどこにでも置ける。
-//   「ミラー（表示）」（mirrorDisplay）とは別物：こちらは結果のメッシュそのものに頂点と面が増える。
+//   MQO の属性で持つ形（mirrorDisplay）とは別物：こちらは結果のメッシュそのものに頂点と面が増える。
 //
 // 【範囲】全体だけ。全体以外は失敗。
 //
@@ -28,7 +29,8 @@ using UnityEngine;
 
 namespace Poly_Ling.Modifiers
 {
-    [PLMeshModifier("mirrorBake", DisplayName = "ミラー（実体化）", Category = "topology", Change = MeshModifierChange.Topology,
+    [PLMeshModifier("mirrorBake", DisplayName = "ミラー", Category = "topology", Change = MeshModifierChange.Topology,
+                    WholeMeshOnly = true,
                     Description = "入力を平面で鏡映した半身を同じメッシュに足す（MirrorBaker.BakeMirror）。境界の頂点は 1 つにまとめる。範囲は全体だけ")]
     public sealed class MirrorBakeMeshModifier : IMeshModifier, IMeshModifierDragFollow
     {
@@ -62,7 +64,7 @@ namespace Poly_Ling.Modifiers
             var src = input?.Source;
             if (src == null) { error = "入力のメッシュが無い"; return null; }
             if (input.Scope != null && !input.Scope.IsAll)
-            { error = "ミラー（実体化）の範囲は全体だけ"; return null; }
+            { error = "ミラーは頂点グループを使えない（全体だけ）"; return null; }
             if (src.VertexCount == 0) { error = "入力に頂点が無い"; return null; }
 
             int axis = Axis == SymmetryAxis.Y ? 1 : Axis == SymmetryAxis.Z ? 2 : 0;

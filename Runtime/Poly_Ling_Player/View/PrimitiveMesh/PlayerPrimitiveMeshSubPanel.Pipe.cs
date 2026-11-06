@@ -123,9 +123,9 @@ namespace Poly_Ling.Player
                 v => { _pipeP.InheritBeltWeights = v; D(); }));
 
             var pipeInheritHint = new Label(
-                "取り込み元のはしごに塗ってあるボーンウェイトを、生成した頂点へ配ります。"
+                "取り込み元の帯に塗ってあるボーンウェイトを、生成した頂点へ配ります。"
                    + "頂点は線分の両端のウェイトを断面の x で混ぜたものになります。"
-                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。"
+                   + "帯の点と位置が合う頂点から引くので、帯を塗っていなければ何も起きません。"
                    + "厚み付けと重複頂点の結合を越えて残ります。");
             pipeInheritHint.style.fontSize     = 10;
             pipeInheritHint.style.whiteSpace   = WhiteSpace.Normal;
@@ -177,7 +177,7 @@ namespace Poly_Ling.Player
         private PipeBeltExtractParams _pipeBeltP = PipeBeltExtractParams.Default;
         private string _pipeBeltKeepText = "";
 
-        [UiControl("pipe.beltInfo", Safety = UiSafety.ReadOnly, Description = "パイプから梯子を取り出した結果")]
+        [UiControl("pipe.beltInfo", Safety = UiSafety.ReadOnly, Description = "パイプから帯を取り出した結果")]
         private Label  _pipeBeltInfo;
 
         private void BuildPipeBeltExtractUI(VisualElement c)

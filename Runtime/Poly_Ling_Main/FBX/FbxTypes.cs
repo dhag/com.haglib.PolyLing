@@ -106,6 +106,9 @@ namespace Poly_Ling.Fbx
         [PLParam(Description = "非表示のメッシュも書き出す")]
         public bool ExportInvisibleObjects = false;
 
+        [PLParam(Description = "モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す")]
+        public bool ApplyModifiers = true;
+
         [PLParam(Description = "テクスチャを FBX の中へ埋め込む（バイナリのときだけ効く）。切ると隣のフォルダの画像を参照するだけになる")]
         public bool EmbedTextures = true;
 
@@ -138,6 +141,7 @@ namespace Poly_Ling.Fbx
                 ExportSkinning         = this.ExportSkinning,
                 ExportMorphTargets     = this.ExportMorphTargets,
                 ExportInvisibleObjects = this.ExportInvisibleObjects,
+                ApplyModifiers         = this.ApplyModifiers,
                 EmbedTextures          = this.EmbedTextures,
                 Ascii                  = this.Ascii,
                 TextureFolder          = this.TextureFolder,

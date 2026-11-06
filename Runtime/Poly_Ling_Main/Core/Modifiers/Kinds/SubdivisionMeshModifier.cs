@@ -26,6 +26,7 @@ using UnityEngine;
 namespace Poly_Ling.Modifiers
 {
     [PLMeshModifier("subdivision", DisplayName = "サブディビジョン", Category = "topology", Change = MeshModifierChange.Topology,
+                    WholeMeshOnly = true,
                     Description = "入力を Catmull-Clark で細分化する（SubdivisionOps.TryBuild）。範囲は全体だけ。ドラッグ中はステンシルで追随する")]
     public sealed class SubdivisionMeshModifier : IMeshModifier, IMeshModifierDragFollow
     {

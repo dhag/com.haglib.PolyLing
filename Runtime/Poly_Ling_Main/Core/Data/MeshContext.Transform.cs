@@ -199,6 +199,13 @@ namespace Poly_Ling.Data
             set { if (MeshObject != null) MeshObject.HideFaceShading = value; }
         }
 
+        /// <summary>モディファイアの元の線（辺と頂点）を隠す。実体は MeshObject 側。保存しない。</summary>
+        public bool HideCageLines
+        {
+            get => MeshObject?.HideCageLines ?? false;
+            set { if (MeshObject != null) MeshObject.HideCageLines = value; }
+        }
+
         /// <summary>
         /// 法線の自動再計算から除外するセット一覧。実体は MeshObject 側。
         /// </summary>

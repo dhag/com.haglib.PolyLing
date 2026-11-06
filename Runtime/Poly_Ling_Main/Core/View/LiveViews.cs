@@ -397,6 +397,11 @@ namespace Poly_Ling.View
 
         /// <summary>プロジェクトを持たないので作れない（出力先の解決にプロジェクトが要る）。空。</summary>
         public IReadOnlyList<ModifierStackView> ModifierStacks => Array.Empty<ModifierStackView>();
+        public IReadOnlyList<ModifierStackView> ModifierStacksOf(int masterIndex) => Array.Empty<ModifierStackView>();
+        public IReadOnlyList<ModifierUsageView> ModifierUsagesOf(int masterIndex) => LiveProjectView.BuildModifierUsagesOf(_model, masterIndex);
+        public IReadOnlyCollection<int> ModifierObjectIndices => LiveProjectView.BuildModifierObjectIndices(_model);
+        public IReadOnlyCollection<int> ModifierResultIndices => Poly_Ling.Modifiers.ModifierResultOps.ResultIndices(_model);
+        public IReadOnlyDictionary<int, int> ModifierResultParents => Poly_Ling.Modifiers.ModifierResultOps.ResultParents(_model);
 
         public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex)
             => LiveProjectView.BuildModifierScopeFromSelection(_model, masterIndex);
@@ -631,13 +636,16 @@ namespace Poly_Ling.View
         /// <summary>
         /// モディファイアスタックの表示用の写しを作る（PlayerModifierStackSubPanel にあった判定と文面をここへ移した）。
         /// </summary>
-        public static IReadOnlyList<ModifierStackView> BuildModifierStackViews(ProjectContext project, ModelContext model)
+        /// <param name="filter">写すスタックの条件。null なら全部。</param>
+        /// <param name="withStale">要更新の判定（入力の全頂点を走査する）をするか。false なら Stale は常に false。</param>
+        public static IReadOnlyList<ModifierStackView> BuildModifierStackViews(
+            ProjectContext project, ModelContext model, Predicate<Poly_Ling.Data.ModifierStack> filter = null, bool withStale = true)
         {
             var list = new List<ModifierStackView>();
             if (model?.ModifierStacks == null) return list;
             foreach (var g in model.ModifierStacks)
             {
-                if (g == null) continue;
+                if (g == null || (filter != null && !filter(g))) continue;
 
                 // 出力先は項目ごとに複数ありうる。1 つでも引けなければ印を立てる。
                 bool outMissing = !g.HasOutput;
@@ -752,6 +760,29 @@ namespace Poly_Ling.View
                             sv.Writable[k] = sv.IsExecutable
                                 && Poly_Ling.Ops.ModifierStackOps.ArgWriteBlockReason(stType, sorted[k].Key) == null;
                         }
+
+                        // 入力と出力（モディファイアパネルの履歴カード）。
+                        var outIdx = new List<int>();
+                        foreach (ulong oid in st.OutputObjectIds)
+                        {
+                            var omc = Poly_Ling.Ops.ModifierStackOps.Resolve(project, oid);
+                            outIdx.Add(omc != null ? model.MeshContextList.IndexOf(omc) : -1);
+                        }
+                        sv.OutputIndices = outIdx.ToArray();
+
+                        var inIdx   = new List<int>();
+                        var inNames = new List<string>();
+                        var inSeen  = new HashSet<ulong>();
+                        foreach (var ik in Poly_Ling.Data.ModifierInventory.InputKeys(stType))
+                            foreach (ulong iid in st.GetMeshRefIds(ik.Key))
+                            {
+                                if (iid == 0UL || !inSeen.Add(iid)) continue;
+                                var imc = Poly_Ling.Ops.ModifierStackOps.Resolve(project, iid);
+                                inIdx.Add(imc != null ? model.MeshContextList.IndexOf(imc) : -1);
+                                inNames.Add(imc != null ? imc.Name : $"(見つからない: {iid})");
+                            }
+                        sv.InputIndices = inIdx.ToArray();
+                        sv.InputNames   = inNames.ToArray();
                     }
                     stepViews.Add(sv);
                 }
@@ -768,6 +799,8 @@ namespace Poly_Ling.View
                     ChainResultIndex = chainRes != null ? model.MeshContextList.IndexOf(chainRes) : -1,
                     ChainSourceName  = chainSrc?.Name ?? "",
                     ChainResultName  = chainRes?.Name ?? "",
+                    CageVisible      = !(chainSrc?.HideCageLines ?? false),
+                    DisplayUpToItemId = g.DisplayUpToItemId ?? "",
                     ChainResult      = chainResult,
                     ChainMessage     = chainMessage,
                     Name          = g.Name,
@@ -775,7 +808,7 @@ namespace Poly_Ling.View
                     StepCount     = g.StepCount,
                     AutoUpdate    = g.AutoUpdate,
                     OutputMissing = outMissing,
-                    Stale         = !outMissing && Poly_Ling.Ops.ModifierStackOps.IsStale(project, g),
+                    Stale         = withStale && !outMissing && Poly_Ling.Ops.ModifierStackOps.IsStale(project, g),
                     Detail        =
                           $"項目: {g.StepCount} 件\n"
                         + string.Join("\n", stepLines) + "\n"
@@ -785,6 +818,122 @@ namespace Poly_Ling.View
                 });
             }
             return list;
+        }
+
+        /// <summary>
+        /// 描画オブジェクトに関わるスタックの写し（モディファイアパネル用。操作統合計画 段 1）。
+        /// 結果や子を選んでいるときは元を基準にする。元を出力に持つ生成スタックも返す。
+        /// </summary>
+        /// <summary>
+        /// オブジェクトを読んでいる項目（Maya の OUTPUTS に当たる。操作統合計画 段 7）。
+        /// 一覧に出ない帯は通り抜けて、帯を読む項目を出す。オブジェクト自身を出力にする項目と、
+        /// そのオブジェクトを元にするモディファイア（同じパネルのカードに出る）は出さない。
+        /// </summary>
+        public static IReadOnlyList<ModifierUsageView> BuildModifierUsagesOf(ModelContext model, int masterIndex)
+        {
+            var mc = masterIndex >= 0 ? model?.GetMeshContext(masterIndex) : null;
+            if (mc == null) return Array.Empty<ModifierUsageView>();
+
+            const string RibbonAction = "edgeRibbonFace";
+            var graph = Poly_Ling.Ops.ModifierEvaluator.GetGraph(model);
+
+            // 調べる入力：オブジェクト自身と、オブジェクトを作った項目が読む帯。
+            var sources = new List<MeshContext> { mc };
+            var producers = new HashSet<Poly_Ling.Ops.ModifierEvaluator.Entry>();
+            foreach (var e in graph)
+            {
+                if (!e.Outputs.Contains(mc)) continue;
+                producers.Add(e);
+                foreach (var kv in e.Inputs)
+                    foreach (var up in graph)
+                        if (up.Step?.Action == RibbonAction && up.Outputs.Contains(kv.Value) && !sources.Contains(kv.Value))
+                            sources.Add(kv.Value);
+            }
+
+            var result = new List<ModifierUsageView>();
+            var seen = new HashSet<Poly_Ling.Ops.ModifierEvaluator.Entry>();
+            for (int i = 0; i < sources.Count; i++)
+            {
+                foreach (var e in graph)
+                {
+                    if (!e.HasInput(sources[i]) || producers.Contains(e) || !seen.Add(e)) continue;
+                    // 帯は通り抜ける。
+                    if (e.Step?.Action == RibbonAction)
+                    {
+                        foreach (var o in e.Outputs) if (!sources.Contains(o)) sources.Add(o);
+                        continue;
+                    }
+                    if (e.IsChain || e.Step?.Action == Poly_Ling.Ops.SubdivisionSync.Action) continue;
+                    var output = e.FirstOutput;
+                    result.Add(new ModifierUsageView
+                    {
+                        Action       = e.Step?.Action ?? "",
+                        OutputName   = output?.Name ?? "",
+                        OutputIndex  = output != null ? model.MeshContextList.IndexOf(output) : -1,
+                        OutputIsBone = output != null && output.Type == MeshType.Bone,
+                    });
+                }
+            }
+            return result;
+        }
+
+        public static IReadOnlyList<ModifierStackView> BuildModifierStacksOf(ProjectContext project, ModelContext model, int masterIndex)
+        {
+            var mc = masterIndex >= 0 ? model?.GetMeshContext(masterIndex) : null;
+            if (mc == null) return Array.Empty<ModifierStackView>();
+
+            var subject = mc;
+            var chain = Poly_Ling.Modifiers.ModifierChainOps.ChainOf(model, mc);
+            if (chain != null)
+            {
+                Poly_Ling.Modifiers.ModifierChainOps.ChainEnds(model, chain, out var chainSource, out _);
+                if (chainSource != null) subject = chainSource;
+            }
+
+            Poly_Ling.Data.ModifierStack subdivision = null;
+            foreach (var link in Poly_Ling.Ops.SubdivisionSync.CollectLinks(model))
+                if (ReferenceEquals(link.Cage, mc) || ReferenceEquals(link.Child, mc))
+                {
+                    subdivision = link.Group;
+                    subject = link.Cage;
+                    break;
+                }
+
+            ulong subjectId = subject.ObjectId;
+            return BuildModifierStackViews(project, model, g =>
+            {
+                if (ReferenceEquals(g, chain) || ReferenceEquals(g, subdivision)) return true;
+                if (g.IsChain || g.Steps == null || subjectId == 0UL) return false;
+                foreach (var s in g.Steps)
+                    if (s != null && s.IsExecutable && s.ContainsOutput(subjectId)) return true;
+                return false;
+            }, withStale: false);
+        }
+
+        /// <summary>
+        /// モディファイアか履歴を持つ描画オブジェクトの索引（オブジェクトリストの印。操作統合計画 段 1・段 2）。
+        /// 印が付くのは利用者の見るオブジェクトだけ。モディファイアの元と、履歴の出力に付け、結果には付けない。
+        /// </summary>
+        public static IReadOnlyCollection<int> BuildModifierObjectIndices(ModelContext model)
+        {
+            var set = new HashSet<int>();
+            if (model?.ModifierStacks == null) return set;
+
+            var map = Poly_Ling.Ops.ModifierEvaluator.BuildIdMap(model);
+            foreach (var g in model.ModifierStacks)
+            {
+                if (g?.Steps == null || g.IsChain) continue;
+                foreach (var s in g.Steps)
+                {
+                    if (s == null || !s.IsExecutable) continue;
+                    if (string.Equals(s.Action, Poly_Ling.Ops.SubdivisionSync.Action, StringComparison.Ordinal)) continue;
+                    foreach (ulong oid in s.OutputObjectIds)
+                        if (map.TryGetValue(oid, out var omc)) set.Add(model.MeshContextList.IndexOf(omc));
+                }
+            }
+            foreach (var p in Poly_Ling.Modifiers.ModifierResultOps.CollectPairs(model))
+                set.Add(model.MeshContextList.IndexOf(p.Source));
+            return set;
         }
 
         /// <summary>

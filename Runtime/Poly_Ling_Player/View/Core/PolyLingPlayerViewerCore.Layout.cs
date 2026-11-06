@@ -121,7 +121,6 @@ namespace Poly_Ling.Player
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
             _layoutRoot.ModifierStackBtn.clicked       += ShowModifierStackPanel;
-            _layoutRoot.ModifierChainBtn.clicked       += ShowModifierChainPanel;
             _layoutRoot.NormalExcludeSetBtn.clicked  += ShowNormalExcludeSetPanel;
             _layoutRoot.NormalEditBtn.clicked        += ShowNormalEditPanel;
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
@@ -479,10 +478,14 @@ namespace Poly_Ling.Player
             // 操作モードもオブジェクトリストと同じにする。
             RegisterPinnedPanel(_layoutRoot.HumanoidBoneSelectSection, _layoutRoot.HumanoidBoneSelectBtn,
                 ApplyMeshListCurrentViewportOpMode);
+            // モディファイアも操作モードはオブジェクトリストと同じにする。3D 操作パネルを開いていればそちらが決める。
+            RegisterPinnedPanel(_layoutRoot.ModifierChainSection, _layoutRoot.ModifierPanelBtn,
+                ApplyMeshListCurrentViewportOpMode);
             _layoutRoot.ModelListBtn.clicked    += ToggleModelListPanel;
             _layoutRoot.MeshListBtn .clicked    += ToggleMeshListPanel;
             _layoutRoot.MaterialListBtn.clicked += ToggleMaterialListPanel;
             _layoutRoot.HumanoidBoneSelectBtn.clicked += ToggleHumanoidBoneSelectPanel;
+            _layoutRoot.ModifierPanelBtn.clicked += ToggleModifierChainPanel;
             // 下区画のパネルを閉じる（一般・3D 操作のどちらでも）。常駐リストの操作モードに戻る。
             _layoutRoot.ToolAreaCloseBtn.clicked += CloseToolArea;
 

@@ -77,6 +77,68 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case SetMeshModifierVertexGroupCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteSetMeshModifierVertexGroup(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case SetMeshModifierMirrorAttributeCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteSetMeshModifierMirrorAttribute(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case ShowModifierGizmoCommand c:
+                {
+                    if (OnShowModifierGizmo == null) { Fail("modifier gizmo handler not wired"); return true; }
+                    string reason = OnShowModifierGizmo.Invoke(c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case ApplyMeshModifierCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteApplyMeshModifier(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case DuplicateMeshModifierCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteDuplicateMeshModifier(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case CopyMeshModifierToObjectsCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string reason = ExecuteCopyMeshModifierToObjects(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                // 「ここまで表示」。保存しない表示設定なので Undo に積まない（元の線の表示と同じ）。
+                case SetModifierDisplayUpToCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    if (!TryFindChain(model, c.StackName, out var dg, out string dErr)) { Fail(dErr); return true; }
+                    if (!string.IsNullOrEmpty(c.ItemId) && dg.FindStep(c.ItemId) == null)
+                    { Fail($"処理列 {dg.Name} に項目 {c.ItemId} がありません"); return true; }
+                    MarkNotRecorded();
+                    dg.DisplayUpToItemId = c.ItemId ?? "";
+                    FinishGroupEdit(project, model);
+                    ReportData(CommandDataJson.New().Text("state", ChainStateText(model, dg)).Build());
+                    return true;
+                }
+
                 case MoveMeshModifierCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
@@ -106,6 +168,19 @@ namespace Poly_Ling.Player
                     if (model == null || project == null) { Fail("no current model"); return true; }
                     string reason = ExecuteApplyMeshModifierChain(project, model, c);
                     if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                // 元の線の表示（Blender の Show in Edit Mode に当たる表示の切り替え）。
+                // 保存しない表示設定なので Undo に積まない（ビルボード表示と同じ）。
+                case SetModifierCageVisibleCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    var p = Poly_Ling.Modifiers.ModifierResultOps.PairOf(model, model.FindModifierStackByName(c.StackName));
+                    if (p == null) { Fail($"モディファイアのスタックではありません: {c.StackName}"); return true; }
+                    p.Source.HideCageLines = !c.Visible;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
                     return true;
                 }
             }
@@ -138,6 +213,11 @@ namespace Poly_Ling.Player
                 string end = ChainEndOf(model, source);
                 if (end != null) return $"{source.Name} は処理列 {end} の元メッシュか結果です。stackName={end} で足してください";
             }
+
+            // 追加メニューの既定値。渡した引数が優先。足す位置の入力は今の結果（無ければ元メッシュ）。
+            if (c.UseAddDefaults)
+                foreach (var kv in MeshModifierRegistry.AddDefaultArgs(c.Kind, result?.MeshObject ?? source.MeshObject))
+                    if (!args.ContainsKey(kv.Key)) args[kv.Key] = kv.Value;
 
             if (!TryNormalizeModifierArgs(model, c.Kind, args, source, result,
                     out var normalized, out var refs, out string nErr))
@@ -233,7 +313,9 @@ namespace Poly_Ling.Player
                 MeshObject = mo,
                 Name       = name,
                 UnityMesh  = unityMesh,
-                IsVisible  = true,
+                // 1 本道は元と 1 つのオブジェクトなので表示をそろえる。元を他の項目が読むなら結果は別のオブジェクトで、
+                // 元が隠れていても（隠した帯など）見えるようにする（書き出しからも消えないように）。
+                IsVisible  = source.IsVisible || Poly_Ling.Modifiers.ModifierResultOps.IsReadBySteps(model, source.ObjectId),
                 IsLocked   = true,
             };
             result.ParentModelContext   = model;
@@ -296,6 +378,391 @@ namespace Poly_Ling.Player
             if (_chainPreview != null && _chainPreview.Matches(model, g.Name, c.ItemId))
                 return CommitChainArgsPreview(project, model, g, edit);
             return EditChain(project, model, g, desc, edit);
+        }
+
+        // ================================================================
+        // 頂点グループ（操作統合計画 段 3）
+        //   範囲は頂点 ID で持つので、ID の無い頂点には振ってから登録する。
+        //   頂点 ID の自動付与は他モデルとのモーフのために禁止されているが、利用者が頂点グループを作った元メッシュに限って
+        //   未設定の頂点へ振ってよい（計画書 6 章）。既にある ID は変えない。
+        //   元メッシュが別の項目の出力なら、作り直しで消えるので振らない。
+        // ================================================================
+
+        private string ExecuteSetMeshModifierVertexGroup(ProjectContext project, ModelContext model, SetMeshModifierVertexGroupCommand c)
+        {
+            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
+            var step = g.FindStep(c.ItemId);
+            if (step == null) return $"処理列 {g.Name} に項目 {c.ItemId} がありません";
+            ChainEnds(model, g, out var source, out var result);
+            if (source?.MeshObject == null || result?.MeshObject == null) return $"処理列 {g.Name} の元メッシュか結果が見つかりません";
+
+            bool canAssign = !IsStepOutput(model, source);
+            var sel = source.Selection;
+            MeshModifierScope scope;
+            Poly_Ling.Selection.PartsSelectionSet partsSet = null;
+            bool capture = false;
+            int noId = 0;
+            if (!string.IsNullOrEmpty(c.PartsSetName))
+            {
+                if (source.PartsSelectionSetList != null)
+                    foreach (var ps in source.PartsSelectionSetList)
+                        if (ps != null && ps.Name == c.PartsSetName) { partsSet = ps; break; }
+                if (partsSet == null) return $"{source.Name} にパーツ選択辞書「{c.PartsSetName}」がありません";
+                scope = MeshModifierScope.PartsSet(c.PartsSetName);
+                // 控えの有無は複製で見る（引き当ては辞書の番号を書き換えるので、利用者の辞書には掛けない）。
+                capture = canAssign && !partsSet.Clone().ResolveByIds(source.MeshObject, out _, out _);
+            }
+            else
+            {
+                scope = MeshModifierScope.FromIndices(source.MeshObject, sel?.Vertices, sel?.Edges, sel?.Faces, out noId);
+                bool empty = scope.VertexIds.Length + scope.EdgeVertexIds.Length + scope.FaceSizes.Length == 0;
+                if (empty && noId == 0) return "元メッシュで頂点・辺・面を選んでから実行してください";
+                if (empty && !canAssign)
+                    return $"選んだ要素 {noId} 件に頂点 ID がありません。{source.Name} は別の項目の出力で、作り直すと ID が消えるので振れません";
+            }
+
+            int assigned = 0, left = noId;
+            string editErr = null;
+            string r = EditChain(project, model, g, $"頂点グループ: {g.Name} {c.ItemId}", () =>
+            {
+                if (capture)
+                {
+                    assigned = VertexIdOps.AssignMissing(source);
+                    partsSet.CaptureIds(source.MeshObject);
+                }
+                else if (noId > 0 && canAssign)
+                {
+                    assigned = VertexIdOps.AssignMissing(source);
+                    scope = MeshModifierScope.FromIndices(source.MeshObject, sel?.Vertices, sel?.Edges, sel?.Faces, out left);
+                }
+
+                var merged = CurrentChainArgs(model, step);
+                bool invert = merged.TryGetValue(MeshModifierScope.KeyInvert, out string iv) && iv == "true";
+                foreach (var k in new List<string>(merged.Keys))
+                    if (k.StartsWith(MeshModifierScope.KeyPrefix, StringComparison.Ordinal)) merged.Remove(k);
+                scope.Invert = invert;
+                foreach (var kv in MeshModifierRegistry.ScopeToArgs(scope)) merged[kv.Key] = kv.Value;
+
+                if (!TryNormalizeModifierArgs(model, step.Action, merged, source, result,
+                        out var normalized, out var refs, out editErr))
+                    return;
+                step.Args = new Dictionary<string, string>(normalized, StringComparer.Ordinal);
+                SetChainRefs(step, refs, source.ObjectId);
+            });
+            if (r != null) return r;
+            if (editErr != null) return editErr;
+
+            ReportData(CommandDataJson.New()
+                .Text("state", ChainStateText(model, g))
+                .Int("assigned", assigned)
+                .Int("noId", left)
+                .Build());
+            return null;
+        }
+
+        /// <summary>
+        /// モディファイアの結果か（流し直すと頂点が置き換わり、振った ID が残らない）。
+        /// 履歴の生成物（パイプなど）は作り直しが ID を番号どおりに戻す（RestoreVertexIds）ので当たらない。
+        /// </summary>
+        private static bool IsStepOutput(ModelContext model, MeshContext mc)
+        {
+            if (model?.ModifierStacks == null || mc == null || mc.ObjectId == 0UL) return false;
+            foreach (var g in model.ModifierStacks)
+            {
+                if (g?.Steps == null || !g.IsChain) continue;
+                foreach (var s in g.Steps)
+                    if (s != null && s.IsExecutable && s.ContainsOutput(mc.ObjectId)) return true;
+            }
+            return false;
+        }
+
+        // ================================================================
+        // 1 個ずつの操作（操作統合計画 段 4）
+        //   適用は Blender の Apply：その項目を元メッシュの今の形に掛けて焼き込み、項目を消し、残りは残す。
+        //   途中までの適用は 3ds Max の Collapse To。
+        //   元を他の項目も読む形（並列・分岐）は元を書き換えない（ModifierResultOps の決まり）。
+        // ================================================================
+
+        private string ExecuteApplyMeshModifier(ProjectContext project, ModelContext model, ApplyMeshModifierCommand c)
+        {
+            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
+            var step = g.FindStep(c.ItemId);
+            if (step == null) return $"処理列 {g.Name} に項目 {c.ItemId} がありません";
+            if (!step.Enabled) return $"{DisplayNameOf(step.Action)} は無効なので適用しません";
+            var pair = Poly_Ling.Modifiers.ModifierResultOps.PairOf(model, g);
+            if (pair == null) return $"処理列 {g.Name} の元メッシュか結果が見つかりません";
+            var source = pair.Source;
+
+            var executable = g.Steps.FindAll(s => s != null && s.IsExecutable);
+            int pos = executable.IndexOf(step);
+            var targets = new List<ModifierStackStep>();
+            if (c.UpTo)
+            {
+                for (int i = 0; i <= pos; i++) if (executable[i].Enabled) targets.Add(executable[i]);
+            }
+            else targets.Add(step);
+
+            ModifierChainHandler.ClearDisplayUpTo(model);
+
+            // 全部の項目に当たるなら「すべて適用」と同じ（ミラー側の引き継ぎもそちらが受け持つ）。
+            if (targets.Count == executable.Count)
+                return ExecuteApplyMeshModifierChain(project, model, new ApplyMeshModifierChainCommand(c.ModelIndex, c.StackName));
+
+            if (targets.Exists(s => MeshModifierRegistry.Find(s.Action)?.PinnedLast ?? false))
+                return $"{DisplayNameOf(step.Action)}（MQO の属性の形）は他のモディファイアが残っている間は適用できません。「すべて適用」を使ってください";
+            if (!Poly_Ling.Modifiers.ModifierResultOps.IsFolded(model, g, pair.Step)
+                || Poly_Ling.Modifiers.ModifierResultOps.SourceOf(model, source) != null)
+                return $"{source.Name} は他からも読まれているので、1 個ずつは適用できません（読んでいる側の形が変わるため）。「すべて適用」で結果を独立させてください";
+
+            var output = ModifierChainHandler.EvaluateOnSource(model, targets, source, out string evalErr);
+            if (output == null) return $"適用できません: {evalErr}";
+
+            int sourceIndex = model.MeshContextList.IndexOf(source);
+            if (output.VertexCount != source.MeshObject.VertexCount)
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc != null && mc.Type == MeshType.Morph && mc.MorphParentIndex == sourceIndex)
+                        return $"{source.Name} はモーフを持つので、頂点数を変えるモディファイアは適用できません";
+                }
+
+            _undoController?.SetModelContext(model);
+            var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+            var changes    = new List<ModifierStackChangeRecord>();
+
+            _undoController?.SuspendRecording();
+            try
+            {
+                RemoveHistoryOf(model, source, changes);
+                int gi = model.ModifierStacks.IndexOf(g);
+                var before = g.Clone();
+                foreach (var s in targets) g.Steps.Remove(s);
+                changes.Add(new ModifierStackChangeRecord { ReplacedIndex = gi, OldGroup = before, NewGroup = g.Clone() });
+
+                Poly_Ling.Modifiers.ModifierResultOps.CopyGeometry(output, source.MeshObject);
+                source.Selection?.ClearAll();
+                var mesh = source.MeshObject.ToUnityMesh(model.MaterialCount);
+                mesh.name      = source.Name;
+                mesh.hideFlags = HideFlags.HideAndDontSave;
+                source.ReplaceUnityMeshDeferred(mesh);
+                source.OriginalPositions = (Vector3[])source.MeshObject.Positions.Clone();
+                source.InvalidateSymmetryCache();
+            }
+            finally
+            {
+                _undoController?.ResumeRecording();
+            }
+
+            FinishGroupEdit(project, model);
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, changes, $"モディファイアの適用: {g.Name} {c.ItemId}");
+
+            ReportData(CommandDataJson.New()
+                .Text("warning", !c.UpTo && pos > 0 ? "先頭のモディファイアではないので、前のモディファイアを飛ばして元の形に適用しました。形が変わることがあります" : "")
+                .Text("state", ChainStateText(model, g))
+                .Build());
+            return null;
+        }
+
+        /// <summary>項目の参照の引数（元メッシュを除く）を写す。</summary>
+        private static Dictionary<string, List<ulong>> CopyChainRefs(ModifierStackStep step)
+        {
+            var refs = new Dictionary<string, List<ulong>>(StringComparer.Ordinal);
+            var info = MeshModifierRegistry.Find(step.Action);
+            if (info == null) return refs;
+            foreach (var p in info.Params)
+            {
+                if (!p.Attr.IsMeshRef) continue;
+                var ids = step.GetMeshRefIds(p.Key);
+                if (ids.Count > 0) refs[p.Key] = new List<ulong>(ids);
+            }
+            return refs;
+        }
+
+        private string ExecuteDuplicateMeshModifier(ProjectContext project, ModelContext model, DuplicateMeshModifierCommand c)
+        {
+            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
+            var step = g.FindStep(c.ItemId);
+            if (step == null) return $"処理列 {g.Name} に項目 {c.ItemId} がありません";
+            if (MeshModifierRegistry.Find(step.Action)?.PinnedLast ?? false)
+                return "MQO の属性で持つミラーは 1 つだけなので複製できません";
+            ChainEnds(model, g, out var source, out var result);
+            if (source?.MeshObject == null || result?.MeshObject == null) return $"処理列 {g.Name} の元メッシュか結果が見つかりません";
+
+            ModifierStackStep copy = null;
+            string r = EditChain(project, model, g, $"モディファイアの複製: {g.Name} {c.ItemId}", () =>
+            {
+                copy = g.AddStep(BuildChainStep(step.Action, new Dictionary<string, string>(step.Args, StringComparer.Ordinal),
+                                                CopyChainRefs(step), source, result));
+                copy.Enabled = step.Enabled;
+                g.Steps.Remove(copy);
+                g.Steps.Insert(g.Steps.IndexOf(step) + 1, copy);
+            });
+            if (r != null) return r;
+            ReportData(CommandDataJson.New().Text("itemId", copy.ScenarioItemId).Text("state", ChainStateText(model, g)).Build());
+            return null;
+        }
+
+        private string ExecuteCopyMeshModifierToObjects(ProjectContext project, ModelContext model, CopyMeshModifierToObjectsCommand c)
+        {
+            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
+            var step = g.FindStep(c.ItemId);
+            if (step == null) return $"処理列 {g.Name} に項目 {c.ItemId} がありません";
+            ChainEnds(model, g, out var from, out _);
+
+            var targets = new List<MeshContext>();
+            if (c.TargetMasterIndices != null && c.TargetMasterIndices.Length > 0)
+            {
+                foreach (int i in c.TargetMasterIndices)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null) return $"描画オブジェクト {i} がありません";
+                    targets.Add(mc);
+                }
+            }
+            else targets = CollectSelectedMeshContexts(model);
+            targets.RemoveAll(t => ReferenceEquals(t, from));
+            if (targets.Count == 0) return "コピー先のオブジェクトも選んでください";
+
+            // 選択から作った頂点グループはオブジェクトごとに ID が違うので全体に戻す。辞書の名前はそのまま使う。
+            var args = new Dictionary<string, string>(step.Args, StringComparer.Ordinal);
+            if (args.TryGetValue(MeshModifierScope.KeyKind, out string kindText)
+                && PanelCommandFactory.TryParseValue(kindText, typeof(MeshModifierScopeKind), out object kindValue, out _)
+                && (MeshModifierScopeKind)kindValue == MeshModifierScopeKind.Ids)
+            {
+                foreach (var k in new List<string>(args.Keys))
+                    if (k.StartsWith(MeshModifierScope.KeyPrefix, StringComparison.Ordinal)) args.Remove(k);
+            }
+            var refs = CopyChainRefs(step);
+            bool pinned = MeshModifierRegistry.Find(step.Action)?.PinnedLast ?? false;
+
+            _undoController?.SetModelContext(model);
+            var listBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
+            int groupsBefore = model.ModifierStackCount;
+            var changes      = new List<ModifierStackChangeRecord>();
+            var created      = new List<ModifierStack>();
+            var skipped      = new List<string>();
+            int copied = 0;
+
+            _undoController?.SuspendRecording();
+            try
+            {
+                foreach (var t in targets)
+                {
+                    if (t.MeshObject == null || t.Type != MeshType.Mesh) { skipped.Add($"{t.Name}: 通常のメッシュではない"); continue; }
+                    bool refersSelf = false;
+                    foreach (var kv in refs) if (kv.Value.Contains(t.ObjectId)) refersSelf = true;
+                    if (refersSelf) { skipped.Add($"{t.Name}: このモディファイアの相手"); continue; }
+
+                    var tg = ModifierChainOps.ChainOf(model, t);
+                    ChainEnds(model, tg, out var tSource, out var tResult);
+                    if (tg != null && !ReferenceEquals(tSource, t)) { skipped.Add($"{t.Name}: モディファイアの結果"); continue; }
+                    if (tg == null && t.IsSkinned) { skipped.Add($"{t.Name}: スキンド化したメッシュ"); continue; }
+                    int tPinned = tg != null ? PinnedIndex(tg) : -1;
+                    if (pinned && tPinned >= 0) { skipped.Add($"{t.Name}: 既に MQO の属性で持つミラーがある"); continue; }
+
+                    if (tg == null)
+                    {
+                        var result = CreateChainResult(model, t);
+                        tg = new ModifierStack(model.GenerateUniqueModifierStackName(t.Name + "_chain")) { IsChain = true };
+                        tg.Steps.Clear();
+                        tg.AddStep(BuildChainStep(step.Action, args, refs, t, result));
+                        model.AddModifierStack(tg);
+                        created.Add(tg);
+                    }
+                    else
+                    {
+                        int gi = model.ModifierStacks.IndexOf(tg);
+                        var before = tg.Clone();
+                        var added = tg.AddStep(BuildChainStep(step.Action, args, refs, t, tResult));
+                        if (tPinned >= 0)
+                        {
+                            tg.Steps.Remove(added);
+                            tg.Steps.Insert(tPinned, added);
+                        }
+                        changes.Add(new ModifierStackChangeRecord { ReplacedIndex = gi, OldGroup = before, NewGroup = tg.Clone() });
+                    }
+                    SyncChainDisplayMirror(model, tg);
+                    copied++;
+                }
+            }
+            finally
+            {
+                _undoController?.ResumeRecording();
+            }
+
+            if (copied == 0) return "コピーできません: " + string.Join(" / ", skipped);
+            foreach (var cg in created) ModifierEvaluator.PrimeGroup(model, cg);
+            FinishGroupEdit(project, model);
+            RecordSubdivisionUndo(model, listBefore, groupsBefore, changes, $"モディファイアのコピー: {g.Name} {c.ItemId}");
+            ReportData(CommandDataJson.New().Int("copied", copied).Text("skipped", string.Join(" / ", skipped)).Build());
+            return null;
+        }
+
+        // ================================================================
+        // ミラーの持ち方（操作統合計画 段 3）
+        // ================================================================
+
+        private const string MirrorBakeKind = "mirrorBake";
+
+        /// <summary>ミラーの持ち方を切り替えたときの、切り替える前の種類の引数（項目ごと・種類ごと）。</summary>
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ModifierStackStep, Dictionary<string, Dictionary<string, string>>> _mirrorKindArgs
+            = new System.Runtime.CompilerServices.ConditionalWeakTable<ModifierStackStep, Dictionary<string, Dictionary<string, string>>>();
+
+        private string ExecuteSetMeshModifierMirrorAttribute(ProjectContext project, ModelContext model, SetMeshModifierMirrorAttributeCommand c)
+        {
+            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
+            var step = g.FindStep(c.ItemId);
+            if (step == null) return $"処理列 {g.Name} に項目 {c.ItemId} がありません";
+            bool isBake = string.Equals(step.Action, MirrorBakeKind, StringComparison.Ordinal);
+            bool isAttr = string.Equals(step.Action, MirrorDisplayKind, StringComparison.Ordinal);
+            if (!isBake && !isAttr) return $"{DisplayNameOf(step.Action)} はミラーの項目ではありません";
+            if (isAttr == c.AsAttribute)
+            {
+                ReportData(CommandDataJson.New().Text("state", ChainStateText(model, g)).Build());
+                return null;
+            }
+
+            ChainEnds(model, g, out var source, out var result);
+            if (source?.MeshObject == null || result?.MeshObject == null) return $"処理列 {g.Name} の元メッシュか結果が見つかりません";
+            if (c.AsAttribute && PinnedIndex(g) >= 0)
+                return $"処理列 {g.Name} には既に {DisplayNameOf(g.Steps[PinnedIndex(g)].Action)} があります（MQO の属性で持つミラーは 1 つだけ置けます）";
+
+            // 軸と平面の位置は引き継ぐ。片方にしか無い設定は控えておき、戻したときに戻す。
+            var args = new Dictionary<string, string>(StringComparer.Ordinal);
+            var kept = _mirrorKindArgs.GetOrCreateValue(step);
+            if (kept.TryGetValue(c.AsAttribute ? MirrorDisplayKind : MirrorBakeKind, out var keptArgs))
+                foreach (var kv in keptArgs) args[kv.Key] = kv.Value;
+            kept[step.Action] = new Dictionary<string, string>(step.Args, StringComparer.Ordinal);
+            if (!MeshModifierRegistry.FromArgs(step.Action, step.Args, out var mod, out _, out string fErr)) return fErr;
+            string targetKind;
+            if (mod is MirrorBakeMeshModifier bake)
+            {
+                targetKind = MirrorDisplayKind;
+                args["axis"] = ((int)bake.Axis).ToString(CultureInfo.InvariantCulture);
+                args["distance"] = bake.PlaneOffset.ToString("R", CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                var disp = (MirrorDisplayMeshModifier)mod;
+                targetKind = MirrorBakeKind;
+                args["axis"] = ((int)disp.Axis).ToString(CultureInfo.InvariantCulture);
+                args["planeOffset"] = disp.Distance.ToString("R", CultureInfo.InvariantCulture);
+            }
+            if (!TryNormalizeModifierArgs(model, targetKind, args, source, result, out var normalized, out var refs, out string nErr))
+                return nErr;
+
+            return EditChain(project, model, g, $"ミラーの持ち方: {g.Name} {c.ItemId}", () =>
+            {
+                step.Action = targetKind;
+                step.Args = new Dictionary<string, string>(normalized, StringComparer.Ordinal);
+                SetChainRefs(step, refs, source.ObjectId);
+                if (c.AsAttribute)
+                {
+                    // 列の最後に 1 つだけ置ける形なので最後へ動かす。
+                    g.Steps.Remove(step);
+                    g.Steps.Add(step);
+                }
+            });
         }
 
         // ================================================================
@@ -544,22 +1011,103 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>
+        /// すべて適用（3ds Max の Collapse All。操作統合計画 段 2）。結果の形が元の名前のオブジェクトになり、
+        /// オブジェクトは 1 つになる。
+        ///
+        /// 【実体】元の行を残して結果の頂点・面・線分を写し、結果の行を消す。元の行に付いている名前・親子・姿勢・
+        ///   パーツ選択辞書・ObjectId（他のスタックの入力からの参照）はそのまま残る。結果を指していた参照は元へ付け替える。
+        /// 【履歴】元を出力に持つ生成の項目も外す。残すと次の作り直しで適用した形を上書きするため（Collapse All も履歴ごと畳む）。
+        /// 【モーフ】頂点数が変わるなら、モーフを持つオブジェクトには適用できない（Blender と同じ）。何も変えずに失敗する。
+        /// </summary>
         private string ExecuteApplyMeshModifierChain(ProjectContext project, ModelContext model, ApplyMeshModifierChainCommand c)
         {
-            if (!TryFindChain(model, c.StackName, out var g, out string cErr)) return cErr;
-            ChainEnds(model, g, out _, out var result);
+            var g = string.IsNullOrEmpty(c.StackName) ? null : model.FindModifierStackByName(c.StackName);
+            if (g == null) return $"スタックが見つかりません: {c.StackName}";
+            var pair = Poly_Ling.Modifiers.ModifierResultOps.PairOf(model, g);
+            if (pair == null) return $"モディファイアのスタックではありません: {c.StackName}";
+            ModifierChainHandler.ClearDisplayUpTo(model);
+            var source = pair.Source;
+            var result = pair.Result;
+
+            // 元を他の項目が読む・元が別の項目の結果・結果を生成が読む形では、元を上書きしない。
+            // 結果を独立したオブジェクトにする（並列の入力を壊さない。ModifierResultOps の決まり）。
+            if (!Poly_Ling.Modifiers.ModifierResultOps.IsFolded(model, g, pair.Step)
+                || Poly_Ling.Modifiers.ModifierResultOps.SourceOf(model, source) != null)
+                return DetachModifierResult(project, model, g, pair);
+
+            int sourceIndex = model.MeshContextList.IndexOf(source);
+            if (result.MeshObject.VertexCount != source.MeshObject.VertexCount)
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc != null && mc.Type == MeshType.Morph && mc.MorphParentIndex == sourceIndex)
+                        return $"{source.Name} はモーフを持つので、頂点数を変えるモディファイアは適用できません";
+                }
 
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
-            int gi = model.ModifierStacks.IndexOf(g);
-            var removed = new ModifierStackChangeRecord { RemovedGroup = g.Clone(), RemovedIndex = gi };
+            var changes    = new List<ModifierStackChangeRecord>();
 
             _undoController?.SuspendRecording();
             try
             {
-                // DeleteModifierStack（解除）と同じ：処理器が結果のロックと元メッシュの塗りを戻す。
-                ModifierEvaluator.ReleaseGroup(model, g);
-                model.RemoveModifierStack(g);
+                RemoveModifierLink(model, pair, changes);
+                RemoveHistoryOf(model, source, changes);
+                RedirectModifierRefs(model, result.ObjectId, source.ObjectId, changes);
+
+                // 結果のミラー側（ミラーのモディファイア）は、元の相方にする。元に別のミラー側があれば消す。
+                var resultPeers = new List<int>();
+                MirrorBranchOps.CollectMirrorPeers(model, model.MeshContextList.IndexOf(result), resultPeers);
+                var sourcePeers = new List<int>();
+                MirrorBranchOps.CollectMirrorPeers(model, sourceIndex, sourcePeers);
+
+                Poly_Ling.Modifiers.ModifierResultOps.CopyGeometry(result.MeshObject, source.MeshObject);
+                source.Selection?.ClearAll();
+
+                var gone = new List<MeshContext> { result };
+                if (resultPeers.Count > 0)
+                {
+                    foreach (int m in sourcePeers) gone.Add(model.GetMeshContext(m));
+                    source.MirrorType           = result.MirrorType;
+                    source.MirrorAxis           = result.MirrorAxis;
+                    source.MirrorDistance       = result.MirrorDistance;
+                    source.MirrorMaterialOffset = result.MirrorMaterialOffset;
+                    var mirrorPair = model.GetMirrorPair(result);
+                    if (mirrorPair != null && ReferenceEquals(mirrorPair.Real, result))
+                    {
+                        mirrorPair.Real = source;
+                        var mirrorCtx = mirrorPair.Mirror;
+                        if (mirrorCtx != null)
+                        {
+                            mirrorCtx.Name = MirrorNameOps.MakeMirrorName(source.Name, MirrorBranchOps.MirrorBranchSuffix, n => ExistsMeshName(model, n));
+                            mirrorCtx.HierarchyParentIndex = source.HierarchyParentIndex;
+                            mirrorCtx.Depth = source.Depth;
+                            if (mirrorCtx.BakedMirrorSourceIndex >= 0)
+                                mirrorCtx.BakedMirrorSourceIndex = model.MeshContextList.IndexOf(source);
+                        }
+                    }
+                }
+                // 消す前に対を外す。元の側の対は、作り直した相方で残る。
+                model.MirrorPairs?.RemoveAll(pr => pr != null && (gone.Contains(pr.Real) || gone.Contains(pr.Mirror)));
+
+                var goneIndices = new List<int>();
+                foreach (var mc in gone)
+                {
+                    int i = model.MeshContextList.IndexOf(mc);
+                    if (i >= 0) goneIndices.Add(i);
+                }
+                goneIndices.Sort();
+                for (int k = goneIndices.Count - 1; k >= 0; k--) model.RemoveAt(goneIndices[k]);
+
+                // 元の行の中身が変わったので、表示用のメッシュとミラー側を作り直す。
+                var mesh = source.MeshObject.ToUnityMesh(model.MaterialCount);
+                mesh.name      = source.Name;
+                mesh.hideFlags = HideFlags.HideAndDontSave;
+                source.ReplaceUnityMeshDeferred(mesh);
+                source.OriginalPositions = (Vector3[])source.MeshObject.Positions.Clone();
+                ModifierChainHandler.RebuildMirrorSide(model, source);
+                source.InvalidateSymmetryCache();
             }
             finally
             {
@@ -567,14 +1115,231 @@ namespace Poly_Ling.Player
             }
 
             FinishGroupEdit(project, model);
-            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount,
-                new List<ModifierStackChangeRecord> { removed }, $"処理列の適用: {g.Name}");
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, changes, $"すべて適用: {g.Name}");
 
-            int ri = result != null ? model.MeshContextList.IndexOf(result) : -1;
+            int ri = model.MeshContextList.IndexOf(source);
             ReportData(CommandDataJson.New().Int("resultIndex", ri).Build(),
                 ri >= 0 ? new[] { ri } : null,
-                result != null && result.ObjectId != 0UL ? new[] { result.ObjectId } : null);
+                source.ObjectId != 0UL ? new[] { source.ObjectId } : null);
             return null;
+        }
+
+        /// <summary>
+        /// 結果を今の形のまま独立したオブジェクトにする。元・元の履歴・他の項目の参照には触らない。
+        /// </summary>
+        private string DetachModifierResult(ProjectContext project, ModelContext model, ModifierStack g,
+                                            Poly_Ling.Modifiers.ModifierResultOps.Pair pair)
+        {
+            _undoController?.SetModelContext(model);
+            var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+            var changes    = new List<ModifierStackChangeRecord>();
+
+            _undoController?.SuspendRecording();
+            try
+            {
+                RemoveModifierLink(model, pair, changes);
+                if (pair.IsSubdivision) SubdivisionSync.Forget(pair.Result);
+                pair.Result.IsLocked = false;
+                var source = pair.Source;
+                if (!Poly_Ling.Modifiers.ModifierResultOps.CollectPairs(model).Exists(p => ReferenceEquals(p.Source, source)))
+                {
+                    source.HideFaceShading = false;
+                    source.HideCageLines   = false;
+                }
+            }
+            finally
+            {
+                _undoController?.ResumeRecording();
+            }
+
+            FinishGroupEdit(project, model);
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, changes, $"すべて適用: {g.Name}");
+
+            int ri = model.MeshContextList.IndexOf(pair.Result);
+            ReportData(CommandDataJson.New().Int("resultIndex", ri).Build(),
+                ri >= 0 ? new[] { ri } : null,
+                pair.Result.ObjectId != 0UL ? new[] { pair.Result.ObjectId } : null);
+            return null;
+        }
+
+        /// <summary>
+        /// 元と結果のつながりをスタックから外す（書き換えは呼び出し側が SuspendRecording の中で行う）。
+        /// 処理器が立てたロック・塗りの止めを戻す。サブディビジョンで他の項目があるスタックは項目だけを外す。
+        /// </summary>
+        private static void RemoveModifierLink(ModelContext model, Poly_Ling.Modifiers.ModifierResultOps.Pair p,
+                                               List<ModifierStackChangeRecord> changes)
+        {
+            int gi = model.ModifierStacks.IndexOf(p.Stack);
+            if (gi < 0) return;
+
+            if (p.IsSubdivision && p.Stack.StepCount > 1)
+            {
+                var before = p.Stack.Clone();
+                SubdivisionSync.Forget(p.Result);
+                p.Result.IsLocked = false;
+                p.Source.HideFaceShading = false;
+                p.Source.HideCageLines   = false;
+                p.Stack.Steps.Remove(p.Step);
+                changes.Add(new ModifierStackChangeRecord { ReplacedIndex = gi, OldGroup = before, NewGroup = p.Stack.Clone() });
+                return;
+            }
+
+            changes.Add(new ModifierStackChangeRecord { RemovedGroup = p.Stack.Clone(), RemovedIndex = gi });
+            ModifierEvaluator.ReleaseGroup(model, p.Stack);
+            model.RemoveModifierStack(p.Stack);
+        }
+
+        /// <summary>
+        /// 描画オブジェクトを出力に持つ生成の項目を外す。項目の出力が他にもあれば、項目単位では外せないのでスタックごと外す。
+        /// 実行する項目が無くなったスタックも外す。
+        /// </summary>
+        private static void RemoveHistoryOf(ModelContext model, MeshContext target, List<ModifierStackChangeRecord> changes)
+        {
+            if (model.ModifierStacks == null || target.ObjectId == 0UL) return;
+            foreach (var g in new List<ModifierStack>(model.ModifierStacks))
+            {
+                if (g?.Steps == null || g.IsChain) continue;
+                var hits = g.Steps.FindAll(s => s != null && s.IsExecutable && s.ContainsOutput(target.ObjectId));
+                if (hits.Count == 0) continue;
+
+                int gi = model.ModifierStacks.IndexOf(g);
+                bool whole = hits.Exists(s => s.OutputObjectIds.Count > 1)
+                          || g.Steps.TrueForAll(s => s == null || !s.IsExecutable || hits.Contains(s));
+                if (whole)
+                {
+                    changes.Add(new ModifierStackChangeRecord { RemovedGroup = g.Clone(), RemovedIndex = gi });
+                    ModifierEvaluator.ReleaseGroup(model, g);
+                    model.RemoveModifierStack(g);
+                }
+                else
+                {
+                    var before = g.Clone();
+                    foreach (var s in hits) g.Steps.Remove(s);
+                    changes.Add(new ModifierStackChangeRecord { ReplacedIndex = gi, OldGroup = before, NewGroup = g.Clone() });
+                }
+            }
+        }
+
+        /// <summary>全スタックの入力の参照を from から to へ付け替える。</summary>
+        private static void RedirectModifierRefs(ModelContext model, ulong from, ulong to, List<ModifierStackChangeRecord> changes)
+        {
+            if (model.ModifierStacks == null || from == 0UL) return;
+            for (int gi = 0; gi < model.ModifierStacks.Count; gi++)
+            {
+                var g = model.ModifierStacks[gi];
+                if (g?.Steps == null) continue;
+                ModifierStack before = null;
+                foreach (var s in g.Steps)
+                {
+                    if (s == null) continue;
+                    foreach (var kv in s.SortedMeshRefIds())
+                    {
+                        if (kv.Value == null || !kv.Value.Contains(from)) continue;
+                        before ??= g.Clone();
+                        var ids = new List<ulong>(kv.Value);
+                        for (int i = 0; i < ids.Count; i++) if (ids[i] == from) ids[i] = to;
+                        s.SetMeshRefIds(kv.Key, ids);
+                    }
+                }
+                if (before != null)
+                    changes.Add(new ModifierStackChangeRecord { ReplacedIndex = gi, OldGroup = before, NewGroup = g.Clone() });
+            }
+        }
+
+        /// <summary>
+        /// 消す対象にモディファイアの元が含まれていれば、結果（とミラー側）とスタックも一緒に消して Undo を 1 件積み、true を返す。
+        /// 含まれていなければ何もせず false（呼び出し側が普通に消す）。
+        /// </summary>
+        private bool DeleteMeshesWithModifiers(ProjectContext project, ModelContext model, int[] masterIndices)
+        {
+            // 畳まれた 1 本道だけを一緒に消す。別オブジェクトの結果は消さない。
+            var pairs = new List<Poly_Ling.Modifiers.ModifierResultOps.Pair>();
+            var targets = new HashSet<int>(masterIndices);
+            var folded = Poly_Ling.Modifiers.ModifierResultOps.FoldedPairs(model);
+            bool grew = true;
+            while (grew)   // 多段は根から順に広げる
+            {
+                grew = false;
+                foreach (var p in folded)
+                {
+                    if (pairs.Contains(p) || !targets.Contains(model.MeshContextList.IndexOf(p.Source))) continue;
+                    pairs.Add(p);
+                    targets.Add(model.MeshContextList.IndexOf(p.Result));
+                    grew = true;
+                }
+            }
+            if (pairs.Count == 0) return false;
+
+            _undoController?.SetModelContext(model);
+            var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+            var changes    = new List<ModifierStackChangeRecord>();
+
+            _undoController?.SuspendRecording();
+            try
+            {
+                var peers = new List<int>();
+                foreach (var p in pairs)
+                {
+                    int ri = model.MeshContextList.IndexOf(p.Result);
+                    if (ri < 0) continue;
+                    targets.Add(ri);
+                    peers.Clear();
+                    MirrorBranchOps.CollectMirrorPeers(model, ri, peers);
+                    foreach (int m in peers) targets.Add(m);
+                }
+                var gone = new List<MeshContext>();
+                foreach (int i in targets)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc != null) gone.Add(mc);
+                }
+                foreach (var p in pairs) RemoveModifierLink(model, p, changes);
+                model.MirrorPairs?.RemoveAll(pr => pr != null && (gone.Contains(pr.Real) || gone.Contains(pr.Mirror)));
+
+                var order = new List<int>(targets);
+                order.Sort();
+                for (int k = order.Count - 1; k >= 0; k--)
+                    if (order[k] >= 0 && order[k] < model.MeshContextCount) model.RemoveAt(order[k]);
+            }
+            finally
+            {
+                _undoController?.ResumeRecording();
+            }
+
+            FinishGroupEdit(project, model);
+            RecordSubdivisionUndo(model, listBefore, model.ModifierStackCount, changes, "オブジェクトの削除（モディファイアごと）");
+            return true;
+        }
+
+        /// <summary>
+        /// 元の対のモディファイアを、複製したオブジェクトへ写す（結果の行とスタックを作る）。
+        /// 書き換えは呼び出し側が SuspendRecording の中で行う。複製したスタックは次の評価で結果を作り直す。
+        /// </summary>
+        /// <returns>複製の結果の行（多段は次の段の元にする）。</returns>
+        private MeshContext CopyModifiersTo(ModelContext model, Poly_Ling.Modifiers.ModifierResultOps.Pair p, MeshContext dup)
+        {
+            var result = CreateChainResult(model, dup);
+
+            var g = p.Stack.Clone();
+            g.Name = model.GenerateUniqueModifierStackName(dup.Name + (p.IsSubdivision ? "_subdiv" : "_chain"));
+            string sourceKey = p.IsSubdivision ? SubdivisionSync.CageKey : ModifierChainHandler.SourceKey;
+            if (p.IsSubdivision)
+            {
+                // サブディビジョンのスタックは、つながりの項目だけを写す。
+                int at = p.Stack.Steps.IndexOf(p.Step);
+                var keep = at >= 0 && at < g.Steps.Count ? g.Steps[at] : null;
+                g.Steps.Clear();
+                if (keep != null) g.Steps.Add(keep);
+            }
+            foreach (var s in g.Steps)
+            {
+                if (s == null || !s.IsExecutable) continue;
+                s.SetMeshRefIds(sourceKey, new List<ulong> { dup.ObjectId });
+                s.OutputObjectIds = new List<ulong> { result.ObjectId };
+            }
+            model.AddModifierStack(g);
+            if (g.IsChain) SyncChainDisplayMirror(model, g);
+            return result;
         }
 
         // ================================================================
@@ -718,6 +1483,9 @@ namespace Poly_Ling.Player
                     if (mc == null || mc.ObjectId == 0UL) { error = $"参照 \"{p.Key}\" の描画オブジェクト {idx} がありません"; return false; }
                     if (ReferenceEquals(mc, source)) { error = $"参照 \"{p.Key}\" に元メッシュは指せません"; return false; }
                     if (result != null && ReferenceEquals(mc, result)) { error = $"参照 \"{p.Key}\" に結果は指せません"; return false; }
+                    // 相手が畳まれた 1 本道なら、その末端の形を読む（Blender のブーリアンと同じ。操作統合計画 段 2）。
+                    // 別オブジェクトとして見えている元は、選ばれたものをそのまま読む。
+                    mc = Poly_Ling.Modifiers.ModifierResultOps.FoldedLeafOf(model, mc);
                     ids.Add(mc.ObjectId);
                 }
                 if (ids.Count > 0) refs[p.Key] = ids;
@@ -864,6 +1632,7 @@ namespace Poly_Ling.Player
                 {
                     MeshModifierScope.KeyKind, MeshModifierScope.KeyVertexIds, MeshModifierScope.KeyEdgeVertexIds,
                     MeshModifierScope.KeyFaceVertexIds, MeshModifierScope.KeyFaceSizes, MeshModifierScope.KeyPartsSet,
+                    MeshModifierScope.KeyInvert,
                 })
                 .Texts("problems",      new List<string>(MeshModifierRegistry.Problems))
                 .Build();

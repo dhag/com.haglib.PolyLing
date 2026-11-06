@@ -31,6 +31,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
@@ -48,12 +49,17 @@ namespace Poly_Ling.Player
         /// <summary>IsMeshRef の欄の選択肢（表示名と索引）。</summary>
         public List<KeyValuePair<string, int>> MeshChoices;
 
+        /// <summary>見出しを決めて渡すとき。空なら Description から作る。</summary>
+        public string LabelText = "";
+
         /// <summary>見出し。Description の最初の句（「。」「（」の前）。無ければキー。</summary>
         public string Label
         {
             get
             {
-                string d = Attr?.Description ?? "";
+                if (!string.IsNullOrEmpty(LabelText)) return LabelText;
+                // 内部の中間データの呼び名は画面に出さない（操作統合計画 3 章）。
+                string d = (Attr?.Description ?? "").Replace("梯子", "帯").Replace("はしご", "帯").Replace("rung", "段");
                 int cut = d.Length;
                 foreach (char c in new[] { '。', '（', '(' })
                 {
@@ -384,16 +390,23 @@ namespace Poly_Ling.Player
 
         private void BuildEnum(VisualElement container, ParamFieldSpec s, string tip)
         {
-            var names  = Enum.GetNames(s.Type);
-            var values = Enum.GetValues(s.Type);
+            // 宣言の順に並べ、表記は InspectorName があればそれを使う（列挙の値は保存に使うので並びのために変えられない）。
+            var fields = s.Type.GetFields(BindingFlags.Public | BindingFlags.Static);
+            var names  = new string[fields.Length];
+            var values = new object[fields.Length];
+            for (int i = 0; i < fields.Length; i++)
+            {
+                names[i]  = fields[i].GetCustomAttribute<InspectorNameAttribute>()?.displayName ?? fields[i].Name;
+                values[i] = fields[i].GetValue(null);
+            }
 
             int IndexOf(string raw)
             {
                 if (!TryParse(raw, s.Type, out object o)) return -1;
-                for (int i = 0; i < values.Length; i++) if (Equals(values.GetValue(i), o)) return i;
+                for (int i = 0; i < values.Length; i++) if (Equals(values[i], o)) return i;
                 return -1;
             }
-            string TextOf(int i) => i >= 0 && i < values.Length ? Fmt(values.GetValue(i)) : "";
+            string TextOf(int i) => i >= 0 && i < values.Length ? Fmt(values[i]) : "";
 
             if (names.Length <= 6)
             {
@@ -411,6 +424,14 @@ namespace Poly_Ling.Player
                 var dd = new DropdownField(s.Label, new List<string>(names), -1) { tooltip = tip };
                 _controls.Add($"arg.{s.Key}", dd, $"{s.Key}（選択）", UiSafety.SafeWrite);
                 container.Add(dd);
+                // 幅の狭いカードで選んだ文字が切れないよう、見出しを文字の幅にして残りを選択の欄へ回す。
+                dd.labelElement.style.minWidth = 0;
+                dd.labelElement.style.width = StyleKeyword.Auto;
+                if (dd.childCount > 1)
+                {
+                    dd[1].style.flexGrow = 1;
+                    dd[1].style.minWidth = 0;
+                }
                 void Set(string raw) { int i = IndexOf(raw); dd.SetValueWithoutNotify(i >= 0 ? names[i] : ""); }
                 Set(s.Value);
                 _setters[s.Key] = Set;

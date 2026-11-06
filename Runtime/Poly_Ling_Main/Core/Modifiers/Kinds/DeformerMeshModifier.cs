@@ -36,6 +36,12 @@ namespace Poly_Ling.Modifiers
     {
         /// <summary>包んでいるデフォーマの Name（DeformerRegistry の検索キー）。</summary>
         string GetDeformerName();
+
+        /// <summary>作業軸の原点（オブジェクトのローカル座標）。ビューのハンドルが読む（操作統合計画 段 8）。</summary>
+        Vector3 AxisOrigin { get; }
+
+        /// <summary>作業軸の向き（オイラー角・度。オブジェクトのローカル座標）。</summary>
+        Vector3 AxisRotation { get; }
     }
 
     public abstract class DeformerMeshModifier<TDeformer> : IMeshModifier, IMeshModifierPositions, IDeformerMeshModifier
@@ -50,6 +56,21 @@ namespace Poly_Ling.Modifiers
 
         [PLParam(Description = "作業軸の向き（オイラー角・度。オブジェクトのローカル座標。+Y がライン方向）", Min = -180.0, Max = 180.0, Step = 1)]
         public Vector3 AxisRotation { get; set; } = Vector3.zero;
+
+        /// <summary>
+        /// 追加メニューの既定値に使う（操作統合計画 段 3）。作業軸の原点を入力の中心へ置く（Maya の変形ハンドルと同じ）。
+        /// alignLine=true なら、入力が +Y 方向に厚みを持たないとき、ライン（+Y）をいちばん長い向きへ回す
+        /// （Y に沿って変形する種類が平らなものに効かないため）。入力の外接箱の大きさを返す。
+        /// </summary>
+        protected Vector3 FitAxisToInput(MeshObject input, bool alignLine = true)
+        {
+            if (!MeshModifierAddDefaultOps.TryBounds(input, out var center, out var size)) return Vector3.zero;
+            AxisOrigin = center;
+            float longest = MeshModifierAddDefaultOps.Longest(size);
+            if (alignLine && size.y <= longest * 1e-4f)
+                AxisRotation = size.x >= size.z ? new Vector3(0f, 0f, -90f) : new Vector3(90f, 0f, 0f);
+            return size;
+        }
 
         /// <summary>引数をデフォーマの Params へ写す。</summary>
         protected abstract void WriteParams(TDeformer deformer);

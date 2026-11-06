@@ -163,18 +163,20 @@ namespace Poly_Ling.PrimitiveMesh
             AddCornerSphere(md, new Vector3( inXB,-inY,-inZB), new Vector3( 1,-1,-1), r, seg, pivot);
             AddCornerSphere(md, new Vector3(-inXB,-inY,-inZB), new Vector3(-1,-1,-1), r, seg, pivot);
 
-            AddEdgeCylinder(md, new Vector3(-inXT, inY, inZT), new Vector3( inXT, inY, inZT), new Vector3( 0, 1, 1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXT, inY, inZT), new Vector3( inXT, inY,-inZT), new Vector3( 1, 1, 0), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXT, inY,-inZT), new Vector3(-inXT, inY,-inZT), new Vector3( 0, 1,-1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3(-inXT, inY,-inZT), new Vector3(-inXT, inY, inZT), new Vector3(-1, 1, 0), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3(-inXB,-inY, inZB), new Vector3( inXB,-inY, inZB), new Vector3( 0,-1, 1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXB,-inY, inZB), new Vector3( inXB,-inY,-inZB), new Vector3( 1,-1, 0), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXB,-inY,-inZB), new Vector3(-inXB,-inY,-inZB), new Vector3( 0,-1,-1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3(-inXB,-inY,-inZB), new Vector3(-inXB,-inY, inZB), new Vector3(-1,-1, 0), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXB,-inY, inZB), new Vector3( inXT, inY, inZT), new Vector3( 1, 0, 1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3(-inXB,-inY, inZB), new Vector3(-inXT, inY, inZT), new Vector3(-1, 0, 1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3( inXB,-inY,-inZB), new Vector3( inXT, inY,-inZT), new Vector3( 1, 0,-1), r, seg, pivot);
-            AddEdgeCylinder(md, new Vector3(-inXB,-inY,-inZB), new Vector3(-inXT, inY,-inZT), new Vector3(-1, 0,-1), r, seg, pivot);
+            // 丸めの帯は隣の面と同じ数に分ける（少ないと継ぎ目に穴が空く。閉じた立体でなくなりブーリアンが失敗する）。
+            int dx = p.Subdivisions.x, dy = p.Subdivisions.y, dz = p.Subdivisions.z;
+            AddEdgeCylinder(md, new Vector3(-inXT, inY, inZT), new Vector3( inXT, inY, inZT), new Vector3( 0, 1, 1), r, seg, pivot, dx);
+            AddEdgeCylinder(md, new Vector3( inXT, inY, inZT), new Vector3( inXT, inY,-inZT), new Vector3( 1, 1, 0), r, seg, pivot, dz);
+            AddEdgeCylinder(md, new Vector3( inXT, inY,-inZT), new Vector3(-inXT, inY,-inZT), new Vector3( 0, 1,-1), r, seg, pivot, dx);
+            AddEdgeCylinder(md, new Vector3(-inXT, inY,-inZT), new Vector3(-inXT, inY, inZT), new Vector3(-1, 1, 0), r, seg, pivot, dz);
+            AddEdgeCylinder(md, new Vector3(-inXB,-inY, inZB), new Vector3( inXB,-inY, inZB), new Vector3( 0,-1, 1), r, seg, pivot, dx);
+            AddEdgeCylinder(md, new Vector3( inXB,-inY, inZB), new Vector3( inXB,-inY,-inZB), new Vector3( 1,-1, 0), r, seg, pivot, dz);
+            AddEdgeCylinder(md, new Vector3( inXB,-inY,-inZB), new Vector3(-inXB,-inY,-inZB), new Vector3( 0,-1,-1), r, seg, pivot, dx);
+            AddEdgeCylinder(md, new Vector3(-inXB,-inY,-inZB), new Vector3(-inXB,-inY, inZB), new Vector3(-1,-1, 0), r, seg, pivot, dz);
+            AddEdgeCylinder(md, new Vector3( inXB,-inY, inZB), new Vector3( inXT, inY, inZT), new Vector3( 1, 0, 1), r, seg, pivot, dy);
+            AddEdgeCylinder(md, new Vector3(-inXB,-inY, inZB), new Vector3(-inXT, inY, inZT), new Vector3(-1, 0, 1), r, seg, pivot, dy);
+            AddEdgeCylinder(md, new Vector3( inXB,-inY,-inZB), new Vector3( inXT, inY,-inZT), new Vector3( 1, 0,-1), r, seg, pivot, dy);
+            AddEdgeCylinder(md, new Vector3(-inXB,-inY,-inZB), new Vector3(-inXT, inY,-inZT), new Vector3(-1, 0,-1), r, seg, pivot, dy);
 
             AddQuadFace(md, new Vector3(p.WidthBottom*0.5f,-inY, inZB)-pivot, new Vector3(p.WidthBottom*0.5f,-inY,-inZB)-pivot, new Vector3(p.WidthTop*0.5f, inY,-inZT)-pivot, new Vector3(p.WidthTop*0.5f, inY, inZT)-pivot, Vector3.right,   p.Subdivisions.z, p.Subdivisions.y);
             AddQuadFace(md, new Vector3(-p.WidthBottom*0.5f,-inY,-inZB)-pivot, new Vector3(-p.WidthBottom*0.5f,-inY, inZB)-pivot, new Vector3(-p.WidthTop*0.5f, inY, inZT)-pivot, new Vector3(-p.WidthTop*0.5f, inY,-inZT)-pivot, Vector3.left,    p.Subdivisions.z, p.Subdivisions.y);
@@ -273,8 +275,9 @@ namespace Poly_Ling.PrimitiveMesh
                 { int i0 = start+lat*cols+lon; md.AddQuad(i0, i0+1, i0+cols+1, i0+cols); }
         }
 
-        private static void AddEdgeCylinder(MeshObject md, Vector3 start3, Vector3 end3, Vector3 cornerDir, float radius, int seg, Vector3 pivot)
+        private static void AddEdgeCylinder(MeshObject md, Vector3 start3, Vector3 end3, Vector3 cornerDir, float radius, int seg, Vector3 pivot, int div)
         {
+            div = Mathf.Max(1, div);
             int startIdx = md.VertexCount;
             Vector3 axis = (end3 - start3).normalized;
             Vector3 p1, p2;
@@ -285,22 +288,24 @@ namespace Poly_Ling.PrimitiveMesh
             bool rev = Vector3.Dot(Vector3.Cross(p1, p2), axis) < 0;
             Vector3 rs = rev ? end3 : start3, re = rev ? start3 : end3;
 
-            for (int ring = 0; ring <= 1; ring++)
+            for (int ring = 0; ring <= div; ring++)
             {
-                Vector3 bp = ring == 0 ? rs : re;
+                float rt = (float)ring / div;
+                Vector3 bp = Vector3.Lerp(rs, re, rt);
                 for (int j = 0; j <= seg; j++)
                 {
                     float a = j * Mathf.PI * 0.5f / seg;
                     Vector3 n = p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a);
-                    md.Vertices.Add(new Vertex(bp + n*radius - pivot, new Vector2(ring, (float)j/seg), n));
+                    md.Vertices.Add(new Vertex(bp + n*radius - pivot, new Vector2(rt, (float)j/seg), n));
                 }
             }
             int cols = seg + 1;
-            for (int j = 0; j < seg; j++)
-            {
-                int i0 = startIdx + j;
-                md.AddQuad(i0, i0+1, startIdx+cols+j+1, startIdx+cols+j);
-            }
+            for (int ring = 0; ring < div; ring++)
+                for (int j = 0; j < seg; j++)
+                {
+                    int i0 = startIdx + ring*cols + j;
+                    md.AddQuad(i0, i0+1, i0+cols+1, i0+cols);
+                }
         }
     }
 }

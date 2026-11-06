@@ -1,10 +1,10 @@
 // PlayerPrimitiveMeshSubPanel.SpringBoneLadder.cs
-// 図形生成サブパネル：はしごから揺れもの用のボーン鎖を作る。
+// 図形生成サブパネル：帯から揺れもの用のボーン鎖を作る。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 //
 // 【他の揺れものボーンとの違い】
 //   1本・円筒・回転体は数値（半径・高さ・折れ線）から置く。こちらは既にある
-//   メッシュのはしごから置く。位置が頂点そのものに載るので、頂点とボーンの
+//   メッシュの帯から置く。位置が頂点そのものに載るので、頂点とボーンの
 //   対応が決まり、そのままウェイトになる。
 //
 // 【取り込み】
@@ -18,8 +18,8 @@
 //   別のトグルにすると、モードと食い違った取り込みができてしまう。
 //
 // 【間引き】
-//   段ストライド（段を何段に1つ）と本ストライド（はしご／列を何本に1つ）で
-//   ボーンの数を減らす。はしご自体は間引かず、ボーンを置く骨組みだけを粗くする。
+//   段ストライド（段を何段に1つ）と本ストライド（帯／列を何本に1つ）で
+//   ボーンの数を減らす。帯自体は間引かず、ボーンを置く骨組みだけを粗くする。
 //   本方向は「間引く」（間の線を左右の鎖で補間）と「まとめる」（平均位置に鎖1本）
 //   から選ぶ。考え方の全体は SpringBoneLadderPlacer.cs の冒頭にまとめてある。
 //
@@ -28,7 +28,7 @@
 //   ここで別に数えると、間引きの決まりが本体と食い違ったときに気づけない。
 //
 // 【ウェイト】
-//   塗る先は取り込み元のメッシュ＝はしご自身。はしごから作ったフリルや
+//   塗る先は取り込み元のメッシュ＝帯自身。帯から作ったフリルや
 //   パイプは別メッシュで、頂点はここには無い。
 //
 // 【ミラー】
@@ -40,9 +40,9 @@
 //
 // 【モディファイアスタック】
 //   「残す」を立てると、取り込み元とパラメータがスタックに控えられ、
-//   出力として鎖の根元ボーンが記録される。あとからはしごを直して作り直すと、
+//   出力として鎖の根元ボーンが記録される。あとから帯を直して作り直すと、
 //   ボーンを作らず位置だけが流し込まれる（ObjectId が保たれるので、
-//   揺れ方の設定・選択辞書・はしごのウェイトが切れない）。
+//   揺れ方の設定・選択辞書・帯のウェイトが切れない）。
 //   ただし鎖の本数や段数が変わるほど直したときは作り直しになり、
 //   古い鎖はモデルに残る。
 
@@ -71,7 +71,7 @@ namespace Poly_Ling.Player
         private bool   _sbLadderPaint = true;
 
         /// <summary>取り込み元とパラメータをモディファイアスタックとして残すか。</summary>
-        private bool   _sbLadderKeepAsModifierStack;
+        private bool   _sbLadderKeepAsModifierStack = true;
 
         /// <summary>ミラー側にも鎖を作るか。</summary>
         private bool   _sbLadderMakeMirror;
@@ -92,7 +92,7 @@ namespace Poly_Ling.Player
         /// <summary>本方向のやり方。Thin=間引く / Merge=まとめる。</summary>
         private SpringBoneLadderBundleMode _sbLadderBundle = SpringBoneLadderBundleMode.Thin;
 
-        [UiControl("springBoneLadder.info", Safety = UiSafety.ReadOnly, Description = "はしごから作る鎖の情報")]
+        [UiControl("springBoneLadder.info", Safety = UiSafety.ReadOnly, Description = "帯から作る鎖の情報")]
         private Label _sbLadderInfo;
 
         /// <summary>取り込み方のドロップダウンに並べる順。表示名と対で持つ。</summary>
@@ -114,13 +114,13 @@ namespace Poly_Ling.Player
         {
             c.Add(ShapeTitle(T(ShapeKeys[(int)ShapeKind.SpringBoneLadder])));
 
-            c.Add(SL("既にあるメッシュのはしごからボーン鎖を作ります。"
-                   + "メッシュは作りません。ウェイトははしご自身へ塗ります。"));
+            c.Add(SL("既にあるメッシュの帯からボーン鎖を作ります。"
+                   + "メッシュは作りません。ウェイトは帯自身へ塗ります。"));
 
             // ── 並べ方 ────────────────────────────────────────────────
             var modeDd = new DropdownField(
                 T("SBLadderMode"),
-                new List<string> { "髪系（はしご1本ごとに独立）", "スカート系（段を縦断）" },
+                new List<string> { "髪系（帯1本ごとに独立）", "スカート系（段を縦断）" },
                 _sbLadderMode == SpringBoneLadderMode.Stack ? 1 : 0);
             modeDd.RegisterValueChangedCallback(_ =>
             {
@@ -131,8 +131,8 @@ namespace Poly_Ling.Player
             });
             c.Add(RowTarget.Add("SBLadderMode", modeDd, T("SBLadderMode").Text));
 
-            c.Add(SL("髪系ははしご1本が鎖1本になり、ボーンは横木の中点に載ります。"
-                   + "スカート系は横方向のはしごが縦に積まれた形を想定し、"
+            c.Add(SL("髪系は帯1本が鎖1本になり、ボーンは段の中点に載ります。"
+                   + "スカート系は横方向の帯が縦に積まれた形を想定し、"
                    + "列ごとに段を縦断する鎖を作ります。ボーンはレールの頂点に載ります。"));
 
             // ── 取り込み元 ────────────────────────────────────────────
@@ -141,7 +141,7 @@ namespace Poly_Ling.Player
             // ── 取り込み方 ────────────────────────────────────────────
             var methodDd = new DropdownField(
                 T("SBLadderMethod"),
-                new List<string> { "はしごを自動検索", "円環を自動検索", "パーツ選択辞書の面から" },
+                new List<string> { "帯を自動検索", "円環を自動検索", "パーツ選択辞書の面から" },
                 MethodIndexOf(_sbLadderMethod));
             methodDd.RegisterValueChangedCallback(_ =>
             {
@@ -154,11 +154,11 @@ namespace Poly_Ling.Player
             var setName = new TextField(T("SBLadderSetName")) { value = _sbLadderSetName };
             setName.RegisterValueChangedCallback(e => _sbLadderSetName = e.newValue);
             c.Add(RowTarget.Add("SBLadderSetName", setName, T("SBLadderSetName").Text));
-            c.Add(SL("「はしごを自動検索」は開始タグ三角形が起点です。"
+            c.Add(SL("「帯を自動検索」は根元の目印の三角形が起点です。"
                    + "「パーツ選択辞書の面から」のときだけ辞書名を使います。"));
 
             c.Add(WB("SBLadderCheck", T("SBLadderCheck"), RefreshSpringBoneLadderInfo, UiSafety.SafeWrite,
-                "はしごの取り込みを試して結果を表示する（モデルは変えない）"));
+                "帯の取り込みを試して結果を表示する（モデルは変えない）"));
 
             _sbLadderInfo = new Label();
             _sbLadderInfo.style.fontSize   = 10;
@@ -171,7 +171,7 @@ namespace Poly_Ling.Player
                 () => _sbLadderAutoAttach,
                 v => { _sbLadderAutoAttach = v; RefreshSpringBoneLadderInfo(); }));
 
-            c.Add(SL("はしごの階層親をそのまま取り付け先にします。"
+            c.Add(SL("帯の階層親をそのまま取り付け先にします。"
                    + "親がまだメッシュでもかまいません。スキンド化のとき、"
                    + "そのメッシュのボーンへ自動で付け替わります。"
                    + "外すと下の一覧で選んだものを使います。"));
@@ -181,7 +181,7 @@ namespace Poly_Ling.Player
             // ── 向きとウェイト ────────────────────────────────────────
             c.Add(TR(T("SBLadderReverse"), () => _sbLadderReverse, v => _sbLadderReverse = v));
             c.Add(SL("鎖の根元と先が逆に出たときに入れ替えます。"
-                   + "はしごの向きは検出順で決まるので、幾何的な上下では決まりません。"));
+                   + "帯の向きは検出順で決まるので、幾何的な上下では決まりません。"));
 
             c.Add(TR(T("SBLadderPaint"), () => _sbLadderPaint, v => _sbLadderPaint = v));
             c.Add(SL("節点のボーンへ塗ります。節点と節点の間の頂点は、"
@@ -201,7 +201,7 @@ namespace Poly_Ling.Player
             c.Add(TR(T("SBLadderKeepAsModifierStack"),
                 () => _sbLadderKeepAsModifierStack, v => _sbLadderKeepAsModifierStack = v));
             c.Add(SL("取り込み元とパラメータを残します。出力は鎖の根元ボーンです。"
-                   + "あとからはしごを直して作り直すと、ボーンを作らず位置だけが入ります。"
+                   + "あとから帯を直して作り直すと、ボーンを作らず位置だけが入ります。"
                    + "鎖の本数や段数が変わるほど直したときは新しく作り直され、"
                    + "古い鎖はそのまま残ります。"));
 
@@ -227,7 +227,7 @@ namespace Poly_Ling.Player
             });
             c.Add(RowTarget.Add("SBLadderBundleMode", bundleDd, T("SBLadderBundleMode").Text));
 
-            c.Add(SL("はしご自体は間引かず、ボーンを置く骨組みだけを粗くします。"
+            c.Add(SL("帯自体は間引かず、ボーンを置く骨組みだけを粗くします。"
                    + "頂点は必ずどれかの鎖へ付きます。末尾の段と末尾の本は必ず節点になるので、"
                    + "割り切れなくてもかまいません。"
                    + "本ストライドが 1 のときは「間引く」と「まとめる」は同じ結果です。"));
@@ -236,7 +236,7 @@ namespace Poly_Ling.Player
                    + "「間引く」は鎖がレール頂点に載ったままで、間はなめらかに曲がります。"));
 
             c.Add(SL("髪系で本ストライドを 2 以上にするときは注意してください。"
-                   + "はしごの並び順は開始タグ三角形の面番号順で、空間的な隣接順とは限りません。"
+                   + "帯の並び順は根元の目印の三角形の面番号順で、空間的な隣接順とは限りません。"
                    + "スカート系の列番号はベルト上の順なので、そのまま隣り合います。"));
 
             // ── 鎖の先・揺れ方・段ごとのセット ────────────────────────
@@ -303,7 +303,7 @@ namespace Poly_Ling.Player
         /// 取り付け先を取り込み元の階層親から決める。
         ///
         /// 【なぜ親をそのまま使うか】
-        ///   はしご（例「円筒24C」）は、揺らしたい部位の下にぶら下がっている。
+        ///   帯（例「円筒24C」）は、揺らしたい部位の下にぶら下がっている。
         ///   その親がそのまま「揺れの根元」になる。名前で探すと規則が崩れた
         ///   モデルで黙って外れるので、階層をそのまま読む。
         ///
@@ -390,7 +390,7 @@ namespace Poly_Ling.Player
             if (_sbLadderAutoAttach)
                 attach = ResolveLadderAttachAuto(model.GetMeshContext(src), out _);
 
-            // 1. ボーンを作る（必要ならはしごへウェイトも塗る）
+            // 1. ボーンを作る（必要なら帯へウェイトも塗る）
             SendCommand(new PlaceSpringBoneLadderChainsCommand(
                 mi, src, _sbLadderMethod, _sbLadderMode,
                 attach, prefix, _sbLadderSetName,

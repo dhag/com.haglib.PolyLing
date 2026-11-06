@@ -147,6 +147,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnKnifeEraseEdge       = ExecuteKnifeEraseEdge;
             _commandDispatcher.OnKnifeSimpleCut       = ExecuteKnifeSimpleCut;
             _commandDispatcher.OnSetWorkAxis         = ExecuteSetWorkAxis;
+            _commandDispatcher.OnShowModifierGizmo   = ExecuteShowModifierGizmo;
             _commandDispatcher.OnCreateWorkAxisObject = ExecuteCreateWorkAxisObject;
             _commandDispatcher.OnSetActiveWorkAxis    = ExecuteSetActiveWorkAxis;
             _commandDispatcher.OnRecallWorkAxis      = ExecuteRecallWorkAxis;

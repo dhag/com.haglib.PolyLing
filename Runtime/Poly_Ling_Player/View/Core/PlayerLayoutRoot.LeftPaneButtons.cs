@@ -171,8 +171,6 @@ namespace Poly_Ling.Player
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        ModifierStackBtn        { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
-        public Button        ModifierChainBtn        { get; private set; }
-        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalExcludeSetBtn   { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        NormalEditBtn         { get; private set; }
@@ -639,13 +637,11 @@ namespace Poly_Ling.Player
             MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
             rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelect.Add(rowSelSet);
 
-            // モディファイアスタック（帯・断面・パラメータと出力先のまとまり）。
+            // 履歴の一覧（生成の入力・設定と出力先のまとまり）。管理用。ふだんの操作は右ペインのモディファイアで行う。
             // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
-            ModifierStackBtn = MakeBtn("モディファイアスタック"); ModifierStackBtn.style.flexGrow = 1; ModifierStackBtn.style.marginRight = 2;
-            // 処理列（1 つのオブジェクトに処理を積み重ねる非破壊のモディファイア）。スタックの一種なので隣に置く。
-            ModifierChainBtn = MakeBtn("処理列"); ModifierChainBtn.style.flexGrow = 1;
+            ModifierStackBtn = MakeBtn("履歴の一覧"); ModifierStackBtn.style.flexGrow = 1;
             var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
-            rowObjGroup.Add(ModifierStackBtn); rowObjGroup.Add(ModifierChainBtn); foSelect.Add(rowObjGroup);
+            rowObjGroup.Add(ModifierStackBtn); foSelect.Add(rowObjGroup);
 
             // ── 移動/回転/拡大縮小 ─────────────────────────────────────
             var foTransform = MakeFoldout("移動/回転/拡大縮小", "Transform");

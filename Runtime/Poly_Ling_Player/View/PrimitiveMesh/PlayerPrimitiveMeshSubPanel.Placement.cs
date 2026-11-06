@@ -235,11 +235,39 @@ namespace Poly_Ling.Player
         private bool            _mergeDuplicateVertices = true;
 
         /// <summary>
-        /// 生成に使った入力とパラメータをモディファイアスタックとして残すか。既定 false。
-        /// false（＝これまでのやり方）では生成後に何も残らないので、
-        /// 作り直したいときは同じ操作をやり直すことになる。
+        /// 生成に使った入力とパラメータを履歴（モディファイアスタック）として残すか。
+        /// 入力のある図形は既定で残し、単体の図形は既定で残さない（操作統合計画 6 章。Blender は単体図形を
+        /// 普通のメッシュとして作り、残すと頂点編集が拒否されるため）。値は 2 つの区分で別々に覚える。
         /// </summary>
-        private bool            _keepAsModifierStack = false;
+        private bool _keepAsModifierStack
+        {
+            get => ShapeHasInput ? _keepHistoryWithInput : _keepHistorySingle;
+            set { if (ShapeHasInput) _keepHistoryWithInput = value; else _keepHistorySingle = value; }
+        }
+        private bool _keepHistoryWithInput = true;
+        private bool _keepHistorySingle    = false;
+
+        /// <summary>入力を読む図形か（ModifierInventory の入力ありに当たる）。</summary>
+        private bool ShapeHasInput
+        {
+            get
+            {
+                switch (_current)
+                {
+                    case ShapeKind.Revolution:
+                    case ShapeKind.Profile2D:
+                    case ShapeKind.Frill:
+                    case ShapeKind.Pipe:
+                    case ShapeKind.PlaceObject:
+                    case ShapeKind.EdgeRibbonFace:
+                    case ShapeKind.VertexBillboardPlace:
+                    case ShapeKind.BoltPattern:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
 
         // 生成時の回転(度) / スケール（平行移動は従来どおり呼出し側が扱う）。
         // ベイク ON = 頂点へ焼き込む / OFF = 描画オブジェクトの姿勢(BoneTransform)へ入れる。
@@ -328,7 +356,15 @@ namespace Poly_Ling.Player
                 _materialDd.style.display = useMaterial ? DisplayStyle.Flex : DisplayStyle.None;
             if (_keepAsModifierStackRow != null)
                 _keepAsModifierStackRow.style.display = UsesCommonKeepAsModifierStack ? DisplayStyle.Flex : DisplayStyle.None;
+            // 図形の区分で値が変わるので欄を合わせる。注意は入力のある図形で切ったときだけ。
+            _keepAsModifierStackToggle?.SetValueWithoutNotify(_keepAsModifierStack);
+            if (_keepHistoryWarn != null)
+                _keepHistoryWarn.style.display = ShapeHasInput && !_keepAsModifierStack ? DisplayStyle.Flex : DisplayStyle.None;
         }
+
+        /// <summary>履歴を残さないときの注意。</summary>
+        [UiControl(Ignore = true)]
+        private Label _keepHistoryWarn;
 
         /// <summary>
         /// 共通の「モディファイアスタックとして残す」（PrimitivePlacement.KeepAsModifierStack）を

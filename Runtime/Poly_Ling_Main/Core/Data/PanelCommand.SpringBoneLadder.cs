@@ -36,7 +36,9 @@ using Poly_Ling.Tools.SpringBoneRig;
 namespace Poly_Ling.Data
 {
     [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
-    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]   // PlayerCommandDispatcher.SpringBone.cs
+    [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, DisplayName = "揺れ鎖")]   // PlayerCommandDispatcher.SpringBone.cs
+    [PLModifierInput(Accepts = "帯（面の列）を持つオブジェクト", Decide = "帯の取り込み方。履歴カードの「揺れ鎖を作る」は同じカーブの帯を読み、帯と生成物をスキンド化する", Result = "新しいボーン。帯がスキンド化済みならウェイトを塗る",
+        ReEdit = "履歴の一覧の引数と、入力のカーブ", DefaultInput = "なし：帯が要る（カーブから作るなら先にパイプを作る。カーブの編集がボーンまで追随するのは独自の機能）")]
     [PLUiRoute("揺れものボーンのパネル（はしご）", "leftPane.fold.Primitive", "leftPane.liveSpringBonePrimitiveBtn",
         "primitiveSpringBone.shape.SpringBoneLadder", "primitiveSpringBone.create",
         Run = "primitiveSpringBone.create",

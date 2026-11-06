@@ -74,6 +74,22 @@ namespace Poly_Ling.Player
                 ? Poly_Ling.View.LiveProjectView.BuildModifierStackViews(_project, _model)
                 : Array.Empty<ModifierStackView>();
 
+        public IReadOnlyList<ModifierStackView> ModifierStacksOf(int masterIndex)
+            => _project != null
+                ? Poly_Ling.View.LiveProjectView.BuildModifierStacksOf(_project, _model, masterIndex)
+                : Array.Empty<ModifierStackView>();
+
+        public IReadOnlyList<ModifierUsageView> ModifierUsagesOf(int masterIndex)
+            => Poly_Ling.View.LiveProjectView.BuildModifierUsagesOf(_model, masterIndex);
+
+        public IReadOnlyCollection<int> ModifierObjectIndices
+            => Poly_Ling.View.LiveProjectView.BuildModifierObjectIndices(_model);
+
+        public IReadOnlyCollection<int> ModifierResultIndices
+            => Poly_Ling.Modifiers.ModifierResultOps.ResultIndices(_model);
+        public IReadOnlyDictionary<int, int> ModifierResultParents
+            => Poly_Ling.Modifiers.ModifierResultOps.ResultParents(_model);
+
         public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex)
             => Poly_Ling.View.LiveProjectView.BuildModifierScopeFromSelection(_model, masterIndex);
 

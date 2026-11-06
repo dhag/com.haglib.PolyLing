@@ -41,6 +41,10 @@ namespace Poly_Ling.Modifiers
         public bool               HasDragFollow;
         /// <summary>末尾固定（PLMeshModifierAttribute.PinnedLast。段 8）。</summary>
         public bool               PinnedLast;
+        /// <summary>追加メニューに出さない（PLMeshModifierAttribute.HideFromMenu）。</summary>
+        public bool               HideFromMenu;
+        /// <summary>全体にだけ掛かる（PLMeshModifierAttribute.WholeMeshOnly）。</summary>
+        public bool               WholeMeshOnly;
         public List<MeshModifierParamInfo> Params = new List<MeshModifierParamInfo>();
     }
 
@@ -150,6 +154,8 @@ namespace Poly_Ling.Modifiers
                 HasPositionsPath = typeof(IMeshModifierPositions).IsAssignableFrom(t),
                 HasDragFollow    = typeof(IMeshModifierDragFollow).IsAssignableFrom(t),
                 PinnedLast       = attr.PinnedLast,
+                HideFromMenu     = attr.HideFromMenu,
+                WholeMeshOnly    = attr.WholeMeshOnly,
             };
 
             bool ok = true;
@@ -276,7 +282,22 @@ namespace Poly_Ling.Modifiers
             return null;
         }
 
-        /// <summary>処理範囲だけを "scope." のキーの文字列にする（ToArgs と同じ書き方）。画面の「選択から登録」が使う。</summary>
+        /// <summary>
+        /// 追加メニューから足した直後の引数（IMeshModifierAddDefaults。処理範囲は含まない）。
+        /// 種類が無ければ空。input は足す位置の入力。
+        /// </summary>
+        public static Dictionary<string, string> AddDefaultArgs(string kind, MeshObject input)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            var m = Create(kind);
+            if (m == null) return result;
+            if (m is IMeshModifierAddDefaults d && input != null) d.ApplyAddDefaults(input);
+            foreach (var kv in ToArgs(m, null))
+                if (!kv.Key.StartsWith(MeshModifierScope.KeyPrefix, StringComparison.Ordinal)) result[kv.Key] = kv.Value;
+            return result;
+        }
+
+        /// <summary>処理範囲だけを "scope." のキーの文字列にする（ToArgs と同じ書き方）。</summary>
         public static Dictionary<string, string> ScopeToArgs(MeshModifierScope scope)
         {
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -287,6 +308,8 @@ namespace Poly_Ling.Modifiers
         private static void WriteScope(MeshModifierScope s, Dictionary<string, string> dst)
         {
             Put(dst, MeshModifierScope.KeyKind, s.Kind);
+            // 反転は全体では意味が無いので書かない。キーが無ければ反転なし（古いデータの読み方）。
+            if (s.Invert && s.Kind != MeshModifierScopeKind.All) Put(dst, MeshModifierScope.KeyInvert, true);
             switch (s.Kind)
             {
                 case MeshModifierScopeKind.Ids:
@@ -326,6 +349,7 @@ namespace Poly_Ling.Modifiers
                     case MeshModifierScope.KeyFaceVertexIds:
                     case MeshModifierScope.KeyFaceSizes:
                     case MeshModifierScope.KeyPartsSet:
+                    case MeshModifierScope.KeyInvert:
                         break;
                     default:
                         error = $"処理範囲に引数 \"{kv.Key}\" は無い";
@@ -347,6 +371,12 @@ namespace Poly_Ling.Modifiers
             if (!ReadInts(args, MeshModifierScope.KeyFaceVertexIds, out scope.FaceVertexIds, out error)) return false;
             if (!ReadInts(args, MeshModifierScope.KeyFaceSizes,     out scope.FaceSizes,     out error)) return false;
             if (args.TryGetValue(MeshModifierScope.KeyPartsSet, out var pn) && pn != null) scope.PartsSetName = pn;
+            if (args.TryGetValue(MeshModifierScope.KeyInvert, out var ri) && !string.IsNullOrEmpty(ri))
+            {
+                if (!PanelCommandFactory.TryParseValue(ri, typeof(bool), out object iv, out string why))
+                { error = $"\"{MeshModifierScope.KeyInvert}\" を読めない（{why}）"; return false; }
+                scope.Invert = (bool)iv;
+            }
 
             if (scope.Kind == MeshModifierScopeKind.PartsSet && string.IsNullOrEmpty(scope.PartsSetName))
             { error = $"範囲がパーツ選択辞書なのに \"{MeshModifierScope.KeyPartsSet}\" が無い"; return false; }

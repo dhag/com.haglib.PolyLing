@@ -190,6 +190,20 @@ namespace Poly_Ling.UndoSystem
 
             // 1. リストを並べ替え（同じオブジェクト参照を使用）
             var prevOrder = new List<MeshContext>(context.MeshContextList);
+
+            // 選択は索引で持つので、選んでいるものを実体で控えて、並べ替えのあとで索引を引き直す。
+            // 控えないと Undo のあとで同じ索引の別のオブジェクトが選ばれた状態になる。
+            List<MeshContext> ContextsOf(List<int> indices)
+            {
+                var list = new List<MeshContext>(indices.Count);
+                foreach (int i in indices)
+                    if (i >= 0 && i < prevOrder.Count) list.Add(prevOrder[i]);
+                return list;
+            }
+            var selectedDrawables = ContextsOf(context.SelectedDrawableMeshIndices);
+            var selectedBones     = ContextsOf(context.SelectedBoneIndices);
+            var selectedMorphs    = ContextsOf(context.SelectedMorphIndices);
+
             context.ReplaceMeshContexts(orderedList);
 
             // 1b. 並べ替えで動いた索引参照を付け替える。
@@ -250,6 +264,22 @@ namespace Poly_Ling.UndoSystem
                     // v2.0: 新API使用
                     context.Select(newIndex);
                 }
+            }
+            else
+            {
+                List<int> IndicesOf(List<MeshContext> contexts)
+                {
+                    var list = new List<int>(contexts.Count);
+                    foreach (var mc in contexts)
+                    {
+                        int i = context.MeshContextList.IndexOf(mc);
+                        if (i >= 0) list.Add(i);
+                    }
+                    return list;
+                }
+                context.SelectedDrawableMeshIndices = IndicesOf(selectedDrawables);
+                context.SelectedBoneIndices         = IndicesOf(selectedBones);
+                context.SelectedMorphIndices        = IndicesOf(selectedMorphs);
             }
             context.ValidateSelection();
 

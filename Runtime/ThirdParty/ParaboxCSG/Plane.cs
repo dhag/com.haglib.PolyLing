@@ -27,6 +27,13 @@
 // epsilon を 1e-9 まで下げても、法線を正規化しても、同じ 8 枚が落ちる。
 //
 // w の意味は「原点から平面までの距離」に変わる。平方根のぶん僅かに遅くなる。
+//
+// 【法線が 0 になる（元コードからの変更 2）】
+// 小さい三角形（外積の長さ 1e-5 未満。一辺 3mm ほど）や、分割で作った細い断片は、
+// Vector3.normalized が法線を 0 にする。法線 0 の面が木の節になると、同じ節へ来た面が
+// すべて「同一平面」に入り、木が壊れて面が落ちる（上の注記の「別の原因」。曲げた後のブーリアンで
+// 境界辺が残った）。法線は double で正規化し、分割した断片は元の面の平面を受け継ぐ。
+// 潰れた入力の三角形（面積 0）は木に入れない（Model）。
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -60,9 +67,17 @@ namespace Poly_Ling.CSG
         public Plane(Vector3 a, Vector3 b, Vector3 c)
         {
             // 正規化する理由はファイル冒頭の注記を参照。
-            normal = Vector3.Cross(b - a, c - a).normalized;
+            // Vector3.normalized は長さ 1e-5 未満を 0 にするので使わない（注記の「法線が 0 になる」）。
+            double ux = (double)b.x - a.x, uy = (double)b.y - a.y, uz = (double)b.z - a.z;
+            double vx = (double)c.x - a.x, vy = (double)c.y - a.y, vz = (double)c.z - a.z;
+            double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+            double len = System.Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            normal = len > 0.0 ? new Vector3((float)(nx / len), (float)(ny / len), (float)(nz / len)) : Vector3.zero;
             w = Vector3.Dot(normal, a);
         }
+
+        /// <summary>写しを作る。分割した断片は元の面の平面を受け継ぐ（Flip が別々に効くように写す）。</summary>
+        public Plane Clone() => new Plane { normal = normal, w = w };
 
         public override string ToString() => $"{normal} {w}";
 
@@ -157,12 +172,12 @@ namespace Poly_Ling.CSG
 
                     if (f.Count >= 3)
                     {
-                        front.Add(new Polygon(f, polygon.materialIndex));
+                        front.Add(new Polygon(f, polygon.materialIndex, polygon.plane.Clone()));
                     }
 
                     if (b.Count >= 3)
                     {
-                        back.Add(new Polygon(b, polygon.materialIndex));
+                        back.Add(new Polygon(b, polygon.materialIndex, polygon.plane.Clone()));
                     }
                 }
                 break;

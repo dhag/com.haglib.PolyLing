@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
             c.Add(ShapeTitle(T("Frill")));
             c.Add(NF(() => _frillP.MeshName, v => _frillP.MeshName = v));
 
-            // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
+            // ── 基準帯（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
             var baseFold = new Foldout { text = T("FrillBase"), value = true };
             baseFold.style.marginBottom = 4;
@@ -161,17 +161,17 @@ namespace Poly_Ling.Player
             _frillInfoLabel.style.marginTop  = 2;
             bc.Add(_frillInfoLabel);
 
-            // ── はしごごとの高さ倍率 ──
-            // 全体倍率とは掛け算で合成する。はしごが2本以上あるときだけ出す。
+            // ── 帯ごとの高さ倍率 ──
+            // 全体倍率とは掛け算で合成する。帯が2本以上あるときだけ出す。
             _frillBeltScaleContainer = new VisualElement();
             bc.Add(_frillBeltScaleContainer);
             RebuildFrillBeltScales();
 
-            // ── はしごCSV ──
+            // ── 帯CSV ──
             BuildBeltCsvUI(bc, _frillBelts,
                 "Primitive.Frill.BeltCsv", "frill_belt.csv", RefreshFrillInfo);
 
-            // ── はしごの向き ──
+            // ── 帯の向き ──
             BuildBeltOrientUI(bc, _frillOrient);
 
             // ── 共有レールの接続 ──
@@ -195,14 +195,14 @@ namespace Poly_Ling.Player
             seamHint.style.marginBottom = 2;
             c.Add(seamHint);
 
-            // ── はしごのウェイトを引き継ぐ ──
+            // ── 帯のウェイトを引き継ぐ ──
             c.Add(TR(T("BeltInheritWeights"), () => _frillP.InheritBeltWeights,
                 v => { _frillP.InheritBeltWeights = v; D(); }));
 
             var inheritHint = new Label(
-                "取り込み元のはしごに塗ってあるボーンウェイトを、生成した頂点へ配ります。"
+                "取り込み元の帯に塗ってあるボーンウェイトを、生成した頂点へ配ります。"
                    + "頂点は線分の両端のウェイトを断面の x で混ぜたものになります。"
-                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。"
+                   + "帯の点と位置が合う頂点から引くので、帯を塗っていなければ何も起きません。"
                    + "厚み付けと重複頂点の結合を越えて残ります。");
             inheritHint.style.fontSize     = 10;
             inheritHint.style.whiteSpace   = WhiteSpace.Normal;

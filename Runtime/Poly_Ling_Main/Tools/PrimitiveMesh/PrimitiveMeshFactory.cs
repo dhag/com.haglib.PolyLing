@@ -460,7 +460,11 @@ namespace Poly_Ling.PrimitiveMesh
         private static MeshObject GeneratePipe(
             CreatePipeCommand c, BeltSourceResolver resolveBeltSource)
         {
-            var profile = ToList(c.Profile);
+            // 断面の種類が決まっていれば種類の値から作る（カスタムは点列のまま）。
+            bool profileClosed = c.ProfileClosed;
+            var profile = Poly_Ling.Pipe.SweepSectionOps.Build(c.Params, out bool sectionClosed);
+            if (profile != null) profileClosed = sectionClosed;
+            else profile = ToList(c.Profile);
             var mo = new MeshObject(c.Params.MeshName);
 
             // 梯子1本＝パーツ1つ。全ベルトで同じカウンタを共有し、0 から連番にする。
@@ -478,8 +482,8 @@ namespace Poly_Ling.PrimitiveMesh
                 long tGen = ModifierStepProfiler.Now();
                 var part = PipeMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
-                    profile, c.ProfileClosed, c.Params.CapEnds,
-                    b.StartPoint, b.EndPoint,
+                    profile, profileClosed, c.Params.CapEnds,
+                    c.Params.FlatCaps ? null : b.StartPoint, c.Params.FlatCaps ? null : b.EndPoint,
                     c.Params.MeshName, partsIds,
                     b.LeftWeights, b.RightWeights,
                     PipeGenOptions.FromParams(c.Params));
@@ -503,6 +507,40 @@ namespace Poly_Ling.PrimitiveMesh
             if (c.Params.FlipFaces) PrimitiveMeshPostProcess.FlipFaces(mo);
             PrimitiveMeshPostProcess.ApplyPivotOffset(mo, c.Params.Pivot);
             return mo;
+        }
+
+        /// <summary>パイプの断面（GeneratePipe と同じ決め方）。ドラッグ中の追随が 1 回だけ取って使い回す。</summary>
+        public static List<Vector3> PipeSectionOf(CreatePipeCommand c, out bool closed)
+        {
+            closed = c.ProfileClosed;
+            var section = Poly_Ling.Pipe.SweepSectionOps.Build(c.Params, out bool sectionClosed);
+            if (section != null) { closed = sectionClosed; return section; }
+            return ToList(c.Profile);
+        }
+
+        /// <summary>
+        /// 梯子 1 本ぶんのパイプの部品（ドラッグ中の追随用。PlayerCommandDispatcher.ModifierDragFollow）。
+        /// GeneratePipe の 1 本ぶんと同じ計算で、位置だけを使う前提なのでウェイトの引き継ぎとパーツ番号は省く。
+        /// 作れなければ null。
+        /// </summary>
+        public static MeshObject GeneratePipeFollowPart(
+            CreatePipeCommand c, BeltCsvEntry raw, List<Vector3> section, bool sectionClosed)
+        {
+            var b = BeltShapeOps.Preprocess(raw, c.Orient, c.Spline);
+            if (b == null || !b.HasData) return null;
+            var part = PipeMeshGenerator.Generate(
+                b.Left, b.Right, b.Closed, b.FlipWinding,
+                section, sectionClosed, c.Params.CapEnds,
+                c.Params.FlatCaps ? null : b.StartPoint, c.Params.FlatCaps ? null : b.EndPoint,
+                c.Params.MeshName, new PartsIdCounter(),
+                b.LeftWeights, b.RightWeights,
+                PipeGenOptions.FromParams(c.Params));
+            part = BeltShapeOps.ApplySolidify(part,
+                c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,
+                c.Params.EdgeSizeFront, c.Params.EdgeSizeBack, c.Params.EdgeInward,
+                c.Params.MeshName);
+            if (part != null) PrimitiveMeshPostProcess.ApplyPivotOffset(part, c.Params.Pivot);
+            return part;
         }
 
         // ── 藤壺（配置） ────────────────────────────────────────────

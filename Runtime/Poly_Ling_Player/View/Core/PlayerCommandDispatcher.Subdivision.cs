@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
                         MeshObject = result,
                         Name       = name,
                         UnityMesh  = unityMesh,
-                        IsVisible  = true,
+                        IsVisible  = cage.IsVisible,   // 元と結果は 1 つのオブジェクトなので、表示もそろえる
                         IsLocked   = true,
                     };
                     child.ParentModelContext   = model;
@@ -194,6 +194,7 @@ namespace Poly_Ling.Player
 
                 SubdivisionSync.Forget(link.Child);
                 link.Cage.HideFaceShading = false;
+                link.Cage.HideCageLines   = false;
 
                 if (c.DeleteChild)
                 {

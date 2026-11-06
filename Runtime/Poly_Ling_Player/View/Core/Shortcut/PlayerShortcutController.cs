@@ -43,6 +43,9 @@ namespace Poly_Ling.Player
             _map = map ?? ShortcutMap.CreateDefault();
         }
 
+        /// <summary>カーソルの下のパネルがキーを受ける口。受けたら true（ショートカットの表より先に呼ぶ）。</summary>
+        public Func<KeyDownEvent, bool> PanelKeyHandler;
+
         /// <summary>コマンドID に実行内容を割り当てる。</summary>
         public void Register(string commandId, Action action)
         {
@@ -56,6 +59,11 @@ namespace Poly_Ling.Player
             if (_attached || root == null) return;
             _root = root;
             _root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            // フォーカスを持てない所（ラベルや空き地）を押すとフォーカスが無くなり、次のキーが届かない。
+            // 離した次のフレームで無ければ UI ルートへ戻す（押した先が作り直されてもよいように遅らせる）。
+            _root.focusable = true;
+            _root.tabIndex = -1;
+            _root.RegisterCallback<PointerUpEvent>(OnPointerUp, TrickleDown.TrickleDown);
             _attached = true;
         }
 
@@ -63,8 +71,18 @@ namespace Poly_Ling.Player
         {
             if (!_attached || _root == null) return;
             _root.UnregisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            _root.UnregisterCallback<PointerUpEvent>(OnPointerUp, TrickleDown.TrickleDown);
             _attached = false;
             _root = null;
+        }
+
+        private void OnPointerUp(PointerUpEvent evt)
+        {
+            _root.schedule.Execute(() =>
+            {
+                var fc = _root?.panel?.focusController;
+                if (fc != null && fc.focusedElement == null) _root.Focus();
+            });
         }
 
         private void OnKeyDown(KeyDownEvent evt)
@@ -88,6 +106,14 @@ namespace Poly_Ling.Player
             if (IsTextEditing(_root))
             {
                 _pendingFirst = null;
+                return;
+            }
+
+            // カーソルの下のパネルが先に受ける（Blender はカーソルの下の領域がキーを受ける）。
+            if (PanelKeyHandler != null && PanelKeyHandler(evt))
+            {
+                _pendingFirst = null;
+                evt.StopPropagation();
                 return;
             }
 

@@ -53,6 +53,7 @@ namespace Poly_Ling.Context
         /// <summary>選択をトグル（タイプ自動判定）</summary>
         public void ToggleMeshContextSelection(int index)
         {
+            index = ResolveSelectable(index);
             if (IsSelectedInAnyCategory(index))
                 RemoveFromSelectionByCategory(index);
             else if (index >= 0 && index < Count)

@@ -52,6 +52,7 @@ namespace Poly_Ling.Modifiers
         public const string KeyFaceVertexIds = "scope.faceVertexIds";
         public const string KeyFaceSizes     = "scope.faceSizes";
         public const string KeyPartsSet      = "scope.partsSet";
+        public const string KeyInvert        = "scope.invert";
 
         public MeshModifierScopeKind Kind = MeshModifierScopeKind.All;
 
@@ -70,6 +71,12 @@ namespace Poly_Ling.Modifiers
         /// <summary>PartsSet のとき、パーツ選択辞書の名前。</summary>
         public string PartsSetName = "";
 
+        /// <summary>
+        /// 反転（Blender の Vertex Group の Invert）。範囲が触れる頂点の外側が範囲になる。全体では効かない。
+        /// キー scope.invert が無ければ false（古いデータの読み方）。
+        /// </summary>
+        public bool Invert = false;
+
         public static MeshModifierScope All() => new MeshModifierScope();
 
         public static MeshModifierScope PartsSet(string name)
@@ -83,6 +90,7 @@ namespace Poly_Ling.Modifiers
             FaceVertexIds = (int[])FaceVertexIds.Clone(),
             FaceSizes     = (int[])FaceSizes.Clone(),
             PartsSetName  = PartsSetName,
+            Invert        = Invert,
         };
 
         /// <summary>
@@ -164,13 +172,43 @@ namespace Poly_Ling.Modifiers
                     return true;
 
                 case MeshModifierScopeKind.Ids:
-                    return TryResolveIds(mesh, out resolved, out error);
+                    if (!TryResolveIds(mesh, out resolved, out error)) return false;
+                    if (Invert) ApplyInvert(mesh, resolved);
+                    return true;
 
                 case MeshModifierScopeKind.PartsSet:
-                    return TryResolvePartsSet(mesh, partsSets, out resolved, out error);
+                    if (!TryResolvePartsSet(mesh, partsSets, out resolved, out error)) return false;
+                    if (Invert) ApplyInvert(mesh, resolved);
+                    return true;
             }
             error = $"範囲の種類 {Kind} は扱えない";
             return false;
+        }
+
+        /// <summary>
+        /// 範囲を反転する。範囲が触れる頂点の外側の頂点を取り、辺と面はその頂点だけでできたものにする
+        /// （Blender の頂点グループと同じく頂点で決める。範囲が辺だけのときに全辺を拾って全頂点に戻らないように）。
+        /// </summary>
+        private static void ApplyInvert(MeshObject mesh, ResolvedMeshModifierScope r)
+        {
+            var inside = new HashSet<int>();
+            for (int i = 0; i < mesh.Vertices.Count; i++)
+                if (!r.AffectedVertices.Contains(i)) inside.Add(i);
+
+            r.Vertices = inside;
+            r.Edges = new HashSet<VertexPair>();
+            foreach (var e in BuildEdgeSet(mesh))
+                if (inside.Contains(e.V1) && inside.Contains(e.V2)) r.Edges.Add(e);
+            r.Faces = new HashSet<int>();
+            for (int fi = 0; fi < mesh.Faces.Count; fi++)
+            {
+                var idx = mesh.Faces[fi].VertexIndices;
+                if (idx.Count < 3) continue;   // 線分は面の組に入れない（TryResolvePartsSet と同じ）
+                bool all = true;
+                foreach (int vi in idx) if (!inside.Contains(vi)) { all = false; break; }
+                if (all) r.Faces.Add(fi);
+            }
+            r.FinishAffected(mesh);
         }
 
         private bool TryResolveIds(MeshObject mesh, out ResolvedMeshModifierScope r, out string error)

@@ -265,7 +265,7 @@ namespace Poly_Ling.Ops
                     Forget(child);
                     child.IsLocked = false;
                 }
-                if (cage != null) cage.HideFaceShading = false;
+                if (cage != null) { cage.HideFaceShading = false; cage.HideCageLines = false; }
             }
         }
 

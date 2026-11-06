@@ -63,6 +63,12 @@ namespace Poly_Ling.Modifiers
         /// </summary>
         public bool PinnedLast { get; set; } = false;
 
+        /// <summary>モディファイアの追加メニューに出さない（試験用の種類など）。コマンドからは足せる。</summary>
+        public bool HideFromMenu { get; set; } = false;
+
+        /// <summary>全体にだけ掛かる種類（ブーリアン・ミラー・サブディビジョン）。頂点グループの欄を出さない。</summary>
+        public bool WholeMeshOnly { get; set; } = false;
+
         public PLMeshModifierAttribute(string kind) { Kind = kind ?? ""; }
     }
 
@@ -125,5 +131,26 @@ namespace Poly_Ling.Modifiers
     public interface IMeshModifierDragFollow
     {
         bool FollowPositions(Vector3[] src, out Vector3[] dst);
+    }
+
+    /// <summary>
+    /// 追加メニューから足した直後の既定値（操作統合計画 段 3）。足した直後に形が変わる値を、入力の大きさに合わせて書く。
+    /// プロパティの初期値は「キーの無い保存データ・シナリオの読み方」なので、そこでは変えない
+    /// （MeshModifierRegistry.FromArgs はキーが無ければ初期値のまま。ToArgs は全キーを書く）。
+    /// addMeshModifier の useAddDefaults=true（モディファイアパネルの追加）のときだけ呼ばれる。
+    /// input は足す位置の入力（処理列があれば今の結果、無ければ元メッシュ）で、書き換えない。
+    /// </summary>
+    public interface IMeshModifierAddDefaults
+    {
+        void ApplyAddDefaults(MeshObject input);
+    }
+
+    /// <summary>
+    /// 今の設定では形が変わらない種類が、次に何をすればよいかを出す口（カードに出す）。
+    /// 他のアプリにも足しただけでは形が変わらないものがある（Maya のラティス、3ds Max の XForm）。形が変わる設定なら null。
+    /// </summary>
+    public interface IMeshModifierHint
+    {
+        string GetHint();
     }
 }

@@ -53,6 +53,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.TowerDeck,
         InverseKeeps = "配置元・中心の合わせ方",
         InverseLoses = "XZ のずれ、Y 軸以外の回転、歪み")]
+    [PLModifierInput(Accepts = "配置元のオブジェクト", Decide = "図形生成のパネルで選ぶ", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄", DefaultInput = "なし：配置元が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public sealed class CreateTowerDeckCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "TowerDeck", Description = "デッキのパラメータ", Required = true)]
@@ -119,6 +121,8 @@ namespace Poly_Ling.Data
         Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Hierarchy,
         Description = "既存の鉄塔へデッキを足す。towerIndex は鉄塔の塔体・デッキ・親のどれか。デッキは鉄塔の親の子として作り、鉄塔のモディファイアスタックの末尾へ項目を足す。")]
     [PLModifier(Capture = PLStackCapture.ViaSteps)]   // createTowerDeck を鉄塔のスタックへ足す（PlayerCommandDispatcher.LatticeTower.cs）
+    [PLModifierInput(Accepts = "鉄塔と配置元のオブジェクト", Decide = "コマンドの引数で指定する", Result = "鉄塔の子の新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄", DefaultInput = "なし：鉄塔と配置元が要る")]
     public sealed class AddTowerDeckCommand : PanelCommand
     {
         [PLParam(TextKey = "TowerTarget", Description = "鉄塔の塔体・デッキ・親のどれかの索引", Required = true,

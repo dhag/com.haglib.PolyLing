@@ -255,6 +255,22 @@ Editor のほかに、ビルドした exe を複数同時に動かし、それ�
   `player_launch` は exe のフォルダを作業フォルダにして起動するので、`-logFile` は**絶対パス**で書く（相対だと exe のフォルダの下にできる）。
 - 起動直後は受付が立つまで数秒かかる。`unity_state instance=…` が通るまで待ってから送る。
 
+### 1-7. 開いているシーンの操作（`unity_scene_call`）
+
+Unity のシーン（PolyLing の利用シーンとは別）のオブジェクトを、Unity に不慣れな人の代わりに操作する道具。道具は 1 本だけで、操作は `action` で選ぶ。
+
+1. `unity_scene_call action=help` で操作の一覧と引数を読む（Play は止めない）。
+2. 対象のパスは `action=hierarchy`、プロパティ名は `action=get_properties` で確かめてから書く。推測で書かない。
+3. 書いたあとは `unity_capture` か `get_properties` で結果を確かめる。
+
+- `args` は `polyling_call` と同じ平らな JSON（値はすべて文字列、ベクトルは `"0,1,0"`）。
+- help 以外は、Play 中なら先に止めてから送る。Play を抜けると PolyLing のモデルは消える。
+- 変更は Undo に入り、シーンは変更済みになる。シーンの保存はしない。
+- `--target` にかかわらず Editor（8770）へ送る。
+- 操作を足すのは Editor 側 `Editor/HierarchyIO/SceneObjectOps.cs` の `Run` と `Help` だけでよい（`unity_validate_changes` で反映。MCP サーバの再ビルドは要らない）。
+  MCP サーバは `action` の頭に `scene_` を付けて転送するだけなので、この道具から `play`・`build_all` などは呼べない。
+- 利用シーンの `tools` 列で道具を絞っているときは、そこに `unity_scene_call` を書かないと見えない。
+
 ---
 
 ## 2. 守る手順

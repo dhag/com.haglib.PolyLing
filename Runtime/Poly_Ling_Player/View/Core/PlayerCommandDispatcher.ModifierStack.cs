@@ -497,49 +497,12 @@ namespace Poly_Ling.Player
                 }
             }
 
-            var rebuilt = ModifierStackOps.BuildCommand(
-                project, modelIndex, g, stepIndex, out string rbErr);
-            if (rebuilt == null)
-            { error = rbErr ?? "作り直すコマンドを組めませんでした"; return false; }
-
-            // 出力先へ書き戻す形へ差し替える。
-            //
-            // どのキーへ何を書くかはコマンド側の印が持つ（PLParam.RebuildRole）。
-            // ここでコマンド型を見て分岐すると、書き戻せるコマンドを足すたびに
-            // 分岐が伸びる。キーの規則（先頭小文字・別名表・ドット区切り）も
-            // 外で組み立てると必ずずれるので、PanelCommandFactory から引く。
-            var rebuiltType = rebuilt.GetType();
-            var rebuiltArgs = PanelCommandFactory.ToArgs(rebuilt);
-
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-
-            if (writeBack)
-            {
-                if (rbKeys.TargetIsArray)
-                {
-                    var parts = new List<string>(outIndices.Count);
-                    foreach (int oi in outIndices) parts.Add(oi.ToString(inv));
-                    rebuiltArgs[rbKeys.TargetIndexKey] = string.Join(",", parts);
-                }
-                else
-                {
-                    rebuiltArgs[rbKeys.TargetIndexKey] = outIndices[0].ToString(inv);
-                }
-
-                if (rbKeys.HasMode)
-                {
-                    StripPoseOwnedByOutput(rebuilt, rbKeys.ModeKey, rebuiltArgs);
-                    rebuiltArgs[rbKeys.ModeKey] = rbKeys.ModeArgValue;
-                }
-            }
-
-            var writeBackCmd = PanelCommandFactory.Create(
-                PanelCommandFactory.ActionOf(rebuiltType), modelIndex,
-                rebuiltArgs, out string wbErr);
-            if (writeBackCmd == null)
-            { error = wbErr ?? "書き戻しコマンドを組めませんでした"; return false; }
+            var writeBackCmd = BuildStepWriteBackCommand(
+                project, modelIndex, g, stepIndex, rbKeys, outIndices, out error);
+            if (writeBackCmd == null) return false;
 
             int vertsBefore = singleMesh ? outCtx.MeshObject.VertexCount : -1;
+            int[] keptIds = singleMesh ? CaptureVertexIds(outCtx.MeshObject) : null;
             ModifierStepProfiler.Mark("組み直し");   // 計測（段 10）
 
             // スキンド化のあとの評価空間（段 5。ModifierSpace）。
@@ -564,7 +527,88 @@ namespace Poly_Ling.Player
             if (singleMesh && outCtx.MeshObject.VertexCount == 0)
             { error = $"作り直しの結果が空になりました（{vertsBefore} → 0）"; return false; }
 
+            RestoreVertexIds(outCtx, keptIds);
+
             return true;
+        }
+
+        /// <summary>出力の頂点 ID を控える。1 つも振っていなければ null（振っていない出力には振らない）。</summary>
+        private static int[] CaptureVertexIds(MeshObject mo)
+        {
+            if (mo?.Vertices == null) return null;
+            int[] ids = null;
+            for (int i = 0; i < mo.Vertices.Count; i++)
+            {
+                int id = mo.Vertices[i]?.Id ?? 0;
+                if (id == 0) continue;
+                if (ids == null) ids = new int[mo.Vertices.Count];
+                ids[i] = id;
+            }
+            return ids;
+        }
+
+        /// <summary>
+        /// 作り直した出力へ頂点 ID を番号どおりに戻す。生成物の頂点は同じ番号が同じ場所なので、パイプの太さや
+        /// カーブを直しても頂点グループが同じ頂点に当たる。増えた頂点には新しい ID を振る。
+        /// </summary>
+        private static void RestoreVertexIds(MeshContext output, int[] ids)
+        {
+            var mo = output?.MeshObject;
+            if (ids == null || mo?.Vertices == null) return;
+            for (int i = 0; i < mo.Vertices.Count && i < ids.Length; i++)
+                if (mo.Vertices[i] != null && mo.Vertices[i].Id == 0) mo.Vertices[i].Id = ids[i];
+            VertexIdOps.AssignMissing(output);
+            mo.RebuildIdSets();
+        }
+
+        /// <summary>
+        /// 項目を作り直すコマンドを組み、出力先へ書き戻す形へ差し替える。組めなければ null と理由。
+        /// outIndices が空なら書き戻さない（新しく作る）形のまま返す。
+        ///
+        /// どのキーへ何を書くかはコマンド側の印が持つ（PLParam.RebuildRole）。
+        /// ここでコマンド型を見て分岐すると、書き戻せるコマンドを足すたびに
+        /// 分岐が伸びる。キーの規則（先頭小文字・別名表・ドット区切り）も
+        /// 外で組み立てると必ずずれるので、PanelCommandFactory から引く。
+        /// </summary>
+        private static PanelCommand BuildStepWriteBackCommand(
+            ProjectContext project, int modelIndex, Poly_Ling.Data.ModifierStack g, int stepIndex,
+            PanelCommandFactory.RebuildTarget rbKeys, List<int> outIndices, out string error)
+        {
+            var rebuilt = ModifierStackOps.BuildCommand(
+                project, modelIndex, g, stepIndex, out string rbErr);
+            if (rebuilt == null)
+            { error = rbErr ?? "作り直すコマンドを組めませんでした"; return null; }
+
+            var rebuiltType = rebuilt.GetType();
+            var rebuiltArgs = PanelCommandFactory.ToArgs(rebuilt);
+
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            if (outIndices.Count > 0)
+            {
+                if (rbKeys.TargetIsArray)
+                {
+                    var parts = new List<string>(outIndices.Count);
+                    foreach (int oi in outIndices) parts.Add(oi.ToString(inv));
+                    rebuiltArgs[rbKeys.TargetIndexKey] = string.Join(",", parts);
+                }
+                else
+                {
+                    rebuiltArgs[rbKeys.TargetIndexKey] = outIndices[0].ToString(inv);
+                }
+
+                if (rbKeys.HasMode)
+                {
+                    StripPoseOwnedByOutput(rebuilt, rbKeys.ModeKey, rebuiltArgs);
+                    rebuiltArgs[rbKeys.ModeKey] = rbKeys.ModeArgValue;
+                }
+            }
+
+            var writeBackCmd = PanelCommandFactory.Create(
+                PanelCommandFactory.ActionOf(rebuiltType), modelIndex,
+                rebuiltArgs, out string wbErr);
+            error = writeBackCmd == null ? wbErr ?? "書き戻しコマンドを組めませんでした" : null;
+            return writeBackCmd;
         }
 
         /// <summary>
@@ -640,7 +684,18 @@ namespace Poly_Ling.Player
                 var beltCtx = beltKey != null ? spaceEntry.Input(beltKey) : null;
                 if (ModifierSpace.TryComputeMatrix(beltCtx, outCtx, IsPoseOwnedByOutput(spaceEntry.CommandType, step),
                                                    out var spaceM))
-                    wb = new ModifierSpace.WriteBack { Matrix = spaceM, Output = outCtx };
+                {
+                    // 引き継ぎを切ったスキンドの出力は生成物にウェイトが無いので、出力のウェイトを残す
+                    // （一括スキンド化が書いた {自分のボーン, 1.0} など）。引き継ぎが入のときの欠けは失敗のまま。
+                    bool inherit = string.Equals(step.GetArg("params.inheritBeltWeights"), "true",
+                        System.StringComparison.OrdinalIgnoreCase);
+                    wb = new ModifierSpace.WriteBack { Matrix = spaceM, Output = outCtx, KeepOutputWeights = !inherit };
+                }
+            }
+            else if (kind == ModifierSpaceKind.SelfBind && singleMesh && ModifierSpace.BuildsInBindWorld(spaceEntry.CommandType))
+            {
+                // 生成物はそのまま出力の格納空間（単位行列）。ウェイトが欠けていれば出力のものを残す。
+                wb = new ModifierSpace.WriteBack { Output = outCtx, KeepOutputWeights = true };
             }
             return true;
         }

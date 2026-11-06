@@ -175,11 +175,16 @@ namespace Poly_Ling.Player
                             hit = true;
                         if (!hit) continue;
 
-                        ulong oid = ent.Context?.ObjectId ?? 0UL;
-                        pickedIdx.Add(ent.MasterIndex);
+                        // 畳まれた結果の名前に当たったら元を選ぶ（操作統合計画 段 2）。
+                        var picked = Poly_Ling.Modifiers.ModifierResultOps.FoldedRootOf(model, ent.Context) ?? ent.Context;
+                        int pickedIndex = ReferenceEquals(picked, ent.Context) ? ent.MasterIndex : model.MeshContextList.IndexOf(picked);
+                        if (pickedIndex < 0 || pickedIdx.Contains(pickedIndex)) continue;
+
+                        ulong oid = picked?.ObjectId ?? 0UL;
+                        pickedIdx.Add(pickedIndex);
                         pickedIds.Add(oid);
                         pickedIdStr.Add(oid.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                        pickedNames.Add(nm);
+                        pickedNames.Add(picked?.Name ?? nm);
                     }
 
                     if (pickedIdx.Count == 0)
@@ -669,6 +674,22 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) { Fail("no current model"); return true; }
                     if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return true; }
+
+                    // 畳まれた結果だけは消せない。元を消せば一緒に消える（操作統合計画 段 2）。
+                    // 元を消すときは、畳まれた結果とスタックも一緒に片付ける。
+                    if (model.HasModifierStacks)
+                    {
+                        foreach (int idx in c.MasterIndices)
+                        {
+                            var __target = model.GetMeshContext(idx);
+                            var __src = Poly_Ling.Modifiers.ModifierResultOps.FoldedRootOf(model, __target);
+                            if (__src == null || Array.IndexOf(c.MasterIndices, model.MeshContextList.IndexOf(__src)) >= 0) continue;
+                            Fail($"{__target.Name} は「{__src.Name}」のモディファイアの結果です。元を消すか、モディファイアを消してください");
+                            return true;
+                        }
+                        if (DeleteMeshesWithModifiers(project, model, c.MasterIndices)) return true;
+                    }
+
                     // 削除前の選択状態をキャプチャ
                     var __oldSel = model.CaptureAllSelectedIndices();
                     var __removed = new List<(int, MeshContext)>();
@@ -699,10 +720,25 @@ namespace Poly_Ling.Player
                     if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return true; }
                     var __oldSel = model.CaptureAllSelectedIndices();
                     var __added = new List<(int, MeshContext)>();
+
+                    // モディファイアを持つオブジェクトは、モディファイアごと複製する（操作統合計画 段 2）。
+                    // 結果の行とスタックも増えるので、Undo は一覧のスナップショットで 1 件にする。
+                    var __dupPairs = new List<(MeshContext Dup, Poly_Ling.Modifiers.ModifierResultOps.Pair Pair)>();
+                    bool __withModifiers = false;
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var __t = model.GetMeshContext(idx);
+                        __t = Poly_Ling.Modifiers.ModifierResultOps.FoldedRootOf(model, __t) ?? __t;
+                        if (Poly_Ling.Modifiers.ModifierResultOps.FoldedPairOfSource(model, __t) != null) __withModifiers = true;
+                    }
+                    var __dupListBefore = __withModifiers ? MeshFilterToSkinnedRecord.CaptureList(model) : null;
+                    int __dupGroupsBefore = model.ModifierStackCount;
+
                     foreach (int idx in c.MasterIndices)
                     {
                         var srcCtx = model.GetMeshContext(idx);
                         if (srcCtx == null) continue;
+                        srcCtx = Poly_Ling.Modifiers.ModifierResultOps.FoldedRootOf(model, srcCtx) ?? srcCtx;
 
                         // 名前は必ずモデル内で一意にする。
                         // 【以前の不具合】ここは new MeshContext { Name = ..., MeshObject = ... }
@@ -722,6 +758,9 @@ namespace Poly_Ling.Player
                         int __addedIdx = model.Add(dup);
                         __added.Add((__addedIdx, dup));
 
+                        var __pair = Poly_Ling.Modifiers.ModifierResultOps.FoldedPairOfSource(model, srcCtx);
+                        if (__pair != null) __dupPairs.Add((dup, __pair));
+
                         // 複製元に作業板スロット（作業空間の下絵。UnderlayData.Plates）があれば、
                         // 同じ画像・置き方・表示調整で複製の ObjectId にも付ける。
                         // スロットは Undo に入らない（下絵の扱い）。複製を Undo で消すとスロットは
@@ -734,6 +773,36 @@ namespace Poly_Ling.Player
                             model.Underlay.SetPlate(__copy);
                         }
                     }
+
+                    if (__dupPairs.Count > 0)
+                    {
+                        _undoController?.SetModelContext(model);
+                        _undoController?.SuspendRecording();
+                        try
+                        {
+                            // 多段の 1 本道は段ごとに写す（写す前に対を引いておく。写すと対が増える）。
+                            var __folded = Poly_Ling.Modifiers.ModifierResultOps.FoldedPairs(model);
+                            foreach (var (__dup, __p) in __dupPairs)
+                            {
+                                var __dupSource = __dup;
+                                var __link = __p;
+                                for (int __guard = 0; __link != null && __guard <= __folded.Count; __guard++)
+                                {
+                                    __dupSource = CopyModifiersTo(model, __link, __dupSource);
+                                    var __resultOfLink = __link.Result;
+                                    __link = __folded.Find(p => ReferenceEquals(p.Source, __resultOfLink));
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            _undoController?.ResumeRecording();
+                        }
+                        FinishGroupEdit(project, model);
+                        RecordSubdivisionUndo(model, __dupListBefore, __dupGroupsBefore, null, "オブジェクトの複製（モディファイアごと）");
+                        return true;
+                    }
+
                     if (__added.Count > 0 && _undoController != null)
                     {
                         var __newSel = model.CaptureAllSelectedIndices();
@@ -1096,7 +1165,8 @@ namespace Poly_Ling.Player
         {
             if (model == null || masterIndices == null) return;
 
-            var targets = ExpandToMirrorPeers(model, masterIndices);
+            // モディファイアの元と結果は 1 つのオブジェクト。元を隠したら結果も隠す（操作統合計画 段 2）。
+            var targets = ExpandToMirrorPeers(model, ExpandToModifierResults(model, masterIndices));
             var oldList = new List<MeshAttributeChange>();
             var newList = new List<MeshAttributeChange>();
 
@@ -1137,6 +1207,26 @@ namespace Poly_Ling.Player
             if (oldList.Count == 0) return;
             RecordAttributeChanges(oldList, newList, $"{desc} x{oldList.Count}");
             _notifyPanels(ChangeKind.Attributes);
+        }
+
+        /// <summary>指定インデックスに、畳まれた結果のインデックスを足した一覧を返す。別オブジェクトの結果は足さない。</summary>
+        private static IReadOnlyList<int> ExpandToModifierResults(ModelContext model, IReadOnlyList<int> masterIndices)
+        {
+            if (model == null || !model.HasModifierStacks) return masterIndices;
+            var targets = new List<int>(masterIndices);
+            var pairs = Poly_Ling.Modifiers.ModifierResultOps.FoldedPairs(model);
+            bool added = true;
+            while (added)   // 多段は根から順に広げる
+            {
+                added = false;
+                foreach (var p in pairs)
+                {
+                    int si = model.MeshContextList.IndexOf(p.Source);
+                    int ri = model.MeshContextList.IndexOf(p.Result);
+                    if (si >= 0 && ri >= 0 && targets.Contains(si) && !targets.Contains(ri)) { targets.Add(ri); added = true; }
+                }
+            }
+            return targets;
         }
 
         /// <summary>指定インデックスに、対応するミラー側インデックスを足した一覧を返す。</summary>

@@ -69,6 +69,8 @@ namespace Poly_Ling.Player
             public bool   IsLoops;
             public bool   Closed;
             public bool   Normalize;
+            /// <summary>断面の種類の値から作った形か（反映でカスタムへ変える）。</summary>
+            public bool   IsSection;
             public List<Vector3> Points = new List<Vector3>();
             public List<Loop>    Loops  = new List<Loop>();
         }
@@ -110,9 +112,14 @@ namespace Poly_Ling.Player
                     foreach (var ld in p2.Params.ResolveLoops()) prof.Loops.Add(ld.ToLoop());
                     break;
                 case ProfileEditKind.Pipe when cmd is CreatePipeCommand pp:
-                    prof.Points = new List<Vector3>(pp.Profile ?? Array.Empty<Vector3>());
-                    prof.Closed = pp.ProfileClosed;
+                {
+                    // 断面の種類が決まっていれば今の形は種類の値から作ったもの。編集すると反映でカスタムになる。
+                    var section = Poly_Ling.Pipe.SweepSectionOps.Build(pp.Params, out bool sectionClosed);
+                    prof.Points = section ?? new List<Vector3>(pp.Profile ?? Array.Empty<Vector3>());
+                    prof.Closed = section != null ? sectionClosed : pp.ProfileClosed;
+                    prof.IsSection = section != null;
                     break;
+                }
                 case ProfileEditKind.FrillA when cmd is CreateFrillCommand fa:
                     prof.Points = new List<Vector3>(fa.ProfileA ?? Array.Empty<Vector3>());
                     break;
@@ -131,6 +138,8 @@ namespace Poly_Ling.Player
             prof.LoopStartsKey = pk.Value.LoopStartsKey ?? "";
             prof.LoopIsHoleKey = pk.Value.LoopIsHoleKey ?? "";
             prof.Normalize     = pk.Value.NormalizeFor(args);
+            // カーブから作ったパイプの断面は中心が軸に乗る。角を原点へ寄せると軸からずれるので寄せない。
+            if (cmd is CreatePipeCommand sweep && sweep.Params.FlatCaps) prof.Normalize = false;
             return null;
         }
 
@@ -238,6 +247,11 @@ namespace Poly_Ling.Player
             {
                 if (read.Points.Count < 2) return "断面の点が 2 つ未満です";
                 keys.Add(read.Key); vals.Add(ModifierStackOps.JoinVector3(read.Points));
+                if (cur.IsSection)
+                {
+                    keys.Add("params.sectionKind"); vals.Add(nameof(Poly_Ling.Pipe.SweepSectionKind.Custom));
+                    keys.Add("profileClosed");      vals.Add(cur.Closed ? "true" : "false");
+                }
             }
 
             return _send?.Invoke(new SetModifierStackStepArgsCommand(

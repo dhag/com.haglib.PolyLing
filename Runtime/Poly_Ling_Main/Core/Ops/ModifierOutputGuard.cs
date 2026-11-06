@@ -184,6 +184,12 @@ namespace Poly_Ling.Ops
 
                 string group  = owner.Group?.Name ?? "";
                 string action = owner.Step?.Action ?? "";
+
+                // モディファイアの結果は元と 1 つのオブジェクト。編集は元で行う（操作統合計画 段 2）。
+                var resultSource = Poly_Ling.Modifiers.ModifierResultOps.SourceOf(kv.Key, mc);
+                if (resultSource != null)
+                    return $"モディファイアの結果は編集できません → {mc.Name}。元のオブジェクト「{resultSource.Name}」を編集するか、「すべて適用」してください。";
+
                 bool hasInverse = ModifierInverse.HasInverse(PanelCommandFactory.ResolveType(action));
                 if (hasInverse && positionOnly) continue;
 

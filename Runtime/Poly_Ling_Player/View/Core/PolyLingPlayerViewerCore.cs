@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, SkinWeightVolume, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, EdgeTriangle, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile, NormalEdit }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, SkinWeightVolume, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, EdgeTriangle, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile, NormalEdit, ModifierGizmo }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         // パネルごとの「ビューポートで選択する」チェックの保存キー。
@@ -225,6 +225,9 @@ namespace Poly_Ling.Player
         private DeformToolHandler            _deformHandler;
         private PlayerDeformSubPanel         _deformSubPanel;
         private LatticeToolHandler           _latticeHandler;
+        private ModifierGizmoToolHandler     _modifierGizmoHandler;
+        // ハンドルのモードを抜けたときに戻るモード。
+        private InteractionMode              _modifierGizmoPrevMode = InteractionMode.VertexMove;
         private PlayerLatticeSubPanel        _latticeSubPanel;
         private SculptToolHandler            _sculptHandler;
         // 法線編集パネルのビューポート操作（ハンドル・直接回転・ブラシ・スポイト）

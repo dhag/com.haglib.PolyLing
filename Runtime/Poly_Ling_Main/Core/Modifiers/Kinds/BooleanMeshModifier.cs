@@ -28,9 +28,12 @@ using UnityEngine;
 namespace Poly_Ling.Modifiers
 {
     [PLMeshModifier("boolean", DisplayName = "ブーリアン", Category = "topology", Change = MeshModifierChange.Topology,
+                    WholeMeshOnly = true,
                     Description = "入力と相手のオブジェクトに和・差・積を掛ける（BooleanOps.Perform）。範囲は全体だけ。相手を動かすと結果が追随する")]
-    public sealed class BooleanMeshModifier : IMeshModifier
+    public sealed class BooleanMeshModifier : IMeshModifier, IMeshModifierHint
     {
+        public string GetHint() => Other < 0 ? "相手のオブジェクトを選ぶと形が変わります" : null;
+
         public const float MergeThresholdMax = 0.1f;
         public const float EpsilonMax        = 0.01f;
 
@@ -61,8 +64,9 @@ namespace Poly_Ling.Modifiers
             { error = "ブーリアンの範囲は全体だけ（閉じた立体どうしで演算する）"; return null; }
 
             const string key = "other";
+            // 相手を選ぶ前は何もしないで通す（Blender と同じ）。失敗にすると後ろのモディファイアまで止まる。
             if (input.References == null || !input.References.TryGetValue(key, out var b) || b == null)
-            { error = "相手のオブジェクト（other）が指定されていない"; return null; }
+                return a.Clone();
             Matrix4x4 bToA = Matrix4x4.identity;
             if (input.ReferenceToSource != null && input.ReferenceToSource.TryGetValue(key, out var m)) bToA = m;
 

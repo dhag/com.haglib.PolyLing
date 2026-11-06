@@ -707,6 +707,12 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool IsChain = false;
 
+        /// <summary>
+        /// 「ここまで表示」の項目（3ds Max の Show End Result を切った状態、Houdini の Display に当たる）。
+        /// 処理列の結果をこの項目までで止める。保存しない表示設定で、適用と書き出しの前に解除する。
+        /// </summary>
+        [System.NonSerialized] public string DisplayUpToItemId = "";
+
         /// <summary>作成日時。</summary>
         public DateTime CreatedAt = DateTime.Now;
 

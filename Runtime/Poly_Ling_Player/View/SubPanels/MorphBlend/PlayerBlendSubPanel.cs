@@ -66,11 +66,11 @@ namespace Poly_Ling.Player
         private bool _createNewObject      = false;
 
         /// <summary>
-        /// ソースと重みをモディファイアスタックとして残すか。既定 false。
+        /// ソースと重みを履歴（モディファイアスタック）として残すか。既定 true（入力のある生成は既定で残す。操作統合計画 6 章）。
         /// false のときは確定した時点でソース指定も重みも残らない
         /// （＝ソースを直しても出力先は古いまま。混ぜ直すには同じ操作をやり直す）。
         /// </summary>
-        private bool _keepAsModifierStack          = false;
+        private bool _keepAsModifierStack          = true;
         private bool _recalculateNormals   = true;
         private bool _selectedVerticesOnly = false;
 
@@ -212,7 +212,8 @@ namespace Poly_Ling.Player
             {
                 if (_suppressCallbacks) return;
                 int i = _destDropdown.index;
-                int newDest = (i >= 0 && i < _destIndexMap.Count) ? _destIndexMap[i] : -1;
+                // 先頭は「(なし)」なので、対応表は 1 つずれる（RefreshDestChoices）。
+                int newDest = (i > 0 && i - 1 < _destIndexMap.Count) ? _destIndexMap[i - 1] : -1;
                 if (newDest == _destMasterIndex) return;
 
                 // 宛先が変わったらプレビューは作り直す（退避先が別メッシュになる）。

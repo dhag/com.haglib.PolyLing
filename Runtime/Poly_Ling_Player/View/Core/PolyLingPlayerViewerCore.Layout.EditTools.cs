@@ -419,6 +419,21 @@ namespace Poly_Ling.Player
                 OnApplyCompleted  = () => NotifyPanels(ChangeKind.Attributes),
             };
             _latticeHandler.SetUndoController(_editOps?.UndoController);
+
+            // 処理列の項目の作業軸とラティスの制御点のハンドル（モディファイア操作統合計画 段 8）。
+            _modifierGizmoHandler = new ModifierGizmoToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+                GetModel       = () => ActiveProject?.CurrentModel,
+                GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand    = DispatchPanelCommand,
+                OnRefreshOverlay  = () => { UpdateTopologyToolsOverlay(); UpdateGizmoOverlay(); },
+                OnBoxSelectUpdate = (start, end) => _activePanel?.ShowBoxSelect(start, end),
+                OnBoxSelectEnd    = () => _activePanel?.HideBoxSelect(),
+                OnTargetLost      = ExitModifierGizmo,
+            };
             _latticeSubPanel = new PlayerLatticeSubPanel { Surface = ToolSurface };
             _latticeSubPanel.Build(_layoutRoot.LatticeSection);
 

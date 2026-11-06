@@ -84,6 +84,7 @@ namespace Poly_Ling.Modifiers
                                  FaceSizes     = new[] { 4 },
                              }),
                 ("partsSet", MeshModifierScope.PartsSet("辞書,\"引用\"")),
+                ("invert",   new MeshModifierScope { Kind = MeshModifierScopeKind.Ids, VertexIds = new[] { 11 }, Invert = true }),
             };
             var rtLines = new List<string>();
             foreach (var info in MeshModifierRegistry.All)
@@ -350,6 +351,25 @@ namespace Poly_Ling.Modifiers
             Check(lines, ref failures, "ID の組 → 並びを入れ替えたメッシュ", okB && IdText(b, rb) == expected,
                   okB ? IdText(b, rb) : eb);
 
+            // 反転（頂点で決める。頂点 14 だけが外側に残る）
+            var inv = ids.Clone();
+            inv.Invert = true;
+            bool okI = inv.TryResolve(b, null, out var ri, out string ei);
+            Check(lines, ref failures, "反転 → 範囲が触れる頂点の外側", okI && IdText(b, ri) == "V[14] E[] F[] A[14]",
+                  okI ? IdText(b, ri) : ei);
+
+            var invAll = MeshModifierScope.All();
+            invAll.Invert = true;
+            bool okIA = invAll.TryResolve(b, null, out var ria, out _);
+            Check(lines, ref failures, "全体の反転は全体のまま", okIA && ria.IsAll, null);
+
+            var invEdge = MeshModifierScope.FromIndices(a, null, new[] { new VertexPair(0, 1) }, null, out _);
+            invEdge.Invert = true;
+            bool okIE = invEdge.TryResolve(a, null, out var rie, out string eie);
+            Check(lines, ref failures, "辺の反転は残りの頂点でできた辺と面だけ：辺 12-11 が外れ 15-16・13-14 ほかが残る",
+                  okIE && rie.AffectedVertices.Count == 4 && !rie.ContainsVertex(0) && !rie.ContainsVertex(1) && rie.Faces.Count == 0,
+                  okIE ? IdText(a, rie) : eie);
+
             // パーツ選択辞書
             var set = new PartsSelectionSet("試験辞書")
             {
@@ -419,6 +439,9 @@ namespace Poly_Ling.Modifiers
         /// </summary>
         private static void KindSelfTest(List<string> lines, ref int failures)
         {
+            // ── 0. 畳む形（並列・分岐を壊さない） ──────────────────────
+            failures += ModifierFoldSelfTest.Run(lines);
+
             // ── 1. 包む漏れ ──────────────────────────────────────────
             var wrapped = new HashSet<string>(StringComparer.Ordinal);
             foreach (var info in MeshModifierRegistry.All)
@@ -604,8 +627,40 @@ namespace Poly_Ling.Modifiers
             var boPart = bo.Evaluate(BoolInput(bb, shift, rbox), out string e9);
             Check(lines, ref failures, "ブーリアン：全体以外の範囲は失敗", boPart == null, e9);
             var boNoRef = bo.Evaluate(new MeshModifierInput { Source = ba, Scope = ResolvedMeshModifierScope.CreateAll() }, out string e10);
-            Check(lines, ref failures, "ブーリアン：相手が無ければ失敗", boNoRef == null, e10);
+            Check(lines, ref failures, "ブーリアン：相手が無ければ入力をそのまま通す（後ろのモディファイアを止めない）",
+                  boNoRef != null && boNoRef.Vertices.Count == baVerts && boNoRef.Faces.Count == baFaces, e10);
+            Check(lines, ref failures, "ブーリアン：相手が無ければカードに次の操作を出す", !string.IsNullOrEmpty(bo.GetHint()), null);
             Check(lines, ref failures, "ブーリアンは入力を書き換えない", ba.Vertices.Count == baVerts && ba.Faces.Count == baFaces, null);
+
+            // 角丸＋分割の直方体が閉じていること。曲げた後でもブーリアンが通ること。
+            var roundP = Poly_Ling.PrimitiveMesh.CubeMeshGenerator.CubeParams.Default;
+            roundP.MeshName = "modifierBoolTest";
+            roundP.WidthTop = roundP.WidthBottom = roundP.DepthTop = roundP.DepthBottom = 0.6f;
+            roundP.Height = 2f;
+            roundP.CornerRadius = 0.1f;
+            roundP.Subdivisions = new Vector3Int(2, 8, 2);
+            var rounded = Poly_Ling.PrimitiveMesh.CubeMeshGenerator.Generate(roundP);
+            var roundedWelded = rounded.Clone();
+            Poly_Ling.Ops.MeshMergeHelper.MergeAllVerticesAtSamePosition(roundedWelded, 1e-5f);
+            var roundedTopo = Poly_Ling.Ops.BoundaryEdgeOps.AnalyzeTopology(roundedWelded);
+            Check(lines, ref failures, "角丸＋分割の直方体は閉じている", roundedTopo.BoundaryEdges == 0, $"境界辺 {roundedTopo.BoundaryEdges}");
+
+            var bentBend = new BendMeshModifier { TotalAngleDeg = 90f };
+            var bent = bentBend.Evaluate(new MeshModifierInput { Source = rounded, Scope = ResolvedMeshModifierScope.CreateAll() }, out string eBent);
+            var bentCut = BuildTestBox(1f, 0);
+            var bentBool = bent == null ? default : Poly_Ling.Ops.BooleanOps.Perform(
+                Poly_Ling.Ops.BooleanOpKind.Subtract, bent, Matrix4x4.identity,
+                bentCut, Matrix4x4.Translate(new Vector3(0.4f, 0.3f, 0f)), Matrix4x4.identity);
+            Check(lines, ref failures, "曲げた角丸＋分割の直方体からブーリアンで引ける", bentBool.Success, eBent ?? bentBool.Message);
+
+            // 小さい三角形でも法線が 0 にならないこと（Plane.cs の注記。一辺 2mm の箱どうし）。
+            var tinyA = BuildTestBox(0.002f, 0);
+            var tinyB = BuildTestBox(0.002f, 0);
+            var tinyBool = Poly_Ling.Ops.BooleanOps.Perform(
+                Poly_Ling.Ops.BooleanOpKind.Subtract, tinyA, Matrix4x4.identity,
+                tinyB, Matrix4x4.Translate(new Vector3(0.001f, 0.001f, 0.001f)), Matrix4x4.identity,
+                epsilon: 1e-7f, mergeThreshold: 1e-6f);
+            Check(lines, ref failures, "一辺 2mm の箱どうしのブーリアンが閉じる", tinyBool.Success, tinyBool.Message);
 
             // ── 7. 格子（段 7b）──────────────────────────────────────
             // 試験メッシュ（z=0 の板。x 0〜2・y 0〜1）を 1×1×1 の格子（中心 (1,0.5,0)・大きさ (2,1,1)）で包み、

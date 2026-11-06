@@ -65,6 +65,8 @@ namespace Poly_Ling.Core
             if (mo == null) return false;
             if (!mc.IsVisible) return false;
             if (mo.VertexCount == 0) return false;
+            // モディファイアの元の線を隠している（面は HideFaceShading で塗られない）。
+            if (mo.HideCageLines) return false;
             return true;
         }
 

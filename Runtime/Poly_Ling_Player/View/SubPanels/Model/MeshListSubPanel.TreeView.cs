@@ -164,10 +164,19 @@ namespace Poly_Ling.MeshListV2
         // CreateTreeRoot（エディタ版と同一）
         // ================================================================
 
+        /// <summary>モディファイアか履歴を持つ行の名前の前に付ける印。</summary>
+        private const string ModifierMark = "◆";
+
+        /// <summary>モディファイアか履歴を持つ描画オブジェクトの索引（IModelView.ModifierObjectIndices）。</summary>
+        private HashSet<int> _modifierMarks = new HashSet<int>();
+
         private void CreateTreeRoot()
         {
             var model = CurrentModel;
             if (model == null) return;
+
+            // モディファイアか履歴を持つ行の印。スタックの増減は ListStructure で通知され、ここを通る。
+            _modifierMarks = new HashSet<int>(model.ModifierObjectIndices);
 
             IReadOnlyList<IMeshView> sourceList;
             MeshCategory category;
@@ -195,6 +204,8 @@ namespace Poly_Ling.MeshListV2
 
             bool   excludeMirror = !(_showMirrorSideToggle?.value ?? false);
             string filter        = _filterField?.value;
+            // モディファイアの結果は元と 1 つのオブジェクトなので一覧に出さない（操作統合計画 段 2）。
+            var    hiddenRows    = (_showModifierResultsToggle?.value ?? false) ? null : model.ModifierResultIndices;
 
             _treeRoot = new SummaryTreeRoot();
             _treeRoot.ModelIndex   = ModelIndex;
@@ -217,7 +228,7 @@ namespace Poly_Ling.MeshListV2
                 }
                 finally { _isReceiving = false; }
             };
-            _treeRoot.Build(sourceList, category, excludeMirror, filter);
+            _treeRoot.Build(sourceList, category, excludeMirror, filter, hiddenRows, model.ModifierResultParents);
             SetupDragDrop();
         }
 
@@ -394,6 +405,9 @@ namespace Poly_Ling.MeshListV2
                 { cache.NameLabel.text = $"\u21C6B {adapter.DisplayName}"; cache.NameLabel.style.opacity = 1f; }
                 else
                 { cache.NameLabel.text = adapter.DisplayName; cache.NameLabel.style.opacity = 1f; }
+
+                if (_modifierMarks.Contains(adapter.MasterIndex))
+                    cache.NameLabel.text = $"{ModifierMark} {cache.NameLabel.text}";
             }
 
             if (cache.InfoLabel != null)

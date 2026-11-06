@@ -610,7 +610,7 @@ namespace Poly_Ling.Player
                     // 流し込んだだけ（Updated）なら一覧は変わらない。受け手（RemoteServerCore.OnModelListChanged）は
                     // 通知のたびにモデル全体の一覧の JSON を作るので、作り直しのたびに無駄に走っていた
                     // （モディファイア高速化計画 段 13）。
-                    if (!sblResult.Updated) model.OnListChanged?.Invoke();
+                    if (!sblResult.Updated || sblResult.ListChanged) model.OnListChanged?.Invoke();
                     if (sblRecord) RecordMeshListSnapshot(sblBefore, model, sblResult.Message);
                     Poly_Ling.Ops.ModifierStepProfiler.Mark("一覧の通知と記録");   // 計測（段 10）
 
@@ -653,7 +653,7 @@ namespace Poly_Ling.Player
                     // SettleWorldPositions に任せる（モディファイア高速化計画 段 7）。
                     // 以前はここで EnterTopologyChanged と ListStructure を無条件に呼び、
                     // 作り直しのたびに GPU バッファを 2 回作り直していた。
-                    if (sblResult.Updated)
+                    if (sblResult.Updated && !sblResult.ListChanged)
                     {
                         model.ComputeWorldMatrices();
                         if (sblResult.WeightedVertexCount > 0)
@@ -669,6 +669,14 @@ namespace Poly_Ling.Player
 
                     // ボーンを作った（Recreated を含む）。一覧が変わるので作り直す。
                     // ウェイトは作り直しが全部を送る。
+                    // 評価のパスの中で足し引きしたときと、呼び出し側が最後にまとめて作り直すときは、ここでは作らない。
+                    // 大きなモデルではバッファの作り直しに数秒かかり、1 回の操作で何度も走っていた。
+                    if ((sblResult.ListChanged && _modifierWriteBackDepth > 0) || _deferSpringChainBufferRebuild)
+                    {
+                        model.ComputeWorldMatrices();
+                        _notifyPanels(ChangeKind.ListStructure);
+                        return true;
+                    }
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return true;

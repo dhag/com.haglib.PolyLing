@@ -155,6 +155,8 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.Targets, Description = "宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。")]
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack)]   // PlayerCommandDispatcher.Blend.cs
+    [PLModifierInput(Accepts = "ブレンド元のオブジェクト（複数）と出力先", Decide = "ブレンドのパネルで選ぶ", Result = "出力先のオブジェクトの頂点へ書く",
+        ReEdit = "履歴の一覧の引数", DefaultInput = "なし：元が要る（Maya の Blend Shape も形を選んで作る）")]
     public class ApplyBlendCommand : PanelCommand
     {
         /// <summary>1 コマンドで受け付けるソースの上限</summary>

@@ -156,6 +156,7 @@ namespace Poly_Ling.MQO
                 foreach (var mc in meshContexts)
                 {
                     if (mc == null) continue;
+                    if (Poly_Ling.Modifiers.ModifierExportView.IsPlaceholder(mc)) continue;
                     
                     if (mc.Type == MeshType.Bone)
                     {

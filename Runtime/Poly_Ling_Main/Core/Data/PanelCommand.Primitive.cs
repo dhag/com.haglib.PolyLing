@@ -667,6 +667,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BoltPattern,
         InverseKeeps = "個数・並べる面・配置元・割り当て",
         InverseLoses = "部品ごとのずれ・回転・歪み、並びの中心のずれ、面の傾き")]
+    [PLModifierInput(Accepts = "配置元のオブジェクト", Decide = "図形生成のパネルで選ぶ", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄", DefaultInput = "なし：配置元が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public sealed class CreateBoltPatternCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "BoltPattern", Description = "ネジ配置のパラメータ", Required = true)]
@@ -840,6 +842,8 @@ namespace Poly_Ling.Data
     /// 回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。
     /// </summary>
     [PLCommand(Category = "geometry.create.special", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。")]
+    [PLModifierInput(Accepts = "断面の点列、または断面の取り込み元の線分", Decide = "図形生成のパネルの断面。取り込み元を選べばそれを読む", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と断面の編集", DefaultInput = "パネルの断面の初期値（Maya の Revolve はカーブの選択が要る）")]
     public sealed class CreateRevolutionCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Revolution", Description = "回転体のパラメータ", Required = true)]
@@ -862,6 +866,8 @@ namespace Poly_Ling.Data
     /// 2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。
     /// </summary>
     [PLCommand(Category = "geometry.create.special", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。")]
+    [PLModifierInput(Accepts = "輪郭の点列、または輪郭の取り込み元の線分", Decide = "図形生成のパネルの輪郭。取り込み元を選べばそれを読む", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と断面の編集", DefaultInput = "パネルの輪郭の初期値")]
     public sealed class CreateProfile2DCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Profile2D", Description = "2D押し出しのパラメータ", Required = true)]

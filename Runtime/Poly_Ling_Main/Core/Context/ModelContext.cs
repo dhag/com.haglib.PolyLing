@@ -206,10 +206,18 @@ namespace Poly_Ling.Context
         // カテゴリ別選択操作
         // ================================================================
 
+        /// <summary>
+        /// モディファイアの結果を選ぶ操作は元へ回す（操作統合計画 段 2）。
+        /// 元と結果は利用者には 1 つのオブジェクトで、編集できるのは元だけ。
+        /// 選択を足す入口はすべてここを通す（索引の列を直接書く Undo の復元は通らない）。
+        /// </summary>
+        private int ResolveSelectable(int index) => Poly_Ling.Modifiers.ModifierResultOps.ResolveIndex(this, index);
+
         /// <summary>Drawableメッシュを選択（単一選択・Mesh/BakedMirrorカテゴリ専用）</summary>
         public void SelectMesh(int index)
         {
             ClearMeshSelection();
+            index = ResolveSelectable(index);
             if (index >= 0 && index < Count)
             {
                 SelectedDrawableMeshIndices.Add(index);
@@ -242,6 +250,7 @@ namespace Poly_Ling.Context
         /// <summary>メッシュ選択に追加（重複防止・順序保持）</summary>
         public void AddToMeshSelection(int index)
         {
+            index = ResolveSelectable(index);
             if (index >= 0 && index < Count && !SelectedDrawableMeshIndices.Contains(index))
             {
                 SelectedDrawableMeshIndices.Add(index);
@@ -252,6 +261,7 @@ namespace Poly_Ling.Context
         /// <summary>メッシュ選択をトグル（Ctrl+クリック用）</summary>
         public void ToggleMeshSelection(int index)
         {
+            index = ResolveSelectable(index);
             if (index < 0 || index >= Count) return;
             
             if (SelectedDrawableMeshIndices.Contains(index))
@@ -275,8 +285,9 @@ namespace Poly_Ling.Context
             
             for (int i = start; i <= end; i++)
             {
-                if (!SelectedDrawableMeshIndices.Contains(i))
-                    SelectedDrawableMeshIndices.Add(i);
+                int selectable = ResolveSelectable(i);
+                if (!SelectedDrawableMeshIndices.Contains(selectable))
+                    SelectedDrawableMeshIndices.Add(selectable);
             }
             ActiveCategory = SelectionCategory.Mesh;
         }
@@ -449,6 +460,7 @@ namespace Poly_Ling.Context
         /// <summary>タイプに基づいて適切なカテゴリに選択を追加（重複防止）</summary>
         public void AddMeshContextToSelection(int index)
         {
+            index = ResolveSelectable(index);
             if (index < 0 || index >= Count) return;
             var meshContext = MeshContextList[index];
             if (meshContext == null) return;
@@ -480,6 +492,7 @@ namespace Poly_Ling.Context
         /// </summary>
         public void SelectMeshContextExclusive(int index)
         {
+            index = ResolveSelectable(index);
             if (index < 0 || index >= Count) return;
             var meshContext = MeshContextList[index];
             if (meshContext == null) return;

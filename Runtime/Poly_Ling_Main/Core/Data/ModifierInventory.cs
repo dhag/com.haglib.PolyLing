@@ -51,6 +51,11 @@ namespace Poly_Ling.Data
             public string InverseLoses = "";
             /// <summary>入力のドラッグ中にも追随するか（PLModifierAttribute.FollowsDrag）。</summary>
             public bool   FollowsDrag;
+            /// <summary>入力と結果の扱いの宣言（PLModifierInputAttribute）。無ければ null。</summary>
+            public PLModifierInputAttribute InputDecl;
+
+            /// <summary>入力があって履歴に残る（宣言を持つべき）コマンドか。</summary>
+            public bool NeedsInputDecl => Kind == "B" && Capture != PLStackCapture.None;
 
             public string InputsText   => Inputs.Count   == 0 ? "" : string.Join(", ", Inputs);
             public string ProfilesText => Profiles.Count == 0 ? "" : string.Join(", ", Profiles);
@@ -87,6 +92,7 @@ namespace Poly_Ling.Data
                 e.RebuildKey = rb.IsSupported ? rb.TargetIndexKey : "";
 
                 e.FollowsDrag = modAttr?.FollowsDrag ?? false;
+                e.InputDecl   = t.GetCustomAttribute<PLModifierInputAttribute>(inherit: false);
 
                 foreach (var pk in PanelCommandFactory.ProfileKeys(t)) e.Profiles.Add(pk.Key);
 
@@ -144,9 +150,10 @@ namespace Poly_Ling.Data
         public static string Report(List<Entry> list)
         {
             var sb = new StringBuilder();
-            int a = 0, b = 0, c = 0, captured = 0, rebuild = 0, inverse = 0;
+            int a = 0, b = 0, c = 0, captured = 0, rebuild = 0, inverse = 0, undeclared = 0;
             foreach (var e in list)
             {
+                if (e.NeedsInputDecl && e.InputDecl == null) undeclared++;
                 if (e.Kind == "A") a++; else if (e.Kind == "B") b++; else c++;
                 if (e.Capture != PLStackCapture.None) captured++;
                 if (e.Rebuild) rebuild++;
@@ -157,8 +164,9 @@ namespace Poly_Ling.Data
               .Append(" / A ").Append(a).Append(" / B ").Append(b).Append(" / C ").Append(c)
               .Append(" / 記録される ").Append(captured)
               .Append(" / 書き戻せる ").Append(rebuild)
-              .Append(" / 逆方向あり ").Append(inverse);
-            sb.Append('\n').Append("型\taction\t記録\t書き戻し\t読む入力\tプロファイル\t逆方向\tドラッグ追随\tカテゴリ\t逆方向で保つもの\t逆方向で失うもの");
+              .Append(" / 逆方向あり ").Append(inverse)
+              .Append(" / 入力の宣言なし ").Append(undeclared);
+            sb.Append('\n').Append("型\taction\t記録\t書き戻し\t読む入力\tプロファイル\t逆方向\tドラッグ追随\tカテゴリ\t逆方向で保つもの\t逆方向で失うもの\t受け付ける入力\t入力の決め方\t結果の置き場所\t再編集の先\t選択が無いとき");
 
             foreach (var e in list)
             {
@@ -175,7 +183,12 @@ namespace Poly_Ling.Data
                   .Append(e.FollowsDrag ? "追随" : "").Append('\t')
                   .Append(e.Category).Append('\t')
                   .Append(e.InverseKeeps).Append('\t')
-                  .Append(e.InverseLoses);
+                  .Append(e.InverseLoses).Append('\t')
+                  .Append(e.InputDecl?.Accepts ?? "").Append('\t')
+                  .Append(e.InputDecl?.Decide ?? "").Append('\t')
+                  .Append(e.InputDecl?.Result ?? "").Append('\t')
+                  .Append(e.InputDecl?.ReEdit ?? "").Append('\t')
+                  .Append(e.InputDecl?.DefaultInput ?? "");
             }
             return sb.ToString();
         }

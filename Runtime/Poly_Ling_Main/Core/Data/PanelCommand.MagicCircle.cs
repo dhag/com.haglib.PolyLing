@@ -77,6 +77,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.RadialPlace,
         InverseKeeps = "個数・回る向き・向きの決め方・配置元・割り当て",
         InverseLoses = "部品ごとのずれ・回転・歪み、間隔の不揃い、円の中心のずれ、面の傾き")]
+    [PLModifierInput(Accepts = "配置元のオブジェクト", Decide = "図形生成のパネルで選ぶ", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄", DefaultInput = "なし：配置元が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public sealed class CreateRadialPlaceCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "RadialPlace", Description = "オブジェクトの円周配置のパラメータ", Required = true)]

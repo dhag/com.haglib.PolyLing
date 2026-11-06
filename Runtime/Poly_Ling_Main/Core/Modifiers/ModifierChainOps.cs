@@ -71,7 +71,11 @@ namespace Poly_Ling.Modifiers
                 var parts = new List<string>();
                 foreach (ulong id in ids)
                 {
-                    int idx = map.TryGetValue(id, out var mc) ? model.MeshContextList.IndexOf(mc) : -1;
+                    // 相手がモディファイアを持つと参照は結果を指す。利用者に見えるのは元なので元の索引で返す
+                    // （受け口は元の索引を結果へ直す。TryNormalizeModifierArgs）。
+                    int idx = -1;
+                    if (map.TryGetValue(id, out var mc))
+                        idx = model.MeshContextList.IndexOf(ModifierResultOps.FoldedRootOf(model, mc) ?? mc);
                     parts.Add(idx.ToString(CultureInfo.InvariantCulture));
                 }
                 args[p.Key] = string.Join(",", parts);

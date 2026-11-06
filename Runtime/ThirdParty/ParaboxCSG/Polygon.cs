@@ -44,6 +44,14 @@ namespace Poly_Ling.CSG
             this.materialIndex = materialIndex;
         }
 
+        /// <summary>分割した断片。元の面の平面をそのまま持つ（Plane.cs の注記）。</summary>
+        public Polygon(List<Vertex> list, int materialIndex, Plane plane)
+        {
+            vertices = list;
+            this.plane = plane;
+            this.materialIndex = materialIndex;
+        }
+
         public void Flip()
         {
             vertices.Reverse();

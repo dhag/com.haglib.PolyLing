@@ -2,7 +2,7 @@
 // 編集の構造 edit（version 5）を評価して平らなトラックを作る（「平らにする」）。規則の正本。
 // Runtime/Poly_Ling_Main/Motion/ に配置
 //
-// Motion Studio（データとツール/VRMビュワー/polyling_motion_studio/timeline.html）の
+// Motion Studio（データとツール/ツール/VRMビュワー/polyling_motion_studio/timeline.html）の
 // trackWrap・keySec・evalRows・KIND・Clip.sampleChannel / sampleAt・Track.sampleContinuous / sampleClips / sampleCh・
 // layerInfo・plNeedsBake・plMaxFrame・plBakeKeys・plKeyMap・plMakeTrack・exportPolyLing の書き分けは、この写し。
 // キー列の評価は MotionCurveMath。回転の混ぜ方は Quaternion.Slerp（plmotion_curve.js の slerp はこれの写し）。

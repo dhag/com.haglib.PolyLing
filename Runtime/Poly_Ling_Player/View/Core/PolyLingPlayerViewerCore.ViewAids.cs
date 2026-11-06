@@ -474,6 +474,12 @@ namespace Poly_Ling.Player
             else ShowHumanoidBoneSelectPanel();
         }
 
+        private void ToggleModifierChainPanel()
+        {
+            if (IsPinnedOpen(_layoutRoot?.ModifierChainSection)) SetPinnedOpen(_layoutRoot.ModifierChainSection, false);
+            else ShowModifierChainPanel();
+        }
+
         /// <summary>オブジェクトリストの今の 3 択を InteractionMode へ反映する。</summary>
         private void ApplyMeshListCurrentViewportOpMode()
             => ApplyMeshListViewportOpMode(

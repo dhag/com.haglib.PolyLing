@@ -227,6 +227,7 @@ namespace Poly_Ling.Player
             Add("meshList",           () => _layoutRoot.MeshListBtn,           "オブジェクトリスト");
             Add("materialList",       () => _layoutRoot.MaterialListBtn,       "マテリアルリスト");
             Add("humanoidBoneSelect", () => _layoutRoot.HumanoidBoneSelectBtn, "ヒューマノイドボーン");
+            Add("modifierChain",      () => _layoutRoot.ModifierPanelBtn,      "モディファイア");
         }
 
         private void RegisterUiAutomationPanels()
@@ -353,9 +354,9 @@ namespace Poly_Ling.Player
                 _layoutRoot.MeshSelectionSetSection, ShowMeshSelectionSetPanel, _meshSelSetSubPanel);
             RegisterUiPanel("partsSelectionSet", "パーツ選択セット（頂点・辺・面の選択辞書）",
                 _layoutRoot.PartsSelectionSetSection, ShowPartsSelectionSetPanel, _partsSelSetSubPanel);
-            RegisterUiPanel("modifierStack", "モディファイアスタック",
+            RegisterUiPanel("modifierStack", "履歴の一覧（生成の入力・設定と出力先のまとまり。管理用）",
                 _layoutRoot.ModifierStackSection, ShowModifierStackPanel, _modifierStackSubPanel);
-            RegisterUiPanel("modifierChain", "処理列（編集対象のオブジェクトに処理を積み重ねる。追加・並べ替え・有効・引数・処理範囲・削除・適用）",
+            RegisterUiPanel("modifierChain", "モディファイア（選択中のオブジェクトの履歴とモディファイア。追加・並べ替え・有効・設定・頂点グループ・削除・適用）",
                 _layoutRoot.ModifierChainSection, ShowModifierChainPanel, _modifierChainSubPanel);
             RegisterUiPanel("materialList", "マテリアル一覧（作成・シェーダー・選択面への適用）",
                 _layoutRoot.MaterialListSection, ShowMaterialListPanel, _materialListSubPanel);

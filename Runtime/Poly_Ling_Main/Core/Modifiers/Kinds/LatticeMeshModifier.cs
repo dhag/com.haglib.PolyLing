@@ -12,7 +12,8 @@
 // 【格子の組み立て】LatticeDeformer.Configure（格子変形コマンドの受け口と共用）。
 //   長さが合わない・索引が範囲外なら失敗（TryWriteParams）。点が無ければ無変形。
 //
-// 【引数】点の索引とずれは配列なので、引数欄は作られず「詳細」の文字列欄で書く。
+// 【引数】点の索引とずれは配列なので、引数欄は作られない。カードの「制御点を動かす」でビューから
+//   動かす（ModifierGizmoToolHandler）か、「詳細」の文字列欄で書く。
 //   index = ix + iy*(cellsX+1) + iz*(cellsX+1)*(cellsY+1)、ずれは x,y,z の 3 個ずつ。
 //   範囲：セル数 1〜32 は LatticeGrid、大きさの下限は LatticeGrid.MinThickness。
 //   中心 ±10（作業軸の原点と同じ）・大きさの上限 20 はこの段で決めた値。
@@ -26,10 +27,28 @@ using UnityEngine;
 
 namespace Poly_Ling.Modifiers
 {
-    [PLMeshModifier("lattice", DisplayName = "格子", Category = "deform", Change = MeshModifierChange.PositionsOnly,
-                    Description = "範囲内の頂点を作業軸ローカルの格子で変形する（LatticeDeformer。三線形補間）。動かした点の索引とずれは詳細で書く")]
-    public sealed class LatticeMeshModifier : DeformerMeshModifier<LatticeDeformer>
+    [PLMeshModifier("lattice", DisplayName = "ラティス", Category = "deform", Change = MeshModifierChange.PositionsOnly,
+                    Description = "範囲内の頂点を作業軸ローカルの格子で変形する（LatticeDeformer。三線形補間）。制御点はカードの「制御点を動かす」でビューから動かす")]
+    public sealed class LatticeMeshModifier : DeformerMeshModifier<LatticeDeformer>, IMeshModifierAddDefaults, IMeshModifierHint
     {
+        /// <summary>
+        /// 追加メニューの既定値（操作統合計画 段 3）。Maya の Lattice と同じ：入力を囲み（objectCentered）、
+        /// スライスは 2,5,2（セル 1,4,1）で、制御点を動かすまで形は変わらない。
+        /// </summary>
+        public void ApplyAddDefaults(MeshObject input)
+        {
+            Vector3 size = FitAxisToInput(input, alignLine: false);
+            Size = new Vector3(Mathf.Max(size.x, LatticeGrid.MinThickness),
+                               Mathf.Max(size.y, LatticeGrid.MinThickness),
+                               Mathf.Max(size.z, LatticeGrid.MinThickness));
+            CellsX = 1;
+            CellsY = 4;
+            CellsZ = 1;
+        }
+
+        public string GetHint()
+            => PointIndices == null || PointIndices.Length == 0 ? "「制御点を動かす」を押して、ビューで点を動かすと形が変わります" : null;
+
         public const float CenterMin = -10f;
         public const float CenterMax =  10f;
         public const float SizeMax   =  20f;

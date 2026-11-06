@@ -85,6 +85,22 @@ namespace Poly_Ling.Data
         }
     }
 
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "カーブの線分の中点に点を足す。線分を選んでいればそれだけ、無ければ全部。今ある頂点は動かない。このカーブを読むパイプと揺れ鎖も追随して伸びる。")]
+    [PLResult("addedPoints", PLResultKind.Integer, Description = "足した点の数")]
+    [PLUiRoute("モディファイアパネル（履歴カード）", "rightPaneTop.modifierChain", "modifierChain.history.0.curvePoints.0",
+        Run = "modifierChain.history.0.curvePoints.0", Note = "パイプを選び、履歴カードの「点を増やす」を押す")]
+    public class SubdivideCurveCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
+                 Description = "カーブのオブジェクトの masterIndex")]
+        public int MasterIndex { get; }
+
+        public SubdivideCurveCommand(int modelIndex, int masterIndex) : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+        }
+    }
+
     [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の点列（と任意でハンドル）を差し替える。点の数が変われば頂点と線分も増減する。")]
     public class SetLineGroupPointsCommand : PanelCommand
     {

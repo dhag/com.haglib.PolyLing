@@ -288,6 +288,9 @@ namespace Poly_Ling.Ops
             bool IsIgnored(MeshEntry e)
             {
                 if (e.Context.IgnorePoseInArmature) return true;
+                // モディファイアの結果は元と同じものなので元のボーンに乗る。自分のボーンを作ると、
+                // 使われないボーン「元_mod」が書き出しまで残る。
+                if (Poly_Ling.Modifiers.ModifierResultOps.SourceOf(model, e.Context) != null) return true;
                 if (e.IsMirrorSide && entryOfIndex.TryGetValue(e.RealPeerIndex, out var realEntry))
                     return realEntry.Context.IgnorePoseInArmature;
                 return false;

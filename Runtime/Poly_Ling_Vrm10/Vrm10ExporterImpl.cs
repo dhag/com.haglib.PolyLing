@@ -82,6 +82,9 @@ namespace Poly_Ling.Vrm10Impl
 
             settings = settings ?? Vrm10ExportSettings.CreateDefault();
 
+            // モディファイアの元と結果を 1 つのオブジェクトにして書く。
+            model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+
             HierarchyBuildResult built = null;
             Vrm10SceneAssembler assembler = null;
 

@@ -260,8 +260,8 @@ namespace Poly_Ling.Vrm10Impl
         ///   ・VRM10Object は呼び出し側が渡す。プレファブと一緒にアセットとして
         ///     保存しないと参照が切れ、Start が「no VRM10Object」で止まるため。
         ///   ・表情・視線・一人称・ノード制約・出力スケールは扱わない。
-        /// Vrm10Runtime は Humanoid の Head が無いと例外を投げる（Vrm10Runtime.cs のコンストラクタ）。
-        /// Head の有無は呼び出し側で確かめること。
+        /// Vrm10Runtime は Humanoid の Head の枠が空だと例外を投げる（Vrm10Runtime.cs のコンストラクタ）。
+        /// 人型でないモデルは、呼び出し側が枠を空のノードで埋めて渡す（Vrm10PrefabSpringBoneAttacher）。
         /// </summary>
         /// <param name="humanoidTransformMap">humanName→Transform。不足関節を補完済みならその結果。</param>
         public static AssembleReport AssembleSpringBonesForPrefab(

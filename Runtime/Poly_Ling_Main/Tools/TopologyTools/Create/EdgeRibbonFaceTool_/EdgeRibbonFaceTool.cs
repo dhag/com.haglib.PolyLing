@@ -82,7 +82,64 @@ namespace Poly_Ling.Tools
             if (string.IsNullOrEmpty(edgeSetName))
                 return mc.Selection?.Edges;
 
-            return mc.FindSelectionSetByName(edgeSetName)?.Edges;
+            var stored = mc.FindSelectionSetByName(edgeSetName)?.Edges;
+            if (stored == null || !edgeSetName.StartsWith(CurveEdgeSetPrefix, StringComparison.Ordinal))
+                return stored;
+            return ExpandToConnectedLines(mc.MeshObject, stored);
+        }
+
+        /// <summary>
+        /// カーブ全体を読む辞書の名前の頭。この辞書の辺は「どの連なりか」の目印で、読むたびに
+        /// その連なりの今の線分全部へ広げる。カーブに点や線分を足すとパイプも伸びる（Maya の入力カーブと同じ）。
+        /// カーブの一部の線分だけを選んで作ったパイプはこの名前を使わず、選んだ辺に留まる。
+        /// </summary>
+        public const string CurveEdgeSetPrefix = "SweepCurve";
+
+        /// <summary>目印の辺の頂点とつながっている 2 頂点の面を全部返す。つながりが引けなければ目印のまま。</summary>
+        private static ICollection<VertexPair> ExpandToConnectedLines(MeshObject mo, ICollection<VertexPair> seeds)
+        {
+            if (mo == null) return seeds;
+
+            var adjacency = new Dictionary<int, List<int>>();
+            void Link(int a, int b)
+            {
+                if (!adjacency.TryGetValue(a, out var list)) { list = new List<int>(); adjacency[a] = list; }
+                list.Add(b);
+            }
+            var lines = new List<VertexPair>();
+            foreach (var f in mo.Faces)
+            {
+                if (f?.VertexIndices == null || f.VertexIndices.Count != 2) continue;
+                int a = f.VertexIndices[0], b = f.VertexIndices[1];
+                lines.Add(new VertexPair(a, b));
+                Link(a, b);
+                Link(b, a);
+            }
+
+            // 分岐点（線分が 3 本以上）の先へは広げない。枝は別のカーブで、1 本の帯にはできない。
+            bool CanPassThrough(int v) => adjacency[v].Count <= 2;
+
+            var reached = new HashSet<int>();
+            var pending = new Stack<int>();
+            void Reach(int v)
+            {
+                if (reached.Add(v) && CanPassThrough(v)) pending.Push(v);
+            }
+            foreach (var e in seeds)
+            {
+                if (adjacency.ContainsKey(e.V1)) Reach(e.V1);
+                if (adjacency.ContainsKey(e.V2)) Reach(e.V2);
+            }
+            if (reached.Count == 0) return seeds;
+
+            while (pending.Count > 0)
+                foreach (int n in adjacency[pending.Pop()])
+                    Reach(n);
+
+            var result = new HashSet<VertexPair>();
+            foreach (var line in lines)
+                if (reached.Contains(line.V1) && reached.Contains(line.V2)) result.Add(line);
+            return result;
         }
 
         /// <summary>

@@ -85,6 +85,10 @@ namespace Poly_Ling.Player
         private void RunModifierEvaluation(string trigger, bool recheckInputs = false, bool displayAtCommandEnd = false)
         {
             if (ModifierEvaluator.IsEvaluating) return;
+            // ドラッグ中の追随の控えはこのドラッグ限り（面構成が変わり得る）。
+            // 計測を入れているときは、追随が書いた位置と作り直しの結果の差をパスの後で出す。
+            var followedToCheck = Poly_Ling.Diagnostics.PLDiag.Timing ? TakeFollowedPositions() : null;
+            _dragFollows.Clear();
 
             var project = _getProject();
             var model   = project?.CurrentModel;
@@ -158,6 +162,8 @@ namespace Poly_Ling.Player
             {
                 _undoController?.ResumeRecording();
             }
+
+            LogFollowDifference(followedToCheck);
 
             // 処理列が書いた結果のウェイト・法線を GPU へ送る（チュートリアル計画 3.8）。
             // 面の構成が同じならバッファは作り直されないので、部分転送を予約する。

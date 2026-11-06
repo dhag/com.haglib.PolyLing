@@ -447,6 +447,9 @@ namespace Poly_Ling.Player
             {
                 GetProject  = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
+                GetActiveGizmo = () => _modifierGizmoHandler != null
+                    ? (_modifierGizmoHandler.StackName, _modifierGizmoHandler.ItemId, _modifierGizmoHandler.Kind)
+                    : ("", "", Poly_Ling.Data.ModifierGizmoKind.Off),
             };
             _modifierChainSubPanel.Build(_layoutRoot.ModifierChainSection);
 

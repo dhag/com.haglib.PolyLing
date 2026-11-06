@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
         private Label              _statusLabel;
         [UiControl("mergeDuplicateVertices", Description = "重複頂点をマージする")]
         private Toggle             _mergeToggle;
-        [UiControl("keepAsModifierStack", Description = "モディファイアスタックとして残す（オフだと作り直せない）")]
+        [UiControl("keepAsModifierStack", Description = "履歴を残す（オフだと作り直せない）")]
         private Toggle             _keepAsModifierStackToggle;
 
         // ================================================================
@@ -395,13 +395,14 @@ namespace Poly_Ling.Player
             keepWarn.style.marginLeft  = 16;
             keepWarn.style.marginBottom = 2;
             keepWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
-            keepWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
+            keepWarn.style.display = ShapeHasInput && !_keepAsModifierStack ? DisplayStyle.Flex : DisplayStyle.None;
             keepRow.Add(keepWarn);
+            _keepHistoryWarn = keepWarn;
 
             keepToggle.RegisterValueChangedCallback(e =>
             {
                 _keepAsModifierStack = e.newValue;
-                keepWarn.style.display = _keepAsModifierStack ? DisplayStyle.None : DisplayStyle.Flex;
+                keepWarn.style.display = ShapeHasInput && !_keepAsModifierStack ? DisplayStyle.Flex : DisplayStyle.None;
             });
 
             parent.Add(keepRow);

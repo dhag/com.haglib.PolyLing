@@ -4,14 +4,17 @@
 //
 // 【正本】PolyLing_モディファイア枠組み計画.md 段 7a・段 9b（辺の決め方「角度」）
 //
-// 【対象の辺】limitMethod で決める。
-//   Scope（範囲・既定）：範囲の辺（保存は頂点 ID の組。項目の入力へ引き直したもの）。
+// 【対象の辺】limitMethod（画面の表記は「制限方法」。Blender の Limit Method）で決める。
+//   Scope（頂点グループ）：頂点グループの辺（保存は頂点 ID の組。項目の入力へ引き直したもの）。
 //     全体の範囲・辺の無い範囲は失敗（全辺を勝手にベベルしない）。
 //   Angle（角度）：隣の 2 面の法線のなす角が angle 以上の辺（Blender のベベルの制限方法「角度」と同じ）。
 //     範囲が全体ならメッシュ全体から、それ以外は両端が範囲に入る辺だけから選ぶ。
 //     面の頂点を共有していない辺（UV の継ぎ目などで頂点が分かれた辺）は位置で組を作って角度を測る。
-//   どちらも、辺は集まったが隣の面が 2 枚そろわずベベルできないときは失敗。
-//   既定を Scope にしているのは、この引数の無い保存済みの項目の結果を変えないため。
+//   None（なし）：面 2 枚の間の辺をすべて。頂点グループがあれば両端がその中に入る辺だけ。
+//   どれも、辺は集まったが隣の面が 2 枚そろわずベベルできないときは失敗。
+//   列挙の値は文字列に数値で書くので変えない（Scope 0・Angle 1・None 2）。並びは画面の表記の順。
+//   プロパティの初期値を Scope にしているのは、この引数の無い保存済みの項目の結果を変えないため。
+//   追加メニューから足すときは ApplyAddDefaults で決める（Angle 30 度。その辺が無い入力は None）。
 //
 // 【出力】入力の Clone を EdgeBevelOps がその場で書き換えたもの。範囲の外の面はそのまま残る。
 //   Clone はイベントを写さないので、孤立頂点の除去で選択・パーツ選択辞書が付け替わることはない。
@@ -32,21 +35,23 @@ namespace Poly_Ling.Modifiers
     /// <summary>ベベルする辺の決め方。</summary>
     public enum BevelLimitMethod
     {
-        /// <summary>範囲の辺。</summary>
-        Scope = 0,
+        /// <summary>面 2 枚の間の辺をすべて。</summary>
+        [InspectorName("なし")] None = 2,
         /// <summary>隣の 2 面の角度が閾値以上の辺。</summary>
-        Angle = 1,
+        [InspectorName("角度")] Angle = 1,
+        /// <summary>頂点グループの辺。</summary>
+        [InspectorName("頂点グループ")] Scope = 0,
     }
 
     [PLMeshModifier("bevel", DisplayName = "ベベル", Category = "topology",
                     Change = MeshModifierChange.Topology,
-                    Description = "辺をベベル（面取り）する。辺は範囲で指定するか、面の角度で決める")]
-    public sealed class BevelMeshModifier : IMeshModifier
+                    Description = "辺をベベル（面取り）する。辺は制限方法（なし・角度・頂点グループ）で決める")]
+    public sealed class BevelMeshModifier : IMeshModifier, IMeshModifierAddDefaults
     {
-        [PLParam(Description = "ベベル量（ローカル座標の長さ）", Min = 0.0001, Max = 10.0, Step = 0.001)]
+        [PLParam(Description = "幅（ローカル座標の長さ）", Min = 0.0001, Max = 10.0, Step = 0.001)]
         public float Amount { get; set; } = 0.05f;
 
-        [PLParam(Description = "分割数", Min = 1, Max = 16, Step = 1)]
+        [PLParam(Description = "セグメント", Min = 1, Max = 16, Step = 1)]
         public int Segments { get; set; } = 1;
 
         [PLParam(Description = "角を弧で結ぶ（分割数 2 以上で効く）")]
@@ -55,11 +60,41 @@ namespace Poly_Ling.Modifiers
         [PLParam(Description = "足す面の材質番号", Min = 0, Max = 255, Step = 1)]
         public int MaterialIndex { get; set; } = 0;
 
-        [PLParam(Description = "辺の決め方。Scope＝範囲の辺 / Angle＝隣の 2 面の角度が閾値以上の辺（範囲が全体ならメッシュ全体から）")]
+        [PLParam(Description = "制限方法。なし（None）＝面 2 枚の間の辺すべて / 角度（Angle）＝隣の 2 面の角度が閾値以上の辺 / 頂点グループ（Scope）＝頂点グループの辺。キーが無いデータは頂点グループとして読む")]
         public BevelLimitMethod LimitMethod { get; set; } = BevelLimitMethod.Scope;
 
-        [PLParam(Description = "角度で決めるときの閾値（度）。隣の 2 面の法線のなす角がこれ以上の辺をベベルする", Min = 0.0, Max = 180.0, Step = 1)]
+        [PLParam(Description = "角度（度）。制限方法が角度のとき、隣の 2 面の法線のなす角がこれ以上の辺をベベルする", Min = 0.0, Max = 180.0, Step = 1)]
         public float Angle { get; set; } = 30f;
+
+        [PLParam(Description = "幅を、ベベルする辺につながる辺の半分までに抑える（Blender の Clamp Overlap）。面が飛び出さない。追加メニューで足すと入る。キーが無いデータは切として読む")]
+        public bool ClampOverlap { get; set; } = false;
+
+        /// <summary>
+        /// 追加メニューの既定値。Blender と同じ幅 0.1・角度 30 度。角が丸いもの・平らなものなど 30 度以上の辺が無い入力は、
+        /// Maya の Bevel（辺を選ばなければ全部の辺）と同じ「なし」にする（Blender はこのとき何も変わらない）。
+        /// 幅は最短の辺の 4 割までに抑える。EdgeBevelOps 自体には Blender の Clamp Overlap に当たる制限が無く、
+        /// 細かい辺を持つ入力（角丸の箱）で幅が辺より大きいと面が飛び出すため。あとから幅を上げたときは ClampOverlap が抑える。
+        /// </summary>
+        public void ApplyAddDefaults(MeshObject input)
+        {
+            ClampOverlap = true;
+            LimitMethod = CollectEdgesByAngle(input, ResolvedMeshModifierScope.CreateAll(), Angle).Count > 0
+                ? BevelLimitMethod.Angle : BevelLimitMethod.None;
+
+            Amount = 0.1f;
+            float shortest = float.MaxValue;
+            foreach (var f in input.Faces)
+            {
+                var idx = f.VertexIndices;
+                if (idx.Count < 3) continue;
+                for (int j = 0; j < idx.Count; j++)
+                {
+                    float d = (input.Vertices[idx[j]].Position - input.Vertices[idx[(j + 1) % idx.Count]].Position).magnitude;
+                    if (d > 1e-6f && d < shortest) shortest = d;
+                }
+            }
+            if (shortest < float.MaxValue) Amount = Mathf.Clamp(shortest * 0.4f, 0.0001f, Amount);
+        }
 
         public MeshObject Evaluate(MeshModifierInput input, out string error)
         {
@@ -74,15 +109,23 @@ namespace Poly_Ling.Modifiers
                 edges = CollectEdgesByAngle(src, scope, Angle);
                 if (edges.Count == 0) { error = $"角度 {Angle} 度以上の辺が無い"; return null; }
             }
+            else if (LimitMethod == BevelLimitMethod.None)
+            {
+                // 面 2 枚の間の辺をすべて（角度 0 は平らな辺も含む）。
+                edges = CollectEdgesByAngle(src, scope, 0f);
+                if (edges.Count == 0) { error = "ベベルできる辺が無い（面 2 枚の間の辺が無い）"; return null; }
+            }
             else
             {
-                if (scope.IsAll) { error = "ベベルする辺を範囲で指定する（全体は受けない。全体を角度で決めるなら limitMethod=Angle）"; return null; }
-                if (scope.Edges.Count == 0) { error = "範囲に辺が無い"; return null; }
+                if (scope.IsAll) { error = "制限方法が頂点グループなのに、頂点グループが指定されていない（頂点グループを指定するか、制限方法を角度かなしにする）"; return null; }
+                if (scope.Edges.Count == 0) { error = "頂点グループに辺が無い"; return null; }
                 edges = scope.Edges.OrderBy(e => e.V1).ThenBy(e => e.V2).ToList();
             }
 
+            float amount = ClampOverlap ? Mathf.Min(Amount, OverlapLimit(src, edges)) : Amount;
+
             var dst = src.Clone();
-            var r = EdgeBevelOps.Execute(dst, edges, Amount, Segments, Fillet, MaterialIndex);
+            var r = EdgeBevelOps.Execute(dst, edges, amount, Segments, Fillet, MaterialIndex);
             if (r.CollectedEdgeCount == 0 || r.BeveledEdgeCount == 0)
             { error = "ベベルできる辺が無い（隣の面が 2 枚そろわない）"; return null; }
 
@@ -97,6 +140,33 @@ namespace Poly_Ling.Modifiers
             dst.RebuildIdSets();
             dst.InvalidatePositionCache();
             return dst;
+        }
+
+        /// <summary>ベベルする辺の端の頂点につながる辺のうち、最短のものの半分。辺が無ければ無制限。</summary>
+        private static float OverlapLimit(MeshObject mesh, List<VertexPair> edges)
+        {
+            var touched = new HashSet<Vector3Int>();
+            foreach (var e in edges)
+            {
+                touched.Add(Quantize(mesh.Vertices[e.V1].Position));
+                touched.Add(Quantize(mesh.Vertices[e.V2].Position));
+            }
+
+            float shortest = float.MaxValue;
+            foreach (var f in mesh.Faces)
+            {
+                var idx = f.VertexIndices;
+                if (idx.Count < 3) continue;
+                for (int j = 0; j < idx.Count; j++)
+                {
+                    Vector3 a = mesh.Vertices[idx[j]].Position;
+                    Vector3 b = mesh.Vertices[idx[(j + 1) % idx.Count]].Position;
+                    if (!touched.Contains(Quantize(a)) && !touched.Contains(Quantize(b))) continue;
+                    float d = (a - b).magnitude;
+                    if (d > 1e-6f && d < shortest) shortest = d;
+                }
+            }
+            return shortest < float.MaxValue ? shortest * 0.5f : float.MaxValue;
         }
 
         /// <summary>

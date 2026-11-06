@@ -31,7 +31,7 @@ namespace Poly_Ling.PMX
         private static Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> ConvertMeshes(
             List<MeshContext> meshContexts,
             PMXDocument document,
-            Dictionary<string, int> boneNameToIndex,
+            Dictionary<int, string> boneNameByMaster,
             PMXExportSettings settings)
         {
             var vertexMaps = new Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>>();
@@ -84,7 +84,7 @@ namespace Poly_Ling.PMX
                 {
                     bool isMirror = ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide;
                     var map = ConvertSingleMeshWithObjectName(
-                        ctx, document, boneNameToIndex, settings, objectName, isMirror, pendingFaces);
+                        ctx, document, boneNameByMaster, settings, objectName, isMirror, pendingFaces);
                     if (ctx?.Name != null) vertexMaps[ctx.Name] = map;
                 }
             }
@@ -111,7 +111,7 @@ namespace Poly_Ling.PMX
         private static Dictionary<(int vIdx, int uvIdx), int> ConvertSingleMeshWithObjectName(
             MeshContext ctx,
             PMXDocument document,
-            Dictionary<string, int> boneNameToIndex,
+            Dictionary<int, string> boneNameByMaster,
             PMXExportSettings settings,
             string objectName,
             bool isMirror,
@@ -120,7 +120,7 @@ namespace Poly_Ling.PMX
             var meshObject = ctx.MeshObject;
 
             // UV展開しながら頂点をdocumentに追加
-            var vertexMapping = AppendExpandedVertices(meshObject, document, boneNameToIndex, settings);
+            var vertexMapping = AppendExpandedVertices(meshObject, document, boneNameByMaster, settings);
 
             // 面を材質ごとにグループ化（同一材質内の面順序は保持）
             var facesByMaterial = new Dictionary<int, List<Face>>();
@@ -199,7 +199,7 @@ namespace Poly_Ling.PMX
         private static Dictionary<(int vIdx, int uvIdx), int> AppendExpandedVertices(
             MeshObject meshObject,
             PMXDocument document,
-            Dictionary<string, int> boneNameToIndex,
+            Dictionary<int, string> boneNameByMaster,
             PMXExportSettings settings)
         {
             int meshVertexStart = document.Vertices.Count;
@@ -215,7 +215,7 @@ namespace Poly_Ling.PMX
             MeshExpansion.Enumerate(meshObject, (vIdx, uvIdx, expIdx) =>
             {
                 var vertex    = meshObject.Vertices[vIdx];
-                var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
+                var pmxVertex = ConvertVertex(vertex, boneNameByMaster, settings);
 
                 Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
                 if (settings.FlipUV_V) uv.y = 1f - uv.y;
@@ -347,7 +347,7 @@ namespace Poly_Ling.PMX
 
         private static PMXVertex ConvertVertex(
             Vertex vertex,
-            Dictionary<string, int> boneNameToIndex,
+            Dictionary<int, string> boneNameByMaster,
             PMXExportSettings settings)
         {
             // 座標変換
@@ -376,13 +376,13 @@ namespace Poly_Ling.PMX
 
                 // ウェイトがある場合のみ追加
                 if (bw.weight0 > 0)
-                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex0, boneNameToIndex), Weight = bw.weight0 });
+                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex0, boneNameByMaster), Weight = bw.weight0 });
                 if (bw.weight1 > 0)
-                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex1, boneNameToIndex), Weight = bw.weight1 });
+                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex1, boneNameByMaster), Weight = bw.weight1 });
                 if (bw.weight2 > 0)
-                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex2, boneNameToIndex), Weight = bw.weight2 });
+                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex2, boneNameByMaster), Weight = bw.weight2 });
                 if (bw.weight3 > 0)
-                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex3, boneNameToIndex), Weight = bw.weight3 });
+                    weights.Add(new PMXBoneWeight { BoneName = GetBoneName(bw.boneIndex3, boneNameByMaster), Weight = bw.weight3 });
 
                 pmxVertex.BoneWeights = weights.ToArray();
                 pmxVertex.WeightType = weights.Count switch
@@ -397,21 +397,22 @@ namespace Poly_Ling.PMX
                 // デフォルト：最初のボーンに100%
                 pmxVertex.BoneWeights = new[]
                 {
-                    new PMXBoneWeight { BoneName = boneNameToIndex.Keys.FirstOrDefault() ?? "", Weight = 1f }
+                    new PMXBoneWeight { BoneName = boneNameByMaster.Values.FirstOrDefault() ?? "", Weight = 1f }
                 };
             }
 
             return pmxVertex;
         }
 
-        private static string GetBoneName(int boneIndex, Dictionary<string, int> boneNameToIndex)
+        /// <summary>
+        /// 頂点の boneIndex はモデル全体のオブジェクト一覧の番号（マスター索引）。
+        /// ボーンだけの番号で引くと、ボーンがメッシュより後ろのモデルで別のボーンになる。
+        /// </summary>
+        private static string GetBoneName(int boneIndex, Dictionary<int, string> boneNameByMaster)
         {
-            foreach (var kvp in boneNameToIndex)
-            {
-                if (kvp.Value == boneIndex)
-                    return kvp.Key;
-            }
-            return boneNameToIndex.Keys.FirstOrDefault() ?? "";
+            if (boneNameByMaster.TryGetValue(boneIndex, out string name))
+                return name;
+            return boneNameByMaster.Values.FirstOrDefault() ?? "";
         }
 
         private static void UpdateMaterialFaceCounts(PMXDocument document)

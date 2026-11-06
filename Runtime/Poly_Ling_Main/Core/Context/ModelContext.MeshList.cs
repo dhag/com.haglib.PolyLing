@@ -123,6 +123,22 @@ namespace Poly_Ling.Context
         }
 
         /// <summary>
+        /// 書き出し専用の写しを作る（ModifierExportView。操作統合計画 段 2）。
+        /// 一覧とミラー対だけを差し替え、他はこのモデルと共有する。一覧へ入れる道（Admit）は通らず、
+        /// 行の ObjectId と親のモデルは元のまま。写しは書き出しが読むだけで、モデルとして使わない。
+        /// スタックは空にする（写しの中の結果はもう行に焼いてあるので、二重に焼かないため）。
+        /// </summary>
+        public ModelContext CloneForExport(List<MeshContext> rows, List<MirrorPair> mirrorPairs)
+        {
+            var view = (ModelContext)MemberwiseClone();
+            view.MeshContextList = rows;
+            view.MirrorPairs     = mirrorPairs;
+            view.ModifierStacks  = new List<Poly_Ling.Data.ModifierStack>();
+            view._typedIndices   = null;
+            return view;
+        }
+
+        /// <summary>
         /// 一覧の ObjectId の点検（段 C の見張り）。0 のもの・重複するものがあれば説明、無ければ null。
         /// </summary>
         public string CheckObjectIds()

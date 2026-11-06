@@ -9,7 +9,7 @@ using UnityEngine;
 namespace Poly_Ling.Modifiers
 {
     [PLMeshModifier("translate", DisplayName = "平行移動", Category = "deform",
-                    Change = MeshModifierChange.PositionsOnly,
+                    Change = MeshModifierChange.PositionsOnly, HideFromMenu = true,
                     Description = "範囲内の頂点を、オブジェクトのローカル座標で offset だけ動かす")]
     public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPositions
     {

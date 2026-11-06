@@ -335,9 +335,10 @@ namespace Poly_Ling.Player
 
         private void ShowModifierChainPanel()
         {
-            // カテゴリ 2: 3D 操作 (InteractionMode) は維持（元メッシュの選択を処理範囲にするため）
-            ShowRightPanel(_layoutRoot?.ModifierChainSection, _layoutRoot?.ModifierChainBtn);
+            // 常駐リスト。下区画の 3D 操作パネルと同時に開ける（元メッシュの選択を頂点グループにするため）。
+            SetPinnedOpen(_layoutRoot?.ModifierChainSection, true);
             _modifierChainSubPanel?.Refresh();
+            _layoutRoot?.RevealPinnedSection(_layoutRoot.ModifierChainSection);
         }
 
         private void ShowMergeMeshesPanel()

@@ -206,6 +206,9 @@ namespace Poly_Ling.Tools.SpringBoneRig
         /// </summary>
         public bool Recreated;
 
+        /// <summary>流し込みでカーブの点の増減に合わせてボーンを足し引きしたとき true。</summary>
+        public bool ListChanged;
+
         public bool   Ok;
         public string Message = "";
     }
@@ -369,8 +372,9 @@ namespace Poly_Ling.Tools.SpringBoneRig
             {
                 if (UpdateChains(model, chainRootIndices, plans, addTailBone, tailLength,
                                  mirrorMatrix,
-                                 out var upChains, out var upVerts, out var upMirror, out string why))
+                                 out var upChains, out var upVerts, out var upMirror, out bool upListChanged, out string why))
                 {
+                    result.ListChanged = upListChanged;
                     result.Chains.AddRange(upChains);
                     result.SourceVertices.AddRange(upVerts);
                     result.MirrorChains.AddRange(upMirror);
@@ -1005,8 +1009,6 @@ namespace Poly_Ling.Tools.SpringBoneRig
         {
             if (model == null || chains == null || string.IsNullOrEmpty(prefix)) return 0;
 
-            model.ComputeWorldMatrices();
-
             var own = new HashSet<int>();
             foreach (var ch in chains) if (ch != null) foreach (int b in ch) own.Add(b);
 
@@ -1018,7 +1020,36 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 if (mc.Name != null && mc.Name.StartsWith(prefix, System.StringComparison.Ordinal))
                     cand.Add(i);
             }
+            return ReattachRoots(model, chains, cand);
+        }
+
+        /// <summary>
+        /// 鎖の根元を、揺れものでないボーンのうち根元に最も近いものへ付け替える。
+        /// 体のボーンが 1 本も無ければ何もしない（鎖はモデルの直下のまま）。戻り値は付け替えた本数。
+        /// </summary>
+        public static int ReattachRootsToNearestBody(ModelContext model, IList<List<int>> chains)
+        {
+            if (model == null || chains == null) return 0;
+
+            var own = new HashSet<int>();
+            foreach (var ch in chains) if (ch != null) foreach (int b in ch) own.Add(b);
+
+            var cand = new List<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Bone || own.Contains(i)) continue;
+                if (mc.MeshObject?.SpringBoneJoint != null) continue;
+                cand.Add(i);
+            }
+            return ReattachRoots(model, chains, cand);
+        }
+
+        private static int ReattachRoots(ModelContext model, IList<List<int>> chains, List<int> cand)
+        {
             if (cand.Count == 0) return 0;
+
+            model.ComputeWorldMatrices();
 
             int moved = 0;
             foreach (var ch in chains)
@@ -1063,7 +1094,8 @@ namespace Poly_Ling.Tools.SpringBoneRig
         // ================================================================
 
         /// <summary>
-        /// 既にある鎖へ位置を流し込む。ボーンは作らず、増やさず、消さない。
+        /// 既にある鎖へ位置を流し込む。カーブの点が増減して節の数が変わったら、鎖の先で
+        /// ボーンを足し引きして揃える（listChanged が立つ）。根元と揺れ方はそのまま残る。
         ///
         /// 照合に落ちたら false を返し、why に理由を入れる。そのときモデルは
         /// 1 か所も書き換えていない（先に全部の鎖を辿って照合し、
@@ -1080,11 +1112,13 @@ namespace Poly_Ling.Tools.SpringBoneRig
             out List<List<int>> chains,
             out List<List<int[]>> sourceVertices,
             out List<List<int>> mirrorChains,
+            out bool listChanged,
             out string why)
         {
             chains         = null;
             sourceVertices = null;
             mirrorChains   = null;
+            listChanged    = false;
             why            = "";
 
             if (model == null) { why = "モデルがありません"; return false; }
@@ -1114,6 +1148,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
             var childrenOf = Poly_Ling.Ops.MeshHierarchyOps.BuildChildrenTable(model);
 
             var found = new List<List<int>>(rootIndices.Count);
+            var lengths = new List<int>(rootIndices.Count);
 
             for (int c = 0; c < rootIndices.Count; c++)
             {
@@ -1137,16 +1172,19 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 int expected = plans[planIndex].Worlds.Count
                              + (addTailBone && plans[planIndex].Worlds.Count >= 2 ? 1 : 0);
 
-                if (chain.Count != expected)
+                if (expected < 2)
                 {
-                    why = $"鎖 {c} の長さが違う（はしごから {expected} 個 / 今 {chain.Count} 個）";
+                    why = $"鎖 {c} の節が足りません（はしごから {expected} 個）";
                     return false;
                 }
 
                 found.Add(chain);
+                lengths.Add(expected);
             }
 
             // ── ここから書き込み。照合は全部通っている ──
+            listChanged = ResizeChains(model, found, lengths, addTailBone);
+
             model.ComputeWorldMatrices();
 
             chains         = new List<List<int>>(plans.Count);
@@ -1256,6 +1294,82 @@ namespace Poly_Ling.Tools.SpringBoneRig
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 鎖の節の数を揃える。増やすときは今の先端を節にして、その先へ足す（子は親より後ろの番号に保つ）。
+        /// 減らすときは先端の手前から消す。消すと番号がずれるので、全部終えてから番号を引き直す。
+        /// 位置は呼び出し側が流し込む。戻り値は一覧が変わったか。
+        /// </summary>
+        private static bool ResizeChains(ModelContext model, List<List<int>> chains, List<int> lengths, bool hasTail)
+        {
+            var contexts = new List<List<MeshContext>>(chains.Count);
+            foreach (var chain in chains)
+            {
+                var list = new List<MeshContext>(chain.Count);
+                foreach (int i in chain) list.Add(model.GetMeshContext(i));
+                contexts.Add(list);
+            }
+
+            bool changed = false;
+            for (int c = 0; c < contexts.Count; c++)
+            {
+                var chain = contexts[c];
+                int want  = lengths[c];
+                if (chain.Count == want) continue;
+                changed = true;
+
+                if (chain.Count < want)
+                    GrowChain(model, chain, want, hasTail);
+                else
+                    while (chain.Count > want)
+                    {
+                        int drop = hasTail ? chain.Count - 2 : chain.Count - 1;
+                        model.RemoveAt(model.MeshContextList.IndexOf(chain[drop]));
+                        chain.RemoveAt(drop);
+                    }
+            }
+            if (!changed) return false;
+
+            for (int c = 0; c < contexts.Count; c++)
+            {
+                chains[c].Clear();
+                foreach (var mc in contexts[c]) chains[c].Add(model.MeshContextList.IndexOf(mc));
+            }
+            return true;
+        }
+
+        private static void GrowChain(ModelContext model, List<MeshContext> chain, int want, bool hasTail)
+        {
+            string rootName = chain[0].Name ?? "";
+            string head = rootName.EndsWith("_top", System.StringComparison.Ordinal)
+                ? rootName.Substring(0, rootName.Length - 4)
+                : rootName;
+
+            // 今の先端を節に変える。先端の名前は新しい先端へ渡す。
+            if (hasTail)
+            {
+                var oldTail = chain[chain.Count - 1];
+                string nodeName = $"{head}_{chain.Count - 1}";
+                oldTail.Name = nodeName;
+                if (oldTail.MeshObject != null) oldTail.MeshObject.Name = nodeName;
+            }
+
+            SpringBoneJointData joint = null;
+            for (int i = chain.Count - 1; i >= 0 && joint == null; i--)
+                joint = chain[i].MeshObject?.SpringBoneJoint;
+
+            int count = chain.Count;
+            while (count < want)
+            {
+                string name = hasTail && count == want - 1 ? $"{head}_end" : $"{head}_{count}";
+                int parent  = model.MeshContextList.IndexOf(chain[count - 1]);
+                int added   = SpringBoneChainPlacer.AddBone(model, name, parent, Vector3.zero);
+                var mc      = model.GetMeshContext(added);
+                if (joint != null && mc.MeshObject != null) mc.MeshObject.SpringBoneJoint = joint.Clone();
+                chain.Add(mc);
+                count++;
+            }
         }
 
         /// <summary>

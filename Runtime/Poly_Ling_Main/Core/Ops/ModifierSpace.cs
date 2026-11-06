@@ -159,11 +159,20 @@ namespace Poly_Ling.Ops
 
             if (outSkinned)
             {
+                if (BuildsInBindWorld(e.CommandType)) return ModifierSpaceKind.SelfBind;
                 reason = "出力がスキンド化済みで、この項目は生成物を出力の格納空間へ移す読み方を持たない";
                 return ModifierSpaceKind.Unsupported;
             }
 
             return ModifierSpaceKind.Same;
+        }
+
+        /// <summary>生成物の頂点がバインド姿勢のワールド座標で出来る項目か（PLModifierAttribute.BuildsInBindWorld）。</summary>
+        public static bool BuildsInBindWorld(Type t)
+        {
+            if (t == null) return false;
+            var a = (PLModifierAttribute)Attribute.GetCustomAttribute(t, typeof(PLModifierAttribute));
+            return a != null && a.BuildsInBindWorld;
         }
 
         private static bool SameMatrix(Matrix4x4 a, Matrix4x4 b)
@@ -300,6 +309,12 @@ namespace Poly_Ling.Ops
             public Matrix4x4 Matrix = Matrix4x4.identity;
             /// <summary>出力の描画オブジェクト（この相手へ書くときだけ効かせる）。</summary>
             public MeshContext Output;
+            /// <summary>
+            /// 生成物に欠けたウェイトを、書き戻す前の出力のウェイトで埋める。
+            /// 帯（BuildsInBindWorld）はカーブにウェイトが無くても作り直せ、下流の揺れ鎖が塗り直す。
+            /// 梯子を読む項目は引き継ぎを切っているとき（揺れ鎖の無いパイプなど）に、今のウェイトのまま作り直せる。
+            /// </summary>
+            public bool KeepOutputWeights;
         }
 
         private static WriteBack _current;
@@ -352,6 +367,8 @@ namespace Poly_Ling.Ops
             if (output.IsSkinned)
             {
                 if (!checkWeights) return null;
+                if (wb != null && wb.KeepOutputWeights && ReferenceEquals(wb.Output, output))
+                    FillMissingWeights(mo, output.MeshObject);
                 int missing = 0;
                 foreach (var v in mo.Vertices)
                     if (v != null && v.BoneWeight == null) missing++;
@@ -370,6 +387,27 @@ namespace Poly_Ling.Ops
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 欠けたウェイトを前の出力から埋める。同じ番号の頂点のもの、無ければ前の出力の先頭のウェイト
+        /// （頂点が増えたとき）。前の出力にウェイトが 1 つも無ければ埋めない。
+        /// </summary>
+        private static void FillMissingWeights(MeshObject mo, MeshObject previous)
+        {
+            if (mo == null || previous == null) return;
+            BoneWeight? first = null;
+            foreach (var v in previous.Vertices)
+                if (v != null && v.BoneWeight != null) { first = v.BoneWeight; break; }
+            if (first == null) return;
+
+            for (int i = 0; i < mo.VertexCount; i++)
+            {
+                var v = mo.Vertices[i];
+                if (v == null || v.BoneWeight != null) continue;
+                var old = i < previous.VertexCount ? previous.Vertices[i] : null;
+                v.BoneWeight = old?.BoneWeight ?? first;
+            }
         }
     }
 }

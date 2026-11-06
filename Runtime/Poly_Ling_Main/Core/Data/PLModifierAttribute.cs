@@ -69,6 +69,29 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 入力のある生成コマンドの、入力と結果の扱いの宣言（操作統合計画 段 7）。人に見せる説明で、動きは変えない。
+    /// 入力があって履歴に残るコマンドは全部持つ（queryModifierInventory が未宣言の数を出す）。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class PLModifierInputAttribute : Attribute
+    {
+        /// <summary>受け付ける選択・入力。</summary>
+        public string Accepts { get; set; } = "";
+
+        /// <summary>入力の決め方。</summary>
+        public string Decide { get; set; } = "";
+
+        /// <summary>結果の置き場所。</summary>
+        public string Result { get; set; } = "";
+
+        /// <summary>再編集の先。</summary>
+        public string ReEdit { get; set; } = "";
+
+        /// <summary>選択が無いときに使う既定の入力。無いときは「なし：」と、合わせた先や理由を書く。</summary>
+        public string DefaultInput { get; set; } = "";
+    }
+
+    /// <summary>
     /// 生成コマンドのモディファイアとしての宣言。派生クラスへ引き継ぐ
     /// （CreatePrimitiveMeshCommand に付けたものが全図形へ効く）。派生側に付ければ上書きになる。
     /// </summary>
@@ -97,10 +120,24 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 入力の頂点ドラッグ中にも出力を追随させるか。既定 false。
         /// true の項目は評価器（ModifierEvaluator）がドラッグ中の位置の同期
-        /// （PlayerViewportManager.SyncMeshPositionsAndTransform）で処理器を呼ぶ。
+        /// （PlayerViewportManager.SyncMeshPositionsAndTransform）で処理器か、処理器の無い項目は
+        /// 生成の追随（ModifierEvaluator.GeneratorDragFollower。帯・パイプ）を呼ぶ。
         /// false の項目はドラッグ中は要評価の印だけ立てる（重い生成をドラッグの毎フレームで流さない）。
         /// 例: サブディビジョンはステンシルを掛けるだけで軽いので true。
         /// </summary>
         public bool FollowsDrag { get; set; } = false;
+
+        /// <summary>
+        /// モディファイアパネルの履歴カードに出す名前。空ならコマンドの説明の最初の句から作る。
+        /// 説明の最初の句が名前にならないコマンドにだけ書く。
+        /// </summary>
+        public string DisplayName { get; set; } = "";
+
+        /// <summary>
+        /// 生成物の頂点がバインド姿勢のワールド座標で出来る項目か（辺の帯）。既定 false。
+        /// スキンドの格納空間と同じなので、出力がスキンド化済みでもそのまま書ける（ModifierSpace.Classify）。
+        /// 入力にウェイトが無ければ、書き戻しは出力のウェイトを残し、下流の揺れ鎖が塗り直す（操作統合計画 段 7）。
+        /// </summary>
+        public bool BuildsInBindWorld { get; set; } = false;
     }
 }

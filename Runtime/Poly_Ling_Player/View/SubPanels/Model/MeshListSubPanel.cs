@@ -154,6 +154,8 @@ namespace Poly_Ling.MeshListV2
         private Toggle _showInfoToggle;
         [UiControl("showMirrorSide", Description = "ミラーも表示する")]
         private Toggle _showMirrorSideToggle;
+        [UiControl("showModifierResults", Description = "モディファイアの結果の行も表示する（診断用。選ぶと元が選ばれる）")]
+        private Toggle _showModifierResultsToggle;
         [UiControl("keepSelectionColor", Description = "選択色を固定する（フォーカスが外れても白くしない）")]
         private Toggle _keepSelectionColorToggle;
         [UiControl("filter", Description = "一覧の絞り込み")]

@@ -752,7 +752,8 @@ namespace Poly_Ling.Ops
             var visited = new HashSet<int>();
             var queue = new Queue<int>();
 
-            foreach (int root in axisAtVertex.Keys)
+            // 走査の中で値を反転するので、キーは写しを回す（辞書を書き換えると列挙が例外になる）。
+            foreach (int root in new List<int>(axisAtVertex.Keys))
             {
                 if (visited.Contains(root))
                     continue;

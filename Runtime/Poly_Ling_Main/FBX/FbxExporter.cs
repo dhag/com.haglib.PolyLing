@@ -59,6 +59,9 @@ namespace Poly_Ling.Fbx
 
             settings = settings ?? FbxExportSettings.CreateDefault();
 
+            // モディファイアの元と結果を 1 つのオブジェクトにして書く。
+            model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+
             HierarchyBuildResult built = null;
             try
             {

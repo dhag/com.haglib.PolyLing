@@ -14,9 +14,9 @@
 //   2. 揺れものの組み立ては VRM 書き出しと同じ Vrm10SceneAssembler に任せる
 //      （AssembleSpringBonesForPrefab）。ここで写しは作らない。
 //
-// 【付けない場合】
-//   Humanoid の Head が無い。Vrm10Runtime はコンストラクタで Head を引き、
-//   無いと例外を投げる（Vrm10Runtime.cs）。付けると Play で必ず落ちるので付けない。
+// 【人型でないモデル】
+//   揺れものは人型と関係なく付ける。Vrm10Runtime はコンストラクタで Head の枠を引き、
+//   空だと例外を投げる（Vrm10Runtime.cs）ので、枠が空なら空のノードで埋める。
 //
 // ============================================================
 
@@ -51,11 +51,23 @@ namespace Poly_Ling.Vrm10Impl.EditorIO
                 return result;
             }
 
+            // 人型でないモデルでも揺らす。Vrm10Runtime は起動時に Head の枠を確かめるだけで、
+            // 揺れの計算は使わない（Vrm10Runtime.cs のコンストラクタ）。枠が空なら空のノードで埋める。
+            // このプレファブの揺れの部品の中だけの扱いで、Avatar と Humanoid の割当は変えない。
+            bool hasHumanoid = humanoidTransformMap != null && humanoidTransformMap.Count > 0;
             if (humanoidTransformMap == null
                 || !humanoidTransformMap.TryGetValue("Head", out var head) || head == null)
             {
-                result.SkipReason = "Humanoid の Head が割り当てられていない（UniVRM の揺れの仕組みは Head が要る）";
-                return result;
+                var filled = humanoidTransformMap != null
+                    ? new Dictionary<string, Transform>(humanoidTransformMap.Count + 1)
+                    : new Dictionary<string, Transform>(1);
+                if (humanoidTransformMap != null)
+                    foreach (var kv in humanoidTransformMap) filled[kv.Key] = kv.Value;
+
+                var slot = new GameObject("__SpringHeadSlot");
+                slot.transform.SetParent(hierarchy.Root.transform, false);
+                filled["Head"] = slot.transform;
+                humanoidTransformMap = filled;
             }
 
             // 繰り返し書き出しても増えないよう、同じ名前のアセットがあればそれを使う。
@@ -73,7 +85,8 @@ namespace Poly_Ling.Vrm10Impl.EditorIO
                 model, hierarchy, humanoidTransformMap, vrmObject);
 
             result.Warnings.AddRange(report.Warnings);
-            if (report.MissingRequiredBones.Count > 0)
+            // 人型を割り当てていないモデルは人型として扱わない。不足は人型のモデルでだけ知らせる。
+            if (hasHumanoid && report.MissingRequiredBones.Count > 0)
             {
                 result.Warnings.Add("Humanoid の必須ボーンが不足: "
                                     + string.Join(", ", report.MissingRequiredBones));

@@ -18,6 +18,8 @@ namespace Poly_Ling.Ops
         public bool Success;
         public int RemovedVertexCount;
         public string Message;
+        /// <summary>結合前の頂点 → 結合後の頂点。何も結合しなかったときは null。</summary>
+        public int[] VertexMap;
     }
 
     /// <summary>
@@ -209,6 +211,7 @@ namespace Poly_Ling.Ops
 
                 // 逆方向の控え（ModifierFrameTrace）も同じ表で付け替える。
                 ModifierFrameTrace.Remapped(meshObject, map);
+                result.VertexMap = map;
             }
             UnityEngine.Debug.Log($"[PL/Timing] Merge groups={mergeGroups.Count} removed={verticesToRemove.Count} split={__tSplit}ms degenerate={__tDegen}ms closedPairs={__tMark - __tSplit - __tDegen}ms removeVertices={__sw.ElapsedMilliseconds - __tMark}ms"); // TEMP-TIMING
 

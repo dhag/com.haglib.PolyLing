@@ -15,6 +15,8 @@ namespace Poly_Ling.MeshListV2
     {
         private List<SummaryTreeAdapter> _rootItems = new List<SummaryTreeAdapter>();
         private Dictionary<int, SummaryTreeAdapter> _adapterByMasterIndex = new Dictionary<int, SummaryTreeAdapter>();
+        /// <summary>一覧から外した行。親の索引 → 外した行の索引。</summary>
+        private readonly Dictionary<int, List<int>> _hiddenChildren = new Dictionary<int, List<int>>();
         private int _nextId;
 
         // 外部コールバック
@@ -31,23 +33,44 @@ namespace Poly_Ling.MeshListV2
         {
             // D&D完了：新しい順序をコマンドとして送信
             var flatList = TreeViewHelper.Flatten(_rootItems);
-            var entries = new ReorderMeshesCommand.ReorderEntry[flatList.Count];
-            for (int i = 0; i < flatList.Count; i++)
+            var entryList = new List<ReorderMeshesCommand.ReorderEntry>(flatList.Count);
+            foreach (var a in flatList)
             {
-                var a = flatList[i];
                 int parentMaster = a.Parent != null ? a.Parent.MasterIndex : -1;
-                entries[i] = new ReorderMeshesCommand.ReorderEntry
+                int depth = a.GetDepth();
+                entryList.Add(new ReorderMeshesCommand.ReorderEntry
                 {
                     MasterIndex = a.MasterIndex,
-                    NewDepth = a.GetDepth(),
+                    NewDepth = depth,
                     NewParentMasterIndex = parentMaster
-                };
+                });
+
+                // 一覧から外した結果の行は元の直後へ置く。親子はリストの順と深さで決まるので、
+                // 元だけが動くと結果が別のオブジェクトの子になる（MeshHierarchyOps.BuildParentIndicesFromDepth）。
+                AddHiddenChildren(entryList, a.MasterIndex, depth);
             }
+            var entries = entryList.ToArray();
             PLDiag.Cmd($"ReorderMeshes category={Category} modelIndex={ModelIndex} count={entries.Length}");
 
             SendCommand?.Invoke(new ReorderMeshesCommand(
                 ModelIndex, Category, ReorderMeshesCommand.ToEntryValues(entries)));
             OnChanged?.Invoke();
+        }
+
+        /// <summary>外した行を親の直後へ足す。多段（外した行の子も外した行）は深さをたどる。</summary>
+        private void AddHiddenChildren(List<ReorderMeshesCommand.ReorderEntry> entries, int parent, int parentDepth)
+        {
+            if (!_hiddenChildren.TryGetValue(parent, out var hidden)) return;
+            foreach (int child in hidden)
+            {
+                entries.Add(new ReorderMeshesCommand.ReorderEntry
+                {
+                    MasterIndex = child,
+                    NewDepth = parentDepth + 1,
+                    NewParentMasterIndex = parent
+                });
+                AddHiddenChildren(entries, child, parentDepth + 1);
+            }
         }
 
         // ================================================================
@@ -58,20 +81,32 @@ namespace Poly_Ling.MeshListV2
         /// <param name="category">カテゴリ</param>
         /// <param name="excludeMirrorSide">trueならIsMirrorSide=trueを除外</param>
         /// <param name="filterText">名前フィルタ（null/空=フィルタなし）</param>
+        /// <param name="hiddenRows">一覧から外す行（モディファイアの結果とそのミラー側）。null なら外さない</param>
         public void Build(IReadOnlyList<IMeshView> meshViews, MeshCategory category,
-            bool excludeMirrorSide = true, string filterText = null)
+            bool excludeMirrorSide = true, string filterText = null,
+            IReadOnlyCollection<int> hiddenRows = null,
+            IReadOnlyDictionary<int, int> resultParents = null)
         {
             _rootItems.Clear();
             _adapterByMasterIndex.Clear();
+            _hiddenChildren.Clear();
             _nextId = 0;
             Category = category;
 
             if (meshViews == null) return;
 
+            var hiddenSet = hiddenRows != null ? new HashSet<int>(hiddenRows) : null;
             var allAdapters = new List<SummaryTreeAdapter>();
             for (int i = 0; i < meshViews.Count; i++)
             {
                 var v = meshViews[i];
+                if (hiddenSet != null && hiddenSet.Contains(v.MasterIndex))
+                {
+                    if (!_hiddenChildren.TryGetValue(v.HierarchyParentIndex, out var hiddenList))
+                        _hiddenChildren[v.HierarchyParentIndex] = hiddenList = new List<int>();
+                    hiddenList.Add(v.MasterIndex);
+                    continue;
+                }
                 if (excludeMirrorSide && v.IsMirrorSide) continue;
                 if (!string.IsNullOrEmpty(filterText) &&
                     v.Name.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) < 0)
@@ -82,16 +117,26 @@ namespace Poly_Ling.MeshListV2
             }
 
             if (category == MeshCategory.Drawable || category == MeshCategory.Morph)
-                BuildHierarchyFromDepth(allAdapters);
+                BuildHierarchyFromDepth(allAdapters, resultParents);
             else
                 BuildHierarchyFromParentIndex(allAdapters);
         }
 
-        private void BuildHierarchyFromDepth(List<SummaryTreeAdapter> allAdapters)
+        private void BuildHierarchyFromDepth(List<SummaryTreeAdapter> allAdapters,
+            IReadOnlyDictionary<int, int> resultParents)
         {
             var parentStack = new Stack<(SummaryTreeAdapter adapter, int depth)>();
             foreach (var adapter in allAdapters)
             {
+                // モディファイアの結果は並びによらず元の下に置く（スタックは変えない）。
+                if (resultParents != null && resultParents.TryGetValue(adapter.MasterIndex, out int source)
+                    && _adapterByMasterIndex.TryGetValue(source, out var sourceAdapter))
+                {
+                    adapter.Parent = sourceAdapter;
+                    sourceAdapter.Children.Add(adapter);
+                    continue;
+                }
+
                 int depth = adapter.Depth;
                 if (depth == 0)
                 {

@@ -90,6 +90,10 @@ namespace Poly_Ling.Ops
 
             var parentStack = new Stack<(int index, int depth)>();
 
+            // モディファイアの結果はリストの末尾へ足されるので、並びと深さでは別のオブジェクトの子になる。
+            // 親は元と決まっているので、ミラー側と同じくスタックを変えずに元を親にする。
+            var resultParents = Poly_Ling.Modifiers.ModifierResultOps.ResultParents(model);
+
             for (int i = 0; i < count; i++)
             {
                 var ctx = model.GetMeshContext(i);
@@ -103,6 +107,12 @@ namespace Poly_Ling.Ops
                 if (ctx.Type == MeshType.Bone)
                 {
                     result[i] = ctx.HierarchyParentIndex;
+                    continue;
+                }
+
+                if (resultParents.TryGetValue(i, out int resultParent))
+                {
+                    result[i] = resultParent;
                     continue;
                 }
 

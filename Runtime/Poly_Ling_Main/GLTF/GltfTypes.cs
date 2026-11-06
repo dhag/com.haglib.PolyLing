@@ -110,6 +110,9 @@ namespace Poly_Ling.Gltf
         [PLParam(Description = "非表示のメッシュも書き出す")]
         public bool ExportInvisibleObjects = false;
 
+        [PLParam(Description = "モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す")]
+        public bool ApplyModifiers = true;
+
         public static GltfExportSettings CreateDefault() => new GltfExportSettings();
 
         public GltfExportSettings Clone()
@@ -119,6 +122,7 @@ namespace Poly_Ling.Gltf
                 ExportSkinning         = this.ExportSkinning,
                 ExportMorphTargets     = this.ExportMorphTargets,
                 ExportInvisibleObjects = this.ExportInvisibleObjects,
+                ApplyModifiers         = this.ApplyModifiers,
             };
         }
     }

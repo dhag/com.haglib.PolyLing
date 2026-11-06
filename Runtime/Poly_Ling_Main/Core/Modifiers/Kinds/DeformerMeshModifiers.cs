@@ -7,16 +7,26 @@
 //
 // 【範囲の出どころ】角度 ±360 と倍率の下限 0.01 は既存のコマンド・デフォーマから。
 //   移動 ±10・倍率の上限 10・波の振幅 ±10・周期数 0〜20 はこの段で決めた値（コードに出どころは無い）。
+//
+// 【追加メニューの既定値】ApplyAddDefaults（操作統合計画 2.3・段 3）。作業軸は入力の中心へ置く（Maya の nonLinear のハンドルと同じ）。
+//   曲げ・ねじりは Blender の Simple Deform と同じ 45 度。
+//   回転・移動・拡大縮小は 3ds Max の XForm と同じく足しただけでは形を変えず、値を入れるよう案内を出す。
+//   波の振幅（入力の 1 割）と周期 1.25 は対応する既定が他のアプリに無いので決めた値（周期 1 だと両端の変位が 0 になり箱で形が変わらない）。
+//   プロパティの初期値は変えない（キーの無い保存データ・シナリオの読み方。IMeshModifierAddDefaults の注記）。
 
 using Poly_Ling.Data;
 using Poly_Ling.Tools.Deformers;
+using UnityEngine;
 
 namespace Poly_Ling.Modifiers
 {
     [PLMeshModifier("rotate", DisplayName = "回転", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸まわりに一様に回す（RotateDeformer）")]
-    public sealed class RotateMeshModifier : DeformerMeshModifier<RotateDeformer>
+    public sealed class RotateMeshModifier : DeformerMeshModifier<RotateDeformer>, IMeshModifierAddDefaults, IMeshModifierHint
     {
+        public void ApplyAddDefaults(MeshObject input) => FitAxisToInput(input, alignLine: false);
+        public string GetHint() => AngleX == 0f && AngleY == 0f && AngleZ == 0f ? "回転角を入れると形が変わります" : null;
+
         [PLParam(Description = "作業軸 X まわりの回転角（度）", Min = -360.0, Max = 360.0, Step = 1)]
         public float AngleX { get; set; }
 
@@ -33,10 +43,13 @@ namespace Poly_Ling.Modifiers
         }
     }
 
-    [PLMeshModifier("move", DisplayName = "移動（作業軸）", Category = "deform", Change = MeshModifierChange.PositionsOnly,
+    [PLMeshModifier("move", DisplayName = "移動", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸のローカル座標で動かす（MoveDeformer）")]
-    public sealed class MoveMeshModifier : DeformerMeshModifier<MoveDeformer>
+    public sealed class MoveMeshModifier : DeformerMeshModifier<MoveDeformer>, IMeshModifierAddDefaults, IMeshModifierHint
     {
+        public void ApplyAddDefaults(MeshObject input) => FitAxisToInput(input, alignLine: false);
+        public string GetHint() => OffsetX == 0f && OffsetY == 0f && OffsetZ == 0f ? "移動量を入れると形が変わります" : null;
+
         [PLParam(Description = "作業軸 X 方向の移動量", Min = -10.0, Max = 10.0, Step = 0.01)]
         public float OffsetX { get; set; }
 
@@ -55,8 +68,11 @@ namespace Poly_Ling.Modifiers
 
     [PLMeshModifier("scale", DisplayName = "拡大縮小", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸のローカル座標で拡大縮小する（ScaleDeformer）")]
-    public sealed class ScaleMeshModifier : DeformerMeshModifier<ScaleDeformer>
+    public sealed class ScaleMeshModifier : DeformerMeshModifier<ScaleDeformer>, IMeshModifierAddDefaults, IMeshModifierHint
     {
+        public void ApplyAddDefaults(MeshObject input) => FitAxisToInput(input, alignLine: false);
+        public string GetHint() => ScaleX == 1f && ScaleY == 1f && ScaleZ == 1f ? "倍率を入れると形が変わります" : null;
+
         [PLParam(Description = "作業軸 X 方向の倍率", Min = ScaleDeformerParams.MinScale, Max = 10.0, Step = 0.01)]
         public float ScaleX { get; set; } = 1f;
 
@@ -75,8 +91,10 @@ namespace Poly_Ling.Modifiers
 
     [PLMeshModifier("bend", DisplayName = "曲げ", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸のライン（+Y）に沿って円弧に曲げる（BendDeformer）")]
-    public sealed class BendMeshModifier : DeformerMeshModifier<BendDeformer>
+    public sealed class BendMeshModifier : DeformerMeshModifier<BendDeformer>, IMeshModifierAddDefaults
     {
+        public void ApplyAddDefaults(MeshObject input) { FitAxisToInput(input); TotalAngleDeg = 45f; }
+
         [PLParam(Description = "曲げる合計角（度）。範囲の全長で曲げる", Min = -360.0, Max = 360.0, Step = 1)]
         public float TotalAngleDeg { get; set; }
 
@@ -99,8 +117,10 @@ namespace Poly_Ling.Modifiers
 
     [PLMeshModifier("twist", DisplayName = "ねじり", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸のライン（+Y）まわりにねじる（TwistDeformer）")]
-    public sealed class TwistMeshModifier : DeformerMeshModifier<TwistDeformer>
+    public sealed class TwistMeshModifier : DeformerMeshModifier<TwistDeformer>, IMeshModifierAddDefaults
     {
+        public void ApplyAddDefaults(MeshObject input) { FitAxisToInput(input); TotalAngleDeg = 45f; }
+
         [PLParam(Description = "ねじる合計角（度）。範囲の全長でねじる", Min = -360.0, Max = 360.0, Step = 1)]
         public float TotalAngleDeg { get; set; }
 
@@ -117,8 +137,14 @@ namespace Poly_Ling.Modifiers
 
     [PLMeshModifier("wave", DisplayName = "波", Category = "deform", Change = MeshModifierChange.PositionsOnly,
                     Description = "範囲内の頂点を作業軸のライン（+Y）に沿って X・Z へ波打たせる（WaveDeformer）")]
-    public sealed class WaveMeshModifier : DeformerMeshModifier<WaveDeformer>
+    public sealed class WaveMeshModifier : DeformerMeshModifier<WaveDeformer>, IMeshModifierAddDefaults
     {
+        public void ApplyAddDefaults(MeshObject input)
+        {
+            AmplitudeX = 0.1f * MeshModifierAddDefaultOps.Longest(FitAxisToInput(input));
+            CyclesX    = 1.25f;
+        }
+
         [PLParam(Description = "X 方向の振幅（作業軸ローカルの長さ）", Min = -10.0, Max = 10.0, Step = 0.01)]
         public float AmplitudeX { get; set; }
 

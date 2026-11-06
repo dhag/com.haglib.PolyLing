@@ -637,10 +637,10 @@ namespace Poly_Ling.Player
                 D();
             }
 
-            c.Add(PR("beltCsv", pathField, LoadBeltCsv, "はしご CSV"));
+            c.Add(PR("beltCsv", pathField, LoadBeltCsv, "帯の CSV"));
             if (!string.IsNullOrEmpty(path)) pathField.SetValueWithoutNotify(path);
 
-            c.Add(WB("beltCsv.load", T("LoadCSV"), LoadBeltCsv, UiSafety.UserOnly, "はしご CSV を読み込む（ファイルを選ぶ）"));
+            c.Add(WB("beltCsv.load", T("LoadCSV"), LoadBeltCsv, UiSafety.UserOnly, "帯の CSV を読み込む（ファイルを選ぶ）"));
 
             c.Add(WB("beltCsv.save", T("SaveCSV"), () =>
             {
@@ -660,7 +660,7 @@ namespace Poly_Ling.Player
                     foreach (var b in belts) total += b.RungCount;
                     SetBeltStatus(T("BeltsInfo", belts.Count, total));
                 }
-            }, UiSafety.UserOnly, "はしご CSV を保存する（保存先を選ぶ）"));
+            }, UiSafety.UserOnly, "帯の CSV を保存する（保存先を選ぶ）"));
         }
     }
 }

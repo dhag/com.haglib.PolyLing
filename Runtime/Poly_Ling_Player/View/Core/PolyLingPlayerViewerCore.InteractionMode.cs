@@ -120,6 +120,15 @@ namespace Poly_Ling.Player
             // ApplySelectMode() が override 無しならチェックボックス値へ戻す。
             // ここでの個別復元は行わない。
 
+            // 処理列の項目のハンドルから脱出するとき。引数は確定済みなので捨てるものは無い。
+            if (_interactionMode == InteractionMode.ModifierGizmo && mode != InteractionMode.ModifierGizmo)
+            {
+                _modifierGizmoHandler?.End();
+                _activePanel?.HideTopoToolOverlay();
+                _activePanel?.HideBoxSelect();
+                _modifierChainSubPanel?.Refresh();
+            }
+
             // 格子変形から脱出するとき、進行中のセッションは取消する。
             // 黙って確定すると、ユーザが意図しない変形が Undo 履歴に残るため。
             //
@@ -294,6 +303,12 @@ namespace Poly_Ling.Player
                     // 作業軸ギズモ専用。モデルの選択・頂点操作は行わない。
                     _vertexInteractor?.SetToolHandler(_workAxisHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _workAxisHandler?.UpdateHover(pos, ctx));
+                    break;
+                case InteractionMode.ModifierGizmo:
+                    // 処理列の項目の作業軸・制御点だけを動かす。モデルの選択・頂点操作は行わない。
+                    _vertexInteractor?.SetToolHandler(_modifierGizmoHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _modifierGizmoHandler?.UpdateHover(pos, ctx));
+                    UpdateTopologyToolsOverlay();
                     break;
                 case InteractionMode.Camera:
                     // カメラ調整ギズモ専用。モデルの選択・頂点操作は行わない。

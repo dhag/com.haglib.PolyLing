@@ -69,6 +69,7 @@ namespace Poly_Ling.EditorIO
         {
             opt.CreateArmature    = EditorGUILayout.Toggle("Armatureを生成", opt.CreateArmature);
             opt.UseBindpose       = EditorGUILayout.Toggle("BindPoseを使用", opt.UseBindpose);
+            opt.ApplyModifiers    = EditorGUILayout.Toggle("モディファイアを適用", opt.ApplyModifiers);
             opt.ExportVisibleOnly = EditorGUILayout.Toggle("可視メッシュのみ", opt.ExportVisibleOnly);
             using (new EditorGUI.DisabledScope(!opt.ExportVisibleOnly))
             {

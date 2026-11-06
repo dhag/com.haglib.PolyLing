@@ -83,14 +83,14 @@ namespace Poly_Ling.Player
             childHint.style.marginBottom = 2;
             c.Add(childHint);
 
-            // ── はしごのウェイトを引き継ぐ（段 I）──
+            // ── 帯のウェイトを引き継ぐ（段 I）──
             c.Add(TR(T("BeltInheritWeights"), () => _placeP.InheritBeltWeights,
                 v => { _placeP.InheritBeltWeights = v; D(); }));
 
             var placeInheritHint = new Label(
-                "取り込み元のはしごに塗ってあるボーンウェイトを、置いた部品へ配ります。"
+                "取り込み元の帯に塗ってあるボーンウェイトを、置いた部品へ配ります。"
                    + "部品 1 個の全頂点が、その段の左右の点のウェイトを半々に混ぜた 1 つの値になります（部品は曲がらずに段と一緒に動きます）。"
-                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。");
+                   + "帯の点と位置が合う頂点から引くので、帯を塗っていなければ何も起きません。");
             placeInheritHint.style.fontSize     = 10;
             placeInheritHint.style.whiteSpace   = WhiteSpace.Normal;
             placeInheritHint.style.marginBottom = 2;
@@ -128,7 +128,7 @@ namespace Poly_Ling.Player
             // ── 間引き（rung 方向・段方向） ──
             BuildPlaceThinUI(c);
 
-            // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
+            // ── 基準帯（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
             var baseFold = new Foldout { text = T("FrillBase"), value = true };
             baseFold.style.marginBottom = 4;
@@ -179,15 +179,15 @@ namespace Poly_Ling.Player
             _placeInfoLabel.style.marginTop  = 2;
             bc.Add(_placeInfoLabel);
 
-            // ── はしごCSV ──
+            // ── 帯CSV ──
             BuildBeltCsvUI(bc, _placeBelts,
                 "Primitive.PlaceObject.BeltCsv", "place_belt.csv", RefreshPlaceInfo);
 
-            // ── はしごの向き ──
+            // ── 帯の向き ──
             BuildBeltOrientUI(bc, _placeOrient);
 
             // ── Z ロール（配置フレームの Z 軸まわり、90°単位） ──
-            // 配置側のパラメータなので基準はしごのフォールドの外に出す。
+            // 配置側のパラメータなので基準帯のフォールドの外に出す。
             BuildPlaceRollUI(c);
 
             BuildBeltSplineUI(c, _placeSpline);
@@ -350,7 +350,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 基準はしごの概要に、rung 長の実測値と間引き後の配置個数を足した文を返す。
+        /// 基準帯の概要に、rung 長の実測値と間引き後の配置個数を足した文を返す。
         /// スケール方式を選ぶときの判断材料として rung 長の幅を出す。
         /// rung 長の統計は全段（間引き前）、配置個数は間引き後の数。
         /// </summary>

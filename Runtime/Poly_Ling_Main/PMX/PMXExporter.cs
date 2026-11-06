@@ -47,6 +47,9 @@ namespace Poly_Ling.PMX
 
             try
             {
+                // モディファイアの元と結果を 1 つのオブジェクトにして書く。
+                model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+
                 // PMXDocumentを構築
                 var document = BuildPMXDocument(model, settings);
 
@@ -412,7 +415,11 @@ namespace Poly_Ling.PMX
             }
 
             // メッシュを変換（頂点・面）
-            var vertexMaps = ConvertMeshes(meshOnlyContexts, document, boneNameToIndex, settings);
+            var boneNameByMaster = new Dictionary<int, string>();
+            for (int i = 0; i < meshContexts.Count; i++)
+                if (meshContexts[i]?.Type == MeshType.Bone) boneNameByMaster[i] = meshContexts[i].Name;
+
+            var vertexMaps = ConvertMeshes(meshOnlyContexts, document, boneNameByMaster, settings);
 
             // モーフを出力する。取り込み時に保持した内容から作り直し、
             // PolyLing が扱わない種類は元の PMX からそのまま写す。

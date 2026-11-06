@@ -165,7 +165,7 @@ MCP の `call` はこれらを応答の直下に、リモートの `command` は
 - 要求 `putModel`（PolyLing → 外）：受けるクライアントは register の capabilities に `putModel` を入れる。返事の data は受け手が決める（Python の `PolyLingClient` は `{modelName, byteCount}`）。
 - 位置と面だけのコマンド（`getRawData`・`addMeshFromArrays`・`setVertexPositions`）はシナリオ・MCP のために残るが、外部連携の受け渡しには使わない。
 
-**Python の入口**（`データとツール/poly_ling_py/polyling_io/net/client.py`。bpy を使わず、素の Python でも Blender でも使う）：
+**Python の入口**（`データとツール/ツール/poly_ling_py/polyling_io/net/client.py`。bpy を使わず、素の Python でも Blender でも使う）：
 - `PolyLingClient`：`get_model(model_index)`（照会 `model_bundle`）、`put_model(model, mode, model_index)`（コマンド `putModel`）、`get_project()`（照会 `project_bundle`）、`on_model(params, model)`（要求 `putModel` の受け手。渡すと capabilities に `putModel` が入る）。
 - 辞書の形は `polyling_io.format`（`.mfproj` の読み書き）と同じ（`model_to_bytes`・`model_from_bytes`）。
 - 既定の clientType は `python`。待ち時間はモデル・プロジェクトとも 120 秒（`MODEL_TIMEOUT`）。
@@ -291,7 +291,7 @@ Blender ブリッジ（`polyling_io/blender/bridge.py`）の決まり：
 - 接線（tan）の無いキーは線形（回転は Slerp）。評価規則の正本は `Motion/MotionCurveMath.cs`。
 - 読み込みは version 1〜4 を 5 へ引き上げる。書き出しは常に version 5。version 4 以前のファイルに `edit` があれば捨てて警告する。
 - 検査規則の正本は `Motion/MotionClipSerializer.cs`（Validate）。
-- モーションスタジオ（`データとツール/VRMビュワー/polyling_motion_studio/timeline.html`）も同じ規則に従う（PolyLing_VRMA整備計画.md 段 ⑦ で対応）。
+- モーションスタジオ（`データとツール/ツール/VRMビュワー/polyling_motion_studio/timeline.html`）も同じ規則に従う（PolyLing_VRMA整備計画.md 段 ⑦ で対応）。
 
 **編集の構造 `edit`（version 5。`MotionEditDTO`。PolyLing_モーション編集構造計画.md）**
 
@@ -325,7 +325,7 @@ Blender ブリッジ（`polyling_io/blender/bridge.py`）の決まり：
 
 可動域（UnityLimit CSV v1）は別ファイルのまま（`UnityClipApplier.LoadMuscleLimitCsv`）。
 
-### 5.1 Blender との対応（アドオン PolyLing IO、`データとツール/poly_ling_py/polyling_io/blender/motion.py`）
+### 5.1 Blender との対応（アドオン PolyLing IO、`データとツール/ツール/poly_ling_py/polyling_io/blender/motion.py`）
 
 入口は［ファイル > インポート／エクスポート > PolyLing モーション (.plmotion.json)］、または 3D ビューのサイドバーのタブ［PolyLing］の「モーションを読む」「モーションを書く」（アドオンの入れ方は §7.1）。
 対象のアーマチュアは、選んだオブジェクトがアーマチュアならそれ、親がアーマチュアならその親、Armature 修飾子があればその相手。
@@ -449,11 +449,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 ### 7.1 置き場所・入れ方・入口
 
-- 置き場所 `データとツール/poly_ling_py/polyling_io/`（Blender ブリッジ〔§3.6・§3.7〕も含む 1 つのアドオン）。名前「PolyLing IO」、Blender 3.6 以上、分類 Import-Export。
+- 置き場所 `データとツール/ツール/poly_ling_py/polyling_io/`（Blender ブリッジ〔§3.6・§3.7〕も含む 1 つのアドオン）。名前「PolyLing IO」、Blender 3.6 以上、分類 Import-Export。
   - `format/`：bpy を使わない層。`.mfproj`・CSV フォルダ ⇔ `ProjectDTO` と同じ形の辞書（JSON の欄名そのまま。CSV にしか無い情報は `_csv` で始まる欄）、`.plmotion.json` ⇔ `MotionClipDTO` と同じ形の辞書。知らない欄・行は捨てずに書き戻す。素の Python でも使える。
   - `net/`：bpy を使わない層。リモートサーバとの通信（サーバ一覧・WebSocket・封筒・コマンド）。素の Python でも使える。
   - `blender/`：辞書・通信 ⇔ Blender（`bridge.py` がブリッジ）。
-- 素の Python から使う：`データとツール/poly_ling_py` で `python -m pip install -e .`（`setup.py`）。例は `examples/send_mesh.py`。
+- 素の Python から使う：`データとツール/ツール/poly_ling_py` で `python -m pip install -e .`（`setup.py`）。例は `examples/send_mesh.py`。
 - 入れ方：`polyling_io` フォルダをフォルダごと zip にし、Blender の［編集 > プリファレンス > アドオン］で入れて有効にする（3.6〜4.1 は「インストール…」、4.2 以降は右上のメニューの「Install from Disk」）。`polyling_io` フォルダを Blender のアドオンのフォルダに置いてもよい。
 - 入口：
 
@@ -557,11 +557,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 ---
 
-## 7b. Python の PolyLing アドオン（`データとツール/poly_ling_py/polyling_io/addon/`）
+## 7b. Python の PolyLing アドオン（`データとツール/ツール/poly_ling_py/polyling_io/addon/`）
 
 Unity Editor を持たない人が、動いている PolyLing（ビルド版でもエディタでもよい）を外の Python プログラムから操作するための土台。bpy を使わない。通信はリモート（3.2〜3.4）。
 
-- 入れ方：`データとツール/poly_ling_py` で `python -m pip install -e .`。PolyLing 側はリモートサーバを開始し、作業フォルダを設定しておく。Python と PolyLing は同じ PC で動かす（ファイルを同じパスで見る）。
+- 入れ方：`データとツール/ツール/poly_ling_py` で `python -m pip install -e .`。PolyLing 側はリモートサーバを開始し、作業フォルダを設定しておく。Python と PolyLing は同じ PC で動かす（ファイルを同じパスで見る）。
 - 入口：`from polyling_io.addon import Session`。`with Session("<アドオン名>") as s:` でサーバ一覧の先頭へつなぐ（register の clientType は `python-addon`、userName はホストと同じ名前）。
 - コマンド：`s.call("<コマンド名>", 引数=値, …)`。値は文字列にして送る（配列はカンマ区切り、真偽は true/false、入れ子の辞書は `params.xxx`）。応答は `Reply`（`result`・`master_index` など）。引数の形は `s.search("やりたいこと")`・`s.describe("<コマンド名>")`（3.2 の `tools_search`・`tools_describe`）。
 - モデル：コマンドは `s.model_index` へ送る。`s.new_model()`（`createEmptyModel`）、`s.use_current_model()`（照会 `modelInfo` の `currentModelIndex`。`importMqoFile` などの NewModel で増えたモデルは応答に番号が出ないのでこれで引く）。

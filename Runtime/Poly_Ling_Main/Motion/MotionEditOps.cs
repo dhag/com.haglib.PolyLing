@@ -2,7 +2,7 @@
 // 編集の構造 edit（version 5）を変える操作。窓口 motionClip（MotionClipHandler）の編集の口の中身。
 // Runtime/Poly_Ling_Main/Motion/ に配置
 //
-// 操作の意味は Motion Studio（データとツール/VRMビュワー/polyling_motion_studio/timeline.html）にそろえる。
+// 操作の意味は Motion Studio（データとツール/ツール/VRMビュワー/polyling_motion_studio/timeline.html）にそろえる。
 // PolyLing_モーション編集構造計画.md 段 3。
 //
 // ■ 規則（恒久メモ）

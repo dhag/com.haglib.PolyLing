@@ -223,6 +223,20 @@ namespace Poly_Ling.Player
             btn.style.height = 28; btn.style.marginTop = 6;
             btn.style.unityFontStyleAndWeight = FontStyle.Bold;
             _createBtn = btn;
+
+            // 押せない理由はボタンのすぐ下へ置く。ボタンが親へ入ったときに並べる。
+            var whyLabel = new Label();
+            whyLabel.style.whiteSpace = WhiteSpace.Normal;
+            whyLabel.style.fontSize = 11;
+            whyLabel.style.marginTop = 2;
+            whyLabel.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
+            _createWhyLabel = whyLabel;
+            btn.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                if (whyLabel.parent != null || btn.parent == null) return;
+                btn.parent.Insert(btn.parent.IndexOf(btn) + 1, whyLabel);
+            });
+
             RefreshCreateButtonState();
             return btn;
         }
@@ -333,6 +347,62 @@ namespace Poly_Ling.Player
             _createBtn.style.backgroundColor = new StyleColor(ok
                 ? new Color(0.22f, 0.48f, 0.22f)
                 : new Color(0.28f, 0.28f, 0.28f));
+
+            // 押せない理由を出す（操作統合計画 段 7）。押せるようになったら消す。
+            string why = ok ? "" : MissingInputReason();
+            _createBtn.tooltip = why;
+            if (_createWhyLabel != null)
+            {
+                _createWhyLabel.text = why;
+                _createWhyLabel.style.display = string.IsNullOrEmpty(why) ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+        }
+
+        /// <summary>生成ボタンのすぐ下に出す、押せない理由。</summary>
+        [UiControl("createWhy", Safety = UiSafety.ReadOnly, Description = "生成ボタンが押せない理由（押せるときは非表示）")]
+        private Label _createWhyLabel;
+
+        /// <summary>生成ボタンが押せない理由。CanGenerate と同じ場合分け。</summary>
+        private string MissingInputReason()
+        {
+            string why;
+            switch (_current)
+            {
+                case ShapeKind.Frill:
+                case ShapeKind.Pipe:
+                    return "帯を取り込むと作れます";
+                case ShapeKind.PlaceObject:
+                    return AnyBeltHasData(_placeBelts) ? "配置元のオブジェクトを選ぶと作れます" : "帯を取り込むと作れます";
+                case ShapeKind.BoltPattern:
+                    return "配置元のオブジェクトを選ぶと作れます";
+                case ShapeKind.ObjectArray:
+                    return "複製元のオブジェクトにチェックを入れると作れます";
+                case ShapeKind.MagicCircle:
+                    return MagicCircleReady(out why) ? "" : why;
+                case ShapeKind.LatticeTower:
+                    return LatticeTowerReady(out why) ? "" : why;
+                case ShapeKind.ImagePlate:
+                    return "画像を選ぶと作れます";
+                case ShapeKind.Ribbon:
+                    return "輪・垂れ・結び目のどれかを入れると作れます";
+                case ShapeKind.Text:
+                    return string.IsNullOrWhiteSpace(_textP.Text) ? "文字を入れると作れます" : "フォントを開けません。別のフォントを選んでください";
+                case ShapeKind.Bridge:
+                    return "種 A と種 B の両方を取り込むと作れます";
+                case ShapeKind.EdgeRibbonFace:
+                    return "辺を選ぶと作れます";
+                case ShapeKind.VertexBillboardPlace:
+                    return "頂点と配置元を選ぶと作れます";
+                case ShapeKind.PointDefined:
+                    return "点が揃い、プレビューで形が組めると作れます";
+                case ShapeKind.SpringBoneSingle:
+                case ShapeKind.SpringBoneRevolution:
+                    return "折れ線の点が 2 個以上あると作れます";
+                case ShapeKind.SpringBoneLadder:
+                    return "取り込み元のオブジェクトを選ぶと作れます";
+                default:
+                    return "";
+            }
         }
     }
 }

@@ -133,6 +133,12 @@ namespace Poly_Ling.Player
                     }
                     if (sources.Count == 0) { Fail("ブレンド元がありません"); return true; }
 
+                    // 宛先を入力にすると循環し、履歴として流せない。履歴に残すときは先に断る。
+                    if (c.KeepAsModifierStack)
+                        foreach (var spec in c.Sources)
+                            if (spec.Weight > 0f && spec.ModelIndex == c.ModelIndex && spec.MasterIndex == c.DestMasterIndex)
+                            { Fail("宛先と同じオブジェクトはブレンド元にできません（履歴を残すとき）"); return true; }
+
                     // 基準（作り直し整備計画 段 13）。渡されたら宛先の今の形ではなくこれを基準にする。
                     MeshContext baseCtx = null;
                     if (c.BaseMasterIndex >= 0)

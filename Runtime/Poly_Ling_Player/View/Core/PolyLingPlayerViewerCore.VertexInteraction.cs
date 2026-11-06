@@ -529,6 +529,14 @@ namespace Poly_Ling.Player
             void ConnectCancelKey(PlayerViewportPanel p)
             {
                 if (p == null) return;
+                // ビューの大きさが変わると投影が変わるので、重ね描きを描き直す（ボーン・線・ハンドル）。
+                p.OnSizeChanged += () =>
+                {
+                    UpdateBoneOverlay();
+                    UpdateLineCurveOverlay();
+                    UpdateTopologyToolsOverlay();
+                    UpdateGizmoOverlay();
+                };
                 p.OnCancelKey += () =>
                 {
                     if (_interactionMode == InteractionMode.Knife)
@@ -546,6 +554,11 @@ namespace Poly_Ling.Player
                         if (_addFaceHandler != null &&
                             (_addFaceHandler.FinishAsTriangle() || _addFaceHandler.FinishLineChain()))
                             _addFaceSubPanel?.Refresh();
+                    }
+                    // 処理列の項目のハンドルは抜けて前のモードへ戻る（引数は確定済み）。
+                    else if (_interactionMode == InteractionMode.ModifierGizmo)
+                    {
+                        ExitModifierGizmo();
                     }
                     // 格子変形は進行中のセッションを取消して開始前へ戻す。
                     else if (_interactionMode == InteractionMode.Lattice)

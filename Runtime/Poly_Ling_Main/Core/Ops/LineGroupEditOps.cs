@@ -10,6 +10,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Ops
 {
@@ -170,6 +171,76 @@ namespace Poly_Ling.Ops
             return true;
         }
 
+        /// <summary>
+        /// 辺の集合を連なりへ分ける（線分化と同じ区切り方）。分岐点（次数 3 以上）と端点で区切り、
+        /// 次数 2 だけの輪と、分岐点へ戻る輪は閉じた連なりにする。始点は番号の小さい頂点から取る。
+        /// </summary>
+        public static List<(List<int> Order, bool Closed)> SplitChains(IEnumerable<VertexPair> edges)
+        {
+            var adj = new SortedDictionary<int, List<int>>();
+            var seen = new HashSet<long>();
+            foreach (var e in edges)
+            {
+                if (e.V1 == e.V2 || !seen.Add(LineGroupOps.PairKey(e.V1, e.V2))) continue;
+                AddNeighbor(adj, e.V1, e.V2);
+                AddNeighbor(adj, e.V2, e.V1);
+            }
+            foreach (var list in adj.Values) list.Sort();
+
+            var chains = new List<(List<int> Order, bool Closed)>();
+            var used = new HashSet<long>();
+            int NextUnused(int v)
+            {
+                foreach (int n in adj[v])
+                    if (!used.Contains(LineGroupOps.PairKey(v, n))) return n;
+                return -1;
+            }
+
+            foreach (var kv in adj)
+            {
+                int s = kv.Key;
+                if (kv.Value.Count == 2) continue;
+                foreach (int first in kv.Value)
+                {
+                    if (used.Contains(LineGroupOps.PairKey(s, first))) continue;
+                    var order = new List<int> { s };
+                    int cur = s, next = first;
+                    while (true)
+                    {
+                        used.Add(LineGroupOps.PairKey(cur, next));
+                        order.Add(next);
+                        if (adj[next].Count != 2) break;
+                        int nn = NextUnused(next);
+                        if (nn < 0) break;
+                        cur = next; next = nn;
+                    }
+                    bool loop = order.Count >= 4 && order[order.Count - 1] == s;
+                    if (loop) order.RemoveAt(order.Count - 1);
+                    chains.Add((order, loop));
+                }
+            }
+
+            foreach (var kv in adj)
+            {
+                int s = kv.Key;
+                int first = NextUnused(s);
+                if (first < 0) continue;
+                var order = new List<int> { s };
+                used.Add(LineGroupOps.PairKey(s, first));
+                int cur = first;
+                while (cur != s)
+                {
+                    order.Add(cur);
+                    int nn = NextUnused(cur);
+                    if (nn < 0) break;
+                    used.Add(LineGroupOps.PairKey(cur, nn));
+                    cur = nn;
+                }
+                chains.Add((order, cur == s && order.Count >= 3));
+            }
+            return chains;
+        }
+
         private static void AddNeighbor(SortedDictionary<int, List<int>> adj, int v, int n)
         {
             if (!adj.TryGetValue(v, out var list)) { list = new List<int>(); adj[v] = list; }
@@ -260,6 +331,116 @@ namespace Poly_Ling.Ops
             LineHandleSolver.Solve(mo, g);
             mo.RebuildIdSets();
             return true;
+        }
+
+        /// <summary>
+        /// 線分の中点に点を足す。onlyFaces に線分（2 頂点の面の番号）があればそれだけ、無ければ全部。
+        /// 今ある頂点は動かさず番号も変えない。増やした点の数を added に返す。
+        /// </summary>
+        public static bool SubdivideLines(MeshObject mo, ICollection<int> onlyFaces, out int added, out string reason)
+        {
+            added = 0;
+            reason = null;
+            if (mo == null) { reason = "メッシュがありません"; return false; }
+
+            HashSet<long> want = null;
+            if (onlyFaces != null && onlyFaces.Count > 0)
+            {
+                want = new HashSet<long>();
+                foreach (int fi in onlyFaces)
+                {
+                    if (fi < 0 || fi >= mo.Faces.Count) continue;
+                    var f = mo.Faces[fi];
+                    if (f?.VertexIndices != null && f.VertexIndices.Count == 2)
+                        want.Add(LineGroupOps.PairKey(f.VertexIndices[0], f.VertexIndices[1]));
+                }
+            }
+            bool Wanted(long key) => want == null || want.Contains(key);
+
+            // 群の線分は群の点列へ挿す。
+            var grouped = new HashSet<long>();
+            int groupCount = mo.LineGroups?.Count ?? 0;
+            for (int gi = 0; gi < groupCount; gi++)
+            {
+                var g = mo.LineGroups[gi];
+                if (g?.Order == null || g.Order.Count < 2) continue;
+
+                int n = g.Order.Count;
+                int segs = g.Closed ? n : n - 1;
+                bool any = false;
+                for (int k = 0; k < segs; k++)
+                {
+                    long key = LineGroupOps.PairKey(g.Order[k], g.Order[(k + 1) % n]);
+                    grouped.Add(key);
+                    any |= Wanted(key);
+                }
+                if (!any) continue;
+
+                var oldHandles = g.HasHandles ? g.PointHandles : null;
+                mo.LineGroups.RemoveAt(gi);
+                RemoveSegmentFaces(mo, g);
+
+                var order = new List<int>(n * 2);
+                var handles = oldHandles != null ? new List<LinePointHandle>(n * 2) : null;
+                for (int k = 0; k < n; k++)
+                {
+                    int a = g.Order[k];
+                    order.Add(a);
+                    handles?.Add(k < oldHandles.Count ? oldHandles[k] : LinePointHandle.CreateDefault());
+                    if (k >= segs) continue;
+
+                    int b = g.Order[(k + 1) % n];
+                    if (!Wanted(LineGroupOps.PairKey(a, b))) continue;
+                    order.Add(AddMidpoint(mo, a, b));
+                    handles?.Add(LinePointHandle.CreateDefault());
+                    added++;
+                }
+                AddSegmentFaces(mo, order, g.Closed);
+
+                // 割ってできた線分も群のもの。下の「群に入っていない線分」で割り直さない。
+                for (int k = 0; k + 1 < order.Count; k++) grouped.Add(LineGroupOps.PairKey(order[k], order[k + 1]));
+                if (g.Closed) grouped.Add(LineGroupOps.PairKey(order[order.Count - 1], order[0]));
+
+                mo.AssignMissingIds();
+                g.Order = order;
+                g.OrderVertexIds = new List<int>(order.Count);
+                foreach (int vi in order) g.OrderVertexIds.Add(mo.Vertices[vi].Id);
+                if (handles != null) g.PointHandles = handles;
+
+                mo.LineGroups.Insert(gi, g);
+                LineHandleSolver.Solve(mo, g);
+            }
+
+            // 群に入っていない線分は面を 2 つに割る。
+            int faceCount = mo.Faces.Count;
+            for (int fi = 0; fi < faceCount; fi++)
+            {
+                var f = mo.Faces[fi];
+                if (f?.VertexIndices == null || f.VertexIndices.Count != 2) continue;
+                int a = f.VertexIndices[0], b = f.VertexIndices[1];
+                long key = LineGroupOps.PairKey(a, b);
+                if (grouped.Contains(key) || !Wanted(key)) continue;
+
+                int m = AddMidpoint(mo, a, b);
+                f.VertexIndices[1] = m;
+                mo.Faces.Add(NewLineFace(m, b));
+                added++;
+            }
+
+            if (added == 0) { reason = "点を足す線分がありません"; return false; }
+
+            mo.AssignMissingIds();
+            mo.RebuildIdSets();
+            return true;
+        }
+
+        private static int AddMidpoint(MeshObject mo, int a, int b)
+        {
+            var va = mo.Vertices[a];
+            var v = NewVertex((va.Position + mo.Vertices[b].Position) * 0.5f);
+            v.BoneWeight = va.BoneWeight;
+            mo.Vertices.Add(v);
+            return mo.Vertices.Count - 1;
         }
 
         /// <summary>群とその線分を消す。deleteVertices なら、他から使われていない頂点も消す。</summary>

@@ -132,6 +132,35 @@ namespace Poly_Ling.Pipe
                  Description = "毛先の扇の要を最後の輪の平均位置へ置く（終端ぱっつん）")]
         public bool PattsunEnd;
 
+        // ── 断面の種類（Maya の Sweep Profiles。SweepSection.cs）──
+
+        /// <summary>断面の種類。カスタム（既定）はコマンドの断面の点列を使う。</summary>
+        [PLParam(Description = "断面の種類。カスタムならコマンドの断面の点列を使う")]
+        public SweepSectionKind SectionKind;
+
+        /// <summary>円・星形の辺の数。弧・波の分割数。</summary>
+        [PLParam(Description = "断面の辺の数（弧・波は分割数）", Min = 2, Max = 64, Step = 1)]
+        public int SectionSides;
+
+        [PLParam(Description = "星形の内側の半径（外側に対する比）", Min = 0.01f, Max = 1f)]
+        public float SectionInner;
+
+        [PLParam(Description = "長方形の高さ（幅に対する比）", Min = 0.01f, Max = 4f)]
+        public float SectionHeight;
+
+        [PLParam(Description = "弧の角度（度）", Min = 1f, Max = 360f)]
+        public float SectionArcAngle;
+
+        [PLParam(Description = "波の周期の数", Min = 0.25f, Max = 16f)]
+        public float SectionCycles;
+
+        [PLParam(Description = "波の振幅（幅に対する比）", Min = 0.01f, Max = 2f)]
+        public float SectionAmplitude;
+
+        /// <summary>蓋を先端へすぼめず平らに閉じる（Maya の Sweep Mesh の Cap と同じ形）。</summary>
+        [PLParam(Description = "両端の蓋を先端へすぼめず平らに閉じる")]
+        public bool FlatCaps;
+
         public bool UseLegacyFrame       => LegacyCompat || LegacyFrame;
         public bool UseLegacyRawProfile  => LegacyCompat || LegacyRawProfile;
         public bool UseLegacyVertexOrder => LegacyCompat || LegacyVertexOrder;
@@ -150,6 +179,12 @@ namespace Poly_Ling.Pipe
             FlipFaces     = false,
             Pivot         = Vector3.zero,
             LegacyCutEndScale = new Vector3(1f, 1f, 0f),
+            SectionSides     = SweepSectionOps.DefaultSides,
+            SectionInner     = 0.5f,
+            SectionHeight    = 1f,
+            SectionArcAngle  = 180f,
+            SectionCycles    = 1f,
+            SectionAmplitude = 0.25f,
         };
 
         public bool Equals(PipeParams o)
@@ -162,6 +197,14 @@ namespace Poly_Ling.Pipe
             && LegacyUV          == o.LegacyUV
             && LegacyCutEndScale == o.LegacyCutEndScale
             && PattsunEnd        == o.PattsunEnd
+            && SectionKind       == o.SectionKind
+            && SectionSides      == o.SectionSides
+            && Mathf.Approximately(SectionInner, o.SectionInner)
+            && Mathf.Approximately(SectionHeight, o.SectionHeight)
+            && Mathf.Approximately(SectionArcAngle, o.SectionArcAngle)
+            && Mathf.Approximately(SectionCycles, o.SectionCycles)
+            && Mathf.Approximately(SectionAmplitude, o.SectionAmplitude)
+            && FlatCaps          == o.FlatCaps
             && InheritBeltWeights == o.InheritBeltWeights
             && Mathf.Approximately(Thickness, o.Thickness)
             && SegmentsFront == o.SegmentsFront

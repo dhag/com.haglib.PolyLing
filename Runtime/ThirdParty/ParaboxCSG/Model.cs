@@ -159,7 +159,9 @@ namespace Poly_Ling.CSG
                         m_Vertices[indices[i + 2]]
                     };
 
-                    list.Add(new Polygon(triangle, materialIndex));
+                    // 面積 0 の三角形は法線が無く、木の節にすると木が壊れる（Plane.cs の注記）。
+                    var polygon = new Polygon(triangle, materialIndex);
+                    if (polygon.plane.Valid()) list.Add(polygon);
                 }
             }
 

@@ -137,14 +137,15 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("モディファイアスタック"));
+            root.Add(SecLabel("履歴の一覧"));
 
             var hint = new Label(
-                "帯・断面・パラメータと出力先をひとまとめにしたものです。\n"
-              + "ソースを直したあと「作り直す」を押すと、出力先の中身が入れ替わります"
+                "モデル全体の履歴（入力と設定と出力先の記録）の一覧です。"
+              + "オブジェクトごとの設定は右上の「モディファイア」で直せます。\n"
+              + "入力を直したあと「作り直す」を押すと、出力先の中身が入れ替わります"
               + "（オブジェクトは作り直されないので、名前・階層・姿勢はそのまま）。\n"
-              + "出力先に頂点IDを手で振るなら、先にスタックを解除してください。"
-              + "スタックがある間は作り直しで中身が総入れ替えされます。");
+              + "出力先に頂点IDを手で振るなら、先に履歴を解除してください。"
+              + "履歴がある間は作り直しで中身が総入れ替えされます。");
             hint.style.whiteSpace = WhiteSpace.Normal;
             hint.style.fontSize   = 10;
             hint.style.marginBottom = 4;
@@ -207,7 +208,7 @@ namespace Poly_Ling.Player
             _btnRelease = MkBtn("解除",     OnRelease); _btnRelease.style.flexGrow = 1; opRow.Add(_btnRelease);
             root.Add(opRow);
 
-            _btnMerge = MkBtn("1つ上のスタックへ足す（マクロにする）", OnMerge);
+            _btnMerge = MkBtn("1つ上の履歴へ足す（マクロにする）", OnMerge);
             _btnMerge.style.marginBottom = 3;
             root.Add(_btnMerge);
 
@@ -216,9 +217,9 @@ namespace Poly_Ling.Player
             root.Add(_btnPurge);
 
             // ── 項目の引数：書いたらその項目だけ作り直す。入力・出力先の参照と入力の中身は出さない。
-            root.Add(SecLabel("項目の引数"));
+            root.Add(SecLabel("設定"));
 
-            _argStepDropdown = new DropdownField("項目", new List<string>(), -1);
+            _argStepDropdown = new DropdownField("生成", new List<string>(), -1);
             _argStepDropdown.style.fontSize = 10;
             _argStepDropdown.RegisterValueChangedCallback(_ => UpdateArgKeys());
             root.Add(_argStepDropdown);
@@ -232,7 +233,7 @@ namespace Poly_Ling.Player
                 OnCommit  = OnArgFieldCommit,
             };
 
-            _argDetailFold = new Foldout { text = "詳細（引数を文字列で書く）", value = false };
+            _argDetailFold = new Foldout { text = "詳細（設定を文字列で書く）", value = false };
             _argDetailFold.style.marginBottom = 3;
             root.Add(_argDetailFold);
 
@@ -300,7 +301,7 @@ namespace Poly_Ling.Player
                 string mark = row.OutputMissing ? "[出力先なし] "
                             : row.Stale        ? "[要更新] "
                             : "";
-                string steps = g.StepCount > 1 ? $" [{g.StepCount} 項目]" : "";
+                string steps = g.StepCount > 1 ? $" [{g.StepCount} 件]" : "";
                 _labels.Add($"{mark}{row.Name}  ({row.Action}){steps}");
             }
 
@@ -414,7 +415,7 @@ namespace Poly_Ling.Player
                 _argSig = "";
                 _argControls.Begin("");
                 _argBuilder.Build(_argContainer, _argSpecs);
-                _argContainer.Add(new Label("処理列は左の「処理列」のパネルで編集します") { style = { fontSize = 10 } });
+                _argContainer.Add(new Label("モディファイアは右上の「モディファイア」で編集します") { style = { fontSize = 10 } });
                 PlayerLayoutRoot.ApplyDarkTheme(_argContainer);
                 _btnArgWrite?.SetEnabled(false);
                 return;
@@ -447,7 +448,7 @@ namespace Poly_Ling.Player
             int si = _argStepDropdown?.index ?? -1;
             if (g == null || si < 0 || string.IsNullOrEmpty(key)) return;
             SendCmd(new SetModifierStackStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { value ?? "" }));
-            SetStatus($"「{g.Name}」項目 {si} の {key} を書いて作り直しを送りました");
+            SetStatus($"「{g.Name}」の {si} 番の {key} を書いて作り直しを送りました");
             Refresh();
         }
 
@@ -459,13 +460,13 @@ namespace Poly_Ling.Player
             bool has = st != null && !string.IsNullOrEmpty(st.InverseMethod);
             if (!has)
             {
-                _inverseInfo.text = st == null ? "" : "この項目は逆方向を持ちません（出力は編集できません）";
+                _inverseInfo.text = st == null ? "" : "この生成は逆方向を持ちません（出力は編集できません）";
                 _btnInverseCommit?.SetEnabled(false);
                 _btnInverseDiscard?.SetEnabled(false);
                 return;
             }
             _inverseInfo.text =
-                (st.OutputEditPending ? "出力の編集が未確定です。確定するまで、この項目と下流は作り直されません。\n"
+                (st.OutputEditPending ? "出力の編集が未確定です。確定するまで、この生成と下流は作り直されません。\n"
                                       : "出力の頂点の位置を編集すると未確定になります。\n")
               + $"保つもの：{st.InverseKeeps}\n失うもの：{st.InverseLoses}\n"
               + "確定すると、出力は入力から作り直した形に置き換わります（編集は丸められます）。";
@@ -477,9 +478,9 @@ namespace Poly_Ling.Player
         {
             var g = SelectedGroup();
             int si = _argStepDropdown?.index ?? -1;
-            if (g == null || si < 0) { SetStatus("スタックと項目を選んでください"); return; }
+            if (g == null || si < 0) { SetStatus("履歴と生成を選んでください"); return; }
             SendCmd(new CommitModifierOutputEditCommand(ModelIndex, g.Name, si));
-            SetStatus($"「{g.Name}」項目 {si} の出力の編集の確定を送りました");
+            SetStatus($"「{g.Name}」の {si} 番の出力の編集の確定を送りました");
             Refresh();
         }
 
@@ -487,9 +488,9 @@ namespace Poly_Ling.Player
         {
             var g = SelectedGroup();
             int si = _argStepDropdown?.index ?? -1;
-            if (g == null || si < 0) { SetStatus("スタックと項目を選んでください"); return; }
+            if (g == null || si < 0) { SetStatus("履歴と生成を選んでください"); return; }
             SendCmd(new DiscardModifierOutputEditCommand(ModelIndex, g.Name, si));
-            SetStatus($"「{g.Name}」項目 {si} の出力の編集の破棄を送りました");
+            SetStatus($"「{g.Name}」の {si} 番の出力の編集の破棄を送りました");
             Refresh();
         }
 
@@ -509,15 +510,15 @@ namespace Poly_Ling.Player
         private void OnArgWrite()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("スタックを選んでください"); return; }
+            if (g == null) { SetStatus("履歴を選んでください"); return; }
             int si = _argStepDropdown?.index ?? -1;
-            if (si < 0) { SetStatus("項目を選んでください"); return; }
+            if (si < 0) { SetStatus("生成を選んでください"); return; }
             string key = _argKeyDropdown?.value;
             if (string.IsNullOrEmpty(key)) { SetStatus("書けるキーがありません"); return; }
             string val = _argValueField?.value ?? "";
 
             SendCmd(new SetModifierStackStepArgsCommand(ModelIndex, g.Name, si, new[] { key }, new[] { val }));
-            SetStatus($"「{g.Name}」項目 {si} の {key} を書いて作り直しを送りました");
+            SetStatus($"「{g.Name}」の {si} 番の {key} を書いて作り直しを送りました");
             Refresh();
         }
 
@@ -533,12 +534,12 @@ namespace Poly_Ling.Player
         private void OnRebuild()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("スタックを選んでください"); return; }
+            if (g == null) { SetStatus("履歴を選んでください"); return; }
 
             bool keepStash = _keepStashToggle != null && _keepStashToggle.value;
             SendCmd(new RebuildModifierStackCommand(ModelIndex, g.Name, keepStash));
             SetStatus(g.StepCount > 1
-                ? $"「{g.Name}」の {g.StepCount} 項目を実行しました"
+                ? $"「{g.Name}」の {g.StepCount} 件を実行しました"
                 : $"「{g.Name}」を作り直しました");
             Refresh();
         }
@@ -546,14 +547,14 @@ namespace Poly_Ling.Player
         private void OnRelease()
         {
             var g = SelectedGroup();
-            if (g == null) { SetStatus("スタックを選んでください"); return; }
+            if (g == null) { SetStatus("履歴を選んでください"); return; }
 
             // 解除するとパラメータは復元できない。作り直したいなら同じ操作を
             // 最初からやり直すことになるので、必ず確認を通す。
             bool ok = PLEditorBridge.I.DisplayDialogYesNo(
-                "スタック解除の確認",
+                "履歴の解除の確認",
                 $"「{g.Name}」を解除します。\n\n"
-              + "帯・断面・パラメータの記録が失われ、作り直せなくなります。\n"
+              + "入力と設定の記録が失われ、作り直せなくなります。\n"
               + "（出力先の描画オブジェクトは残ります）\n\n"
               + "出力先に頂点IDを手で振る場合は、解除してからにしてください。",
                 "解除", "キャンセル");
@@ -575,16 +576,16 @@ namespace Poly_Ling.Player
             if (model == null) { SetStatus("モデルがありません"); return; }
 
             if (_selected < 1 || _selected >= _rows.Count)
-            { SetStatus("2 番目以降のスタックを選んでください"); return; }
+            { SetStatus("2 番目以降の履歴を選んでください"); return; }
 
             string sourceName = _rows[_selected].Name;
             string targetName = _rows[_selected - 1].Name;
 
             bool ok = PLEditorBridge.I.DisplayDialogYesNo(
-                "スタック結合の確認",
+                "履歴の結合の確認",
                 $"「{sourceName}」を「{targetName}」の末尾へ足します。\n\n"
-              + $"「{sourceName}」のスタックは消えます（描画オブジェクトは残ります）。\n"
-              + "実行順は項目の並びそのものです。",
+              + $"「{sourceName}」の履歴は消えます（描画オブジェクトは残ります）。\n"
+              + "実行順は並びのとおりです。",
                 "足す", "キャンセル");
             if (!ok) return;
 
@@ -602,7 +603,7 @@ namespace Poly_Ling.Player
             int before = model.ModifierStacks.Count;
             SendCmd(new PurgeModifierStacksCommand(ModelIndex));
             int n = before - (CurrentModel?.ModifierStacks.Count ?? before);
-            SetStatus(n > 0 ? $"参照切れのスタックを {n} 件片づけました" : "参照切れはありませんでした");
+            SetStatus(n > 0 ? $"参照切れの履歴を {n} 件片づけました" : "参照切れはありませんでした");
             Refresh();
         }
 

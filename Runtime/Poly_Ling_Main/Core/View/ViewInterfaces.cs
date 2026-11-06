@@ -310,6 +310,34 @@ namespace Poly_Ling.View
         IReadOnlyList<ModifierStackView> ModifierStacks { get; }
 
         /// <summary>
+        /// masterIndex の描画オブジェクトに関わるスタックの写し（モディファイアパネル用）。
+        /// 処理列・サブディビジョンと、その元を出力に持つ生成スタックを返す。要更新の判定はしないので Stale は常に false。
+        /// 作れない実装（スナップショットなど）は空。
+        /// </summary>
+        IReadOnlyList<ModifierStackView> ModifierStacksOf(int masterIndex);
+
+        /// <summary>
+        /// masterIndex の描画オブジェクト（と、その履歴の帯）を読んでいる項目（モディファイアパネルの「使用先」）。
+        /// 作れない実装（スナップショットなど）は空。
+        /// </summary>
+        IReadOnlyList<ModifierUsageView> ModifierUsagesOf(int masterIndex);
+
+        /// <summary>
+        /// モディファイアか履歴を持つ描画オブジェクトの索引（オブジェクトリストの印）。
+        /// 作れない実装（スナップショットなど）は空。
+        /// </summary>
+        IReadOnlyCollection<int> ModifierObjectIndices { get; }
+
+        /// <summary>
+        /// モディファイアの結果と、そのミラー側の索引（オブジェクトリストの一覧から外す行）。
+        /// 作れない実装（スナップショットなど）は空。
+        /// </summary>
+        IReadOnlyCollection<int> ModifierResultIndices { get; }
+
+        /// <summary>モディファイアの結果の索引 → 元の索引。一覧で結果を元の下に出すために使う。</summary>
+        IReadOnlyDictionary<int, int> ModifierResultParents { get; }
+
+        /// <summary>
         /// masterIndex の描画オブジェクトの今の選択（頂点・辺・面）から処理範囲の引数を作る
         /// （MeshModifierScope.FromIndices）。モデルは変えない。作れない実装（スナップショットなど）は null。
         /// </summary>
@@ -422,6 +450,19 @@ namespace Poly_Ling.View
         public bool    IsTransparent;
     }
 
+    /// <summary>オブジェクトを読んでいる項目 1 つ（使用先）。</summary>
+    public sealed class ModifierUsageView
+    {
+        /// <summary>項目の action 名。</summary>
+        public string Action = "";
+        /// <summary>出力の名前。</summary>
+        public string OutputName = "";
+        /// <summary>出力の索引。引けなければ -1。</summary>
+        public int    OutputIndex = -1;
+        /// <summary>出力がボーンか（描画オブジェクトとして選べない）。</summary>
+        public bool   OutputIsBone;
+    }
+
     /// <summary>モディファイアスタックの表示用の写し。</summary>
     public sealed class ModifierStackView
     {
@@ -451,6 +492,10 @@ namespace Poly_Ling.View
         public int    ChainResultIndex = -1;
         public string ChainSourceName  = "";
         public string ChainResultName  = "";
+        /// <summary>元の線（辺と頂点）を表示しているか（MeshObject.HideCageLines の逆）。</summary>
+        public bool   CageVisible      = true;
+        /// <summary>「ここまで表示」の項目。空なら最後まで。</summary>
+        public string DisplayUpToItemId = "";
         /// <summary>処理列の節点の最後の評価の結果（ModifierResult の名前）と理由。</summary>
         public string ChainResult  = "";
         public string ChainMessage = "";
@@ -484,6 +529,14 @@ namespace Poly_Ling.View
         /// <summary>項目の評価の結果（ModifierChainHandler.ItemResult の名前）と理由。</summary>
         public string State        = "";
         public string StateMessage = "";
+
+        // ── 入力と出力（モディファイアパネルの履歴カード。操作統合計画 段 1）。処理列の項目では空。
+        /// <summary>出力の描画オブジェクトの索引（今のモデルに無ければ -1）。</summary>
+        public int[]    OutputIndices = System.Array.Empty<int>();
+        /// <summary>入力の描画オブジェクトの索引（今のモデルに無ければ -1）。</summary>
+        public int[]    InputIndices  = System.Array.Empty<int>();
+        /// <summary>入力の名前。InputIndices と同じ並び。</summary>
+        public string[] InputNames    = System.Array.Empty<string>();
     }
 
     /// <summary>選択から作った処理範囲（MeshModifierScope.FromIndices）の引数の写し。</summary>

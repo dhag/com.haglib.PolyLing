@@ -553,6 +553,8 @@ namespace Poly_Ling.Player
             public List<Vector2[]> DragPreview;
             /// <summary>矩形選択の枠（Y=0 上）。</summary>
             public Rect? Marquee;
+            /// <summary>ブーリアンの相手の辺（両端の組）。</summary>
+            public List<(Vector2 A, Vector2 B)> Wires;
         }
         private LineCurveData _lineCurveData;
         private VisualElement _lineCurveOverlay;
@@ -575,6 +577,19 @@ namespace Poly_Ling.Player
         {
             var data = _lineCurveData;
             var painter = ctx.painter2D;
+
+            if (data.Wires != null && data.Wires.Count > 0)
+            {
+                painter.strokeColor = new Color(1f, 0.55f, 0.1f, 0.85f);
+                painter.lineWidth   = 1f;
+                painter.BeginPath();
+                foreach (var (a, b) in data.Wires)
+                {
+                    painter.MoveTo(a);
+                    painter.LineTo(b);
+                }
+                painter.Stroke();
+            }
 
             if (data.Curves != null)
             {

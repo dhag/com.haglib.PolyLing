@@ -70,6 +70,11 @@ namespace Poly_Ling.MQO
         [PLParam(Description = "選択中のメッシュだけを書き出す。切ると全メッシュ")]
         public bool ExportSelectedOnly = false;
 
+        /// <summary>モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけ。</summary>
+        [Tooltip("モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す")]
+        [PLParam(Description = "モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す")]
+        public bool ApplyModifiers = true;
+
         /// <summary>全メッシュを1つのオブジェクトに統合</summary>
         [Tooltip("全メッシュを1つのオブジェクトに統合")]
         [PLParam(Description = "全メッシュを 1 つのオブジェクトへまとめる")]
@@ -184,6 +189,7 @@ namespace Poly_Ling.MQO
                 ExcludeUnusedMirrorMaterials = this.ExcludeUnusedMirrorMaterials,
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 ExportSelectedOnly = this.ExportSelectedOnly,
+                ApplyModifiers = this.ApplyModifiers,
                 MergeObjects = this.MergeObjects,
                 PreserveObjectAttributes = this.PreserveObjectAttributes,
                 SkipBakedMirror = this.SkipBakedMirror,
@@ -210,6 +216,7 @@ namespace Poly_Ling.MQO
                    ExcludeUnusedMirrorMaterials != o.ExcludeUnusedMirrorMaterials ||
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    ExportSelectedOnly != o.ExportSelectedOnly ||
+                   ApplyModifiers != o.ApplyModifiers ||
                    MergeObjects != o.MergeObjects ||
                    PreserveObjectAttributes != o.PreserveObjectAttributes ||
                    SkipBakedMirror != o.SkipBakedMirror ||

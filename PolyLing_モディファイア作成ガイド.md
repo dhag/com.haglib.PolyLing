@@ -22,7 +22,7 @@
 | コマンド・MCP | 共通の 6 本（`addMeshModifier`・`setMeshModifierArgs`・`moveMeshModifier`・`setMeshModifierEnabled`・`removeMeshModifier`・`applyMeshModifierChain`）と照会 2 本（`queryMeshModifierChain`・`queryMeshModifierKinds`） |
 | 保存・読込・リモート転送 | モディファイアスタックの CSV・JSON・二進。引数は文字列の対で持つ |
 | Undo | 共通コマンドの受け口 |
-| 引数欄 | 処理列パネル（`PlayerModifierChainSubPanel`）が `ParamFieldBuilder` で `PLParam` から作る |
+| 設定欄 | モディファイアパネル（`PlayerModifierChainSubPanel`）が `ParamFieldBuilder` で `PLParam` から作る |
 | 処理範囲の絞り込み | `MeshModifierScope` を引き直して `MeshModifierInput.Scope` に渡す。位置だけの種類は範囲の外を枠組みが入力の位置へ戻す |
 | 評価のきっかけ | `ModifierChainHandler`（評価器の処理器 `@chain`）。変わった項目より前の結果は使い回す。元メッシュと参照の位置・面構成に加え、ボーンウェイトの変化でも流れる（コマンドの終わりと Undo・Redo に見る） |
 
@@ -49,6 +49,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 
 決まり
 
+- **プロパティの初期値は「キーの無い保存データ・シナリオの読み方」** なので、種類を公開した後は変えない。足した直後の値は `IMeshModifierAddDefaults.ApplyAddDefaults(MeshObject input)` に書く（モディファイアパネルの追加と `addMeshModifier useAddDefaults=true` だけが使う）。**値は Blender・Maya などのマニュアルで確かめて合わせ、独自の値を作らない**（`PolyLing_モディファイア操作統合計画.md` 1.1）。入力の大きさに合わせるときは `MeshModifierAddDefaultOps`、変形の種類は基底の `FitAxisToInput`。足した直後に形が変わるのが基本で、他のアプリでも変わらないもの（ラティス・XForm に当たる回転など）は `IMeshModifierHint` で次にすることを出す。相手が要る種類は理由つきで止めてよい（ブーリアン）。`ModifierFoldSelfTest` の既定値の試験が全種類を形ごとに見る
 - public な引数なしコンストラクタを持つ（`Activator.CreateInstance` で作る）
 - public なプロパティには、引数かどうかにかかわらず必ず `PLParam` を付ける。引数にしないものは `PLParam(Ignore = true)`。付け忘れは登録されない（発見の問題に出る）
 - 引数は public に読み書きできるプロパティ。キーはプロパティ名の先頭を小文字にしたもの
@@ -64,11 +65,12 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 | 欄 | 内容 |
 |---|---|
 | 種類名（コンストラクタ引数） | 項目の Action に入る。全種類で一意。**コマンドの action 名と同じ名前は使えない**（例：`solidify` は `SolidifyCommand` と重なるので、厚みは `thickness`） |
-| `DisplayName` | 処理列パネルの種類の一覧に出る |
+| `DisplayName` | モディファイアパネルの追加メニューとカードの見出しに出る |
+| `HideFromMenu` | 追加メニューに出さない（試験用の種類、ミラーの属性の形）。コマンドとシナリオからは足せる |
 | `Category` | 一覧の並べ分け（`deform`・`topology` など） |
 | `Change` | `PositionsOnly`（頂点の位置だけ。ドラッグ中も追随）／`Topology`（面構成も変える。ドラッグを離したときに作り直す） |
 | `Description` | `queryMeshModifierKinds` に出る説明 |
-| `PinnedLast` | 末尾固定（段 8）。処理列に 1 つだけ置け、いつも最後で並べ替えできない。追加は普通の種類をこの項目の前へ入れ、並べ替えはこの項目を動かさない。列の最後の形（結果）に掛かるもの用（例：「ミラー（表示）」`mirrorDisplay`） |
+| `PinnedLast` | 末尾固定（段 8）。処理列に 1 つだけ置け、いつも最後で並べ替えできない。追加は普通の種類をこの項目の前へ入れ、並べ替えはこの項目を動かさない。列の最後の形（結果）に掛かるもの用（例：ミラーの属性の形 `mirrorDisplay`） |
 
 `PLModifierAttribute`（PanelCommand に付ける、スタックへの記録の宣言）とは別物。混ぜない。
 
@@ -77,7 +79,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 - **数値（float・int・Vector2・Vector3）には範囲を宣言する。** `Min`・`Max`、または `LimitKey`（`ParameterLimits` の `<キー>.Min`・`<キー>.Max`）。無いとスライダーが付かず、`queryCommandAudit` の「処理列の種類の範囲の宣言漏れ」に落ちる（完了条件）
 - 整数は `Step = 1`
 - `Description` の最初の句が引数欄の見出しになる。短く分かる言葉で書く
-- 列挙型は 6 個以下なら選択ボタン、それより多ければドロップダウン。真偽はチェック
+- 列挙型は 6 個以下なら選択ボタン、それより多ければドロップダウン。宣言の順に並び、表記は `InspectorName`（値は数値で保存するので、並べ替えのために値を変えない）。真偽はチェック
 - 他のオブジェクトを参照する引数は `IsMeshRef = true`（int）。評価のときは `input.References[キー]` に解決済みのメッシュが入る。元メッシュ・結果は指せない。書き方は 3.3
 - 配列などは欄を作らず、パネルの「詳細」の文字列欄で書く
 
@@ -85,7 +87,7 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 
 - `input.References[キー]` のメッシュは**相手のローカル（頂点の格納空間）**の位置を持つ。元メッシュのローカルで読むには `input.ReferenceToSource[キー]`（相手のローカル → 元メッシュのローカル。`元.BindWorldToVertexMatrix × 相手.VertexToBindWorldMatrix`）を掛ける。入力（`input.Source`）はどの項目でも元メッシュのローカルなので、この行列はどの位置の項目でも使える
 - 流し直しは枠組みが受け持つ：相手の頂点の移動（位置・形・ID の署名）と、相手や元メッシュのオブジェクトの移動（この行列の署名。書き込みのあるコマンドの終わりに評価器が見る）。作者は何もしない
-- `Required = true` にしない。処理列パネルの「追加」は引数なしで足し、相手は引数欄のオブジェクト選択で選ぶ。相手が無いうちは `Evaluate` で失敗にし、理由を `error` に入れる
+- `Required = true` にしない。モディファイアパネルの追加は引数なしで足し、相手は設定欄のオブジェクト選択で選ぶ。相手が無いうちは `Evaluate` で失敗にし、理由を `error` に入れる
 - 範囲が意味を持たない（相手と閉じた立体で演算する等）なら、全体以外の範囲を失敗にする（ブーリアン）
 
 ---
@@ -105,7 +107,8 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 
 - **範囲の外は入力のまま通す。** 位置だけの種類は枠組みが範囲の外を戻すが、面構成を変える種類は作者が受け持つ
 - 範囲は頂点 ID で保存されている。項目ごとに、その項目の入力へ ID で引き直す。下流の項目の範囲が上流の結果にも当たるよう、**作った頂点には元の頂点の ID を付ける**（5 節）
-- ID の無い頂点は範囲に入らない。試すときは元メッシュに `repairVertexIds mode=AssignMissing` を明示して掛ける（勝手に振る処理は足さない）
+- ID の無い頂点は範囲に入らない。ID を振るのは利用者が頂点グループを作ったときの `setMeshModifierVertexGroup` だけで、作者は振らない（`Evaluate` の中で振る処理を足さない）
+- 反転（`scope.invert`）は枠組みが解決する。範囲が触れる頂点の外側になり、辺と面はその頂点だけでできたものになる。作者は同じ `input.Scope` を読むだけ
 - 範囲の引数（`scope.*`）は全種類共通。作者は宣言しない
 
 ---
@@ -145,6 +148,15 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 - `DeformerRegistry` に登録しないデフォーマ（格子）も、この基底で種類にできる
 - 新しいデフォーマを `DeformerRegistry` に登録したら、包むクラスも 1 つ足す。足していないと `queryMeshModifierAudit` の「種類の自己試験」で「登録されたデフォーマがすべて種類になっている」が失敗する
 - カメラなど画面に依存する設定は切る（曲げは `UseCameraBendPlane = false`）
+- この基底を継ぐ種類のカードには「作業軸を動かす」「作業軸を回す」が自動で付く（`IDeformerMeshModifier` を見る。`PlayerModifierChainSubPanel.BuildCardGizmo`）。ハンドルは `ModifierGizmoToolHandler`、コマンドは `showModifierGizmo`。引数 `axisOrigin`・`axisRotation` を `setMeshModifierArgs` で書くだけなので、作者の書き足しは要らない
+
+ビューのハンドルの決まり（ラティスの「制御点を動かす」もこの形）
+
+- ハンドルは引数を読み書きするだけで、結果を直接触らない。ドラッグ中は `preview=true`、離すと `preview=false`（Undo はドラッグ 1 回で 1 件）
+- 表示は毎回引数から作り直す。手元に値を溜めないので、Undo や欄の変更に追随する
+- 引数は元メッシュのローカル、ハンドルはワールド。元メッシュの `TransformRowMatrix` で移す
+
+参照オブジェクトの線：ブーリアンの相手の橙の線は `PolyLingPlayerViewerCore.AppendBooleanOtherWires` が種類名 `boolean` とキー `other` を見て描く。他の種類の参照を線で見せるなら、ここに足す。
 
 ---
 
@@ -155,23 +167,23 @@ public sealed class TranslateMeshModifier : IMeshModifier, IMeshModifierPosition
 | `queryMeshModifierAudit` | 発見・引数の往復（既定値×3 種類の範囲）・範囲の自己試験・種類の自己試験（デフォーマの包む漏れ・位置の口と `Evaluate` の一致・範囲の外が動かない・厚み・ベベル（辺のつなぎ目の穴・蓋・角度で決める辺・厚みの後の辞書）・配列・ブーリアン・格子・サブディビジョン・ミラー（実体化）・追随の口と `Evaluate` の一致・末尾固定）。面構成を変える種類を足したら、頂点数・面数・ID の写しの試験を `MeshModifierAudit.KindSelfTest` に足す | `problems`・`roundTripFailures`・`scopeFailures`・`kindFailures` が 0 |
 | `queryMeshModifierAudit kind=<種類> argKeys=… argValues=…` | 指定の引数の往復 | 失敗 0 |
 | `queryCommandAudit` | 「処理列の種類の範囲の宣言漏れ」 | 0 |
-| `queryUiAutomationAudit` | 引数欄が UI 自動操作に載っているか | 誤り 0。**足した種類の項目を処理列パネルで選んだ状態で**実行する |
+| `queryUiAutomationAudit` | 引数欄が UI 自動操作に載っているか | 誤り 0。**足した種類のカードをモディファイアパネルに出した状態で**実行する |
 | `queryProjectSyncDiff via=binary`・`via=csv` | 保存・転送の往復 | 差なし |
 
 画面での確かめ（MCP の UI 自動操作で行える）
 
-1. 左ペイン「選択」→「処理列」（`leftPane.modifierChainBtn`）
-2. `modifierChain.kind` で種類を選び `modifierChain.add`
-3. 引数欄（`modifierChain.arg.<キー>`、スライダーは `.slider`）を変える。スライダーは下見で Undo を積まず、数値欄の確定で Undo 1 件になる
-4. 並べ替え（`up`・`down`）・有効（`enabled`）・削除（`remove`）・適用（`apply`）と、それぞれ Undo・Redo
-5. 元メッシュの選択を `modifierChain.scope.fromSelection` で範囲にし、範囲の中だけが変わること
+1. 右ペインの上の「モディファイア」（`rightPaneTop.modifierChain`）。カードは縦に並び、足したばかりのカードが選択中になる
+2. `uiReveal modifierChain.add.<種類>` で追加メニューを開き、そのボタンを `uiClick`
+3. 設定欄（`modifierChain.arg.<キー>`、スライダーは `.slider`）を変える。スライダーは下見で Undo を積まず、数値欄の確定で Undo 1 件になる。選択中でないカードの欄は `modifierChain.item.<項目 ID>.arg.<キー>`。カードを選択中にするのは `modifierChain.item.<項目 ID>.select`
+4. 並べ替え（`up`・`down`）・有効（`enabled`）・削除（`remove`）・すべて適用（`apply`）と、それぞれ Undo・Redo
+5. 元メッシュの選択を `modifierChain.scope.fromSelection` で頂点グループにし、その中だけが変わること。`modifierChain.scope.invert` で外だけが変わること。辞書は `modifierChain.scope.group` で選ぶ
 6. 元メッシュの頂点を動かす（`moveSelectedVertices`）。位置だけの列は評価のパスなしで追随し、面構成を変える項目を含む列はコマンドの終わり（ドラッグなら離したとき）に「処理器で作り直した」になる（`queryModifierGraph` の `lastPass`）
 7. 参照オブジェクトを使う種類は、相手の頂点の移動（`moveSelectedVertices`）とオブジェクトの移動（`moveObjects`）の両方で結果が追随すること、それぞれ Undo・Redo で戻ること
 8. 各段で `queryMeshModifierChain`・`getRawData`・`unity_capture` を見る
 
 MCP で試すときの注意
 
-- 処理列パネルの対象は**編集対象のオブジェクト**。`createCube` の直後は作ったものが編集対象になる。元メッシュは `selectDrawablesByName` で選び直してから「追加」する（`selectAllElements` も対象を変える）
+- モディファイアパネルの対象は**編集対象のオブジェクト**。`createCube` の直後は作ったものが編集対象になる。元メッシュは `selectDrawablesByName` で選び直してから「追加」する（`selectAllElements` も対象を変える）
 - `repairVertexIds` は選択中の描画オブジェクトに掛かる。元メッシュを選んでから掛ける。処理列を作った後に元メッシュの ID だけを変えても、評価のきっかけが無いので結果は流し直されない（項目の引数の変更などで流れる）。ID は処理列を作る前に付ける
 
 ---
@@ -184,7 +196,7 @@ MCP で試すときの注意
 - 面構成を変える種類で範囲の外の面を落とす
 - 位置だけの種類なのに頂点数を変える（評価で失敗になる）
 - `Evaluate` の中で入力を書き換える（使い回しの控えが壊れる）
-- 参照の引数を `Required` にして、処理列パネルの「追加」（引数なし）が失敗する
+- 参照の引数を `Required` にして、モディファイアパネルの追加（引数なし）が失敗する
 - 相手の位置を `ReferenceToSource` を掛けずに読む（相手のオブジェクトを動かしても結果がずれたまま。指紋は変わるので流れはする）
 - 試験メッシュで `new Face(a, b, c, d)` と書く。4 引数は `Face(v0, v1, v2, materialIndex)` に解決され三角形になる。四角形は材質番号まで 5 引数で書く
 - 計算のための値を public なプロパティで持ち、`PLParam` が無いので登録されない（発見の問題に出る）。メソッドか private の欄にする

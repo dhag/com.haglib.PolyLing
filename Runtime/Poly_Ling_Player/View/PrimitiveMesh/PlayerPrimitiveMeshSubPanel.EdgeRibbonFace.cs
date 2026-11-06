@@ -85,20 +85,22 @@ namespace Poly_Ling.Player
                 () => _ribbonFaceWidth,
                 v => { _ribbonFaceWidth = v; D(); RefreshEdgeRibbonFaceInfo(); }));
 
-            // ── 梯子タグ ──
-            c.Add(TR(T("EdgeRibbonFaceStartTag"),
-                () => _ribbonFaceStartTag,
-                v => { _ribbonFaceStartTag = v; D(); RefreshCreateButtonState(); }));
-            c.Add(TR(T("EdgeRibbonFaceEndTag"),
-                () => _ribbonFaceEndTag,
-                v => { _ribbonFaceEndTag = v; D(); }));
-            c.Add(GearHint(T("EdgeRibbonFaceTagHint")));
-
             // ── パイプ化 ──
             c.Add(TR(T("EdgeRibbonFacePipe"),
                 () => _ribbonFacePipe,
                 v => { _ribbonFacePipe = v; RefreshCreateButtonState(); RefreshCommonUiVisibility(); }));
             c.Add(GearHint(T("EdgeRibbonFacePipeHint")));
+
+            // ── 帯の目印（帯だけを作るときの詳細。パイプには要らない）──
+            var tagFold = new Foldout { text = "詳細", value = false };
+            c.Add(tagFold);
+            tagFold.contentContainer.Add(TR(T("EdgeRibbonFaceStartTag"),
+                () => _ribbonFaceStartTag,
+                v => { _ribbonFaceStartTag = v; D(); RefreshCreateButtonState(); }));
+            tagFold.contentContainer.Add(TR(T("EdgeRibbonFaceEndTag"),
+                () => _ribbonFaceEndTag,
+                v => { _ribbonFaceEndTag = v; D(); }));
+            tagFold.contentContainer.Add(GearHint(T("EdgeRibbonFaceTagHint")));
 
             _ribbonFaceInfo = SL("");
             c.Add(_ribbonFaceInfo);
@@ -119,8 +121,7 @@ namespace Poly_Ling.Player
         /// <summary>今の設定で生成ボタンを押せるか。パイプ化には開始タグが要る。</summary>
         private bool EdgeRibbonFaceReady
             => SendCommand != null
-            && EdgeRibbonFaceSelectedEdges > 0
-            && (!_ribbonFacePipe || _ribbonFaceStartTag);
+            && EdgeRibbonFaceSelectedEdges > 0;
 
         // ================================================================
         // 生成
@@ -159,12 +160,6 @@ namespace Poly_Ling.Player
 
             if (_ribbonFacePipe)
             {
-                if (!_ribbonFaceStartTag)
-                {
-                    if (_statusLabel != null) _statusLabel.text = T("EdgeRibbonFacePipeNeedsStartTag");
-                    return;
-                }
-
                 EnsureBeltProfile(_pipeEdit);
 
                 SendCommand(new CreateEdgePipeCommand(

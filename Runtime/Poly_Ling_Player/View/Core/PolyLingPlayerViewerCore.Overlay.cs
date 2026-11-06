@@ -272,13 +272,119 @@ namespace Poly_Ling.Player
             }
 
             AppendBillboardProfileOverlay(model, ctx, ref data);
+            AppendBooleanOtherWires(model, ctx, ref data);
 
             bool empty = data.Curves.Count == 0 && data.Handles.Count == 0
+                         && (data.Wires == null || data.Wires.Count == 0)
                          && (data.Points == null || data.Points.Count == 0) && data.Preview == null
                          && (data.SelectedPoints == null || data.SelectedPoints.Count == 0)
                          && data.DragPreview == null && !data.Marquee.HasValue;
             if (empty) panel.HideLineCurves();
             else panel.UpdateLineCurves(data);
+        }
+
+        /// <summary>ブーリアンの相手の線の上限（辺の数）。大きな相手で描画が重くならないように。</summary>
+        private const int BooleanWireMaxEdges = 8000;
+
+        /// <summary>
+        /// 選択中のオブジェクトの処理列にあるブーリアンの相手を、ワイヤーで足す（Maya の Boolean stack と同じ）。
+        /// 相手は隠してあることが多いので GPU の値でなく行列で投影する（TransformRowMatrix）。
+        /// 無効にした項目と、相手の無い項目は描かない。
+        /// </summary>
+        private void AppendBooleanOtherWires(ModelContext model, ToolContext ctx, ref PlayerViewportPanel.LineCurveData data)
+        {
+            System.Collections.Generic.HashSet<Poly_Ling.Data.ModifierStack> seen = null;
+            System.Collections.Generic.Dictionary<ulong, Poly_Ling.Data.MeshContext> map = null;
+            int total = 0;
+            foreach (int i in model.SelectedDrawableMeshIndices)
+            {
+                var chain = Poly_Ling.Modifiers.ModifierChainOps.ChainOf(model, model.GetMeshContext(i));
+                if (chain?.Steps == null) continue;
+                if (seen == null) seen = new System.Collections.Generic.HashSet<Poly_Ling.Data.ModifierStack>();
+                if (!seen.Add(chain)) continue;
+
+                foreach (var step in chain.Steps)
+                {
+                    if (step == null || !step.IsExecutable || !step.Enabled || step.Action != "boolean") continue;
+                    var ids = step.GetMeshRefIds("other");
+                    if (ids.Count == 0) continue;
+                    if (map == null) map = Poly_Ling.Ops.ModifierEvaluator.BuildIdMap(model);
+                    if (!map.TryGetValue(ids[0], out var other) || other?.MeshObject == null) continue;
+                    AppendMeshWires(other, ctx, ref data, ref total);
+                }
+            }
+        }
+
+        private static void AppendMeshWires(Poly_Ling.Data.MeshContext mc, ToolContext ctx, ref PlayerViewportPanel.LineCurveData data, ref int total)
+        {
+            var mo = mc.MeshObject;
+            Matrix4x4 m = mc.TransformRowMatrix(ctx.ShowBindPose);
+            var used = new System.Collections.Generic.HashSet<long>();
+            int vn = mo.VertexCount;
+            if (data.Wires == null) data.Wires = new System.Collections.Generic.List<(Vector2, Vector2)>();
+            foreach (var f in mo.Faces)
+            {
+                var vi = f?.VertexIndices;
+                if (vi == null || vi.Count < 3) continue;
+                for (int k = 0; k < vi.Count; k++)
+                {
+                    int a = vi[k], b = vi[(k + 1) % vi.Count];
+                    if (a < 0 || b < 0 || a >= vn || b >= vn) continue;
+                    long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                    if (!used.Add(key)) continue;
+                    if (total++ >= BooleanWireMaxEdges) return;
+                    data.Wires.Add((ctx.WorldToScreen(m.MultiplyPoint3x4(mo.Vertices[a].Position)),
+                                    ctx.WorldToScreen(m.MultiplyPoint3x4(mo.Vertices[b].Position))));
+                }
+            }
+        }
+
+        // ================================================================
+        // 処理列の項目のハンドルのモード（モディファイア操作統合計画 段 8）
+        // ================================================================
+
+        /// <summary>モードへ入る・抜ける（ShowModifierGizmoCommand の受け口）。失敗なら理由。</summary>
+        private string ExecuteShowModifierGizmo(Poly_Ling.Data.ShowModifierGizmoCommand cmd)
+        {
+            var h = _modifierGizmoHandler;
+            if (h == null) return "ハンドルが用意されていません";
+
+            bool inMode = _interactionMode == InteractionMode.ModifierGizmo;
+            bool same = inMode && h.Kind == cmd.Kind && h.StackName == cmd.StackName && h.ItemId == cmd.ItemId;
+            if (cmd.Kind == Poly_Ling.Data.ModifierGizmoKind.Off || same)
+            {
+                ExitModifierGizmo();
+                return null;
+            }
+
+            string why = h.Begin(cmd.StackName, cmd.ItemId, cmd.Kind);
+            if (why != null)
+            {
+                if (inMode) ExitModifierGizmo();
+                return why;
+            }
+
+            if (inMode)
+            {
+                // 別の項目か別の種類へ移るだけ。モードはそのまま。
+                UpdateTopologyToolsOverlay();
+                UpdateGizmoOverlay();
+            }
+            else
+            {
+                _modifierGizmoPrevMode = _interactionMode;
+                SetInteractionMode(InteractionMode.ModifierGizmo);
+            }
+            _modifierChainSubPanel?.Refresh();
+            return null;
+        }
+
+        private void ExitModifierGizmo()
+        {
+            if (_interactionMode == InteractionMode.ModifierGizmo)
+                SetInteractionMode(_modifierGizmoPrevMode);
+            else
+                _modifierGizmoHandler?.End();
         }
 
         private int HitTestOverlayIndicator(Vector2 screenPos)
@@ -475,6 +581,14 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                if (_interactionMode == InteractionMode.ModifierGizmo &&
+                    _modifierGizmoHandler != null &&
+                    _modifierGizmoHandler.TryBuildDisplayOnlyGizmoData(ctx, out var mgData))
+                {
+                    p.UpdateGizmo(mgData);
+                    return;
+                }
+
                 if (_interactionMode == InteractionMode.Deform &&
                     _deformHandler != null &&
                     _deformHandler.TryBuildGizmoData(ctx, out var dfData))
@@ -505,6 +619,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.WorkAxis:        return _workAxisHandler;
                 case InteractionMode.Deform:          return _deformHandler;
                 case InteractionMode.Lattice:         return _latticeHandler;
+                case InteractionMode.ModifierGizmo:   return _modifierGizmoHandler;
                 case InteractionMode.Camera:          return _cameraHandler;
                 // 法線編集：ハンドルのときだけダイヤ型ギズモ（他のサブモードでは出さない）。
                 case InteractionMode.NormalEdit:      return _normalEditHandler;

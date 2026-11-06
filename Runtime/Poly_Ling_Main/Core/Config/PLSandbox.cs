@@ -195,7 +195,24 @@ namespace Poly_Ling.Core
         /// <param name="fullPath">解決した実経路。失敗時は null。</param>
         /// <param name="reason">拒否した理由。成功時は null。</param>
         public static bool TryResolveWrite(string path, out string fullPath, out string reason)
-            => TryResolve(path, forWrite: true, forFolder: false, out fullPath, out reason);
+        {
+            if (!TryResolve(path, forWrite: true, forFolder: false, out fullPath, out reason)) return false;
+
+            // 関門を通った書き先の、まだ無いフォルダを作る。どの書き出しも保存も同じに動く
+            // （無いフォルダを指定すると形式によって失敗していた）。
+            try
+            {
+                string folder = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
+            }
+            catch (Exception ex)
+            {
+                reason = $"書き出し先のフォルダを作れません: {ex.Message}";
+                fullPath = null;
+                return false;
+            }
+            return true;
+        }
 
         /// <summary>
         /// フォルダとして解決する。書き出し先フォルダの指定に使う。

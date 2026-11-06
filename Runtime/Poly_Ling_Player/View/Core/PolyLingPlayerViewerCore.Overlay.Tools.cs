@@ -348,6 +348,17 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── 処理列の項目のハンドル（ラティスの格子）─────────────
+            if (_interactionMode == InteractionMode.ModifierGizmo)
+            {
+                if (_modifierGizmoHandler != null
+                    && _modifierGizmoHandler.TryBuildOverlay(ctx, out var mgLines, out var mgPoints))
+                    panel.UpdateTopoToolOverlay(mgLines, mgPoints, null);
+                else
+                    panel.HideTopoToolOverlay();
+                return;
+            }
+
             // ── 格子変形 ─────────────────────────────────────────────
             // 格子の線と制御点はメッシュ頂点ではなく作業軸ローカルの制御点を
             // 投影したもの。組み立ては LatticeToolHandler が持つ。

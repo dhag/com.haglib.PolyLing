@@ -71,6 +71,11 @@ namespace Poly_Ling.OBJ
         [PLParam(Description = "非表示のメッシュも出力する")]
         public bool ExportInvisibleObjects = false;
 
+        /// <summary>モディファイアを適用した形を元の名前で出力。切ると元のメッシュだけ。</summary>
+        [Tooltip("モディファイアを適用した形を元の名前で出力する。切ると元のメッシュだけを出力する")]
+        [PLParam(Description = "モディファイアを適用した形を元の名前で出力する。切ると元のメッシュだけを出力する")]
+        public bool ApplyModifiers = true;
+
         /// <summary>非表示の面も出力。</summary>
         [Tooltip("非表示フラグの付いた面も出力する（OBJ に非表示の概念は無い）")]
         [PLParam(Description = "非表示フラグの付いた面も出力する（OBJ に非表示の概念は無い）")]
@@ -114,6 +119,7 @@ namespace Poly_Ling.OBJ
                 ExportNormals              = this.ExportNormals,
                 ExportMaterials            = this.ExportMaterials,
                 ExportInvisibleObjects     = this.ExportInvisibleObjects,
+                ApplyModifiers             = this.ApplyModifiers,
                 ExportHiddenFaces          = this.ExportHiddenFaces,
                 ExportLines                = this.ExportLines,
                 ExportVerticesInWorldSpace = this.ExportVerticesInWorldSpace,

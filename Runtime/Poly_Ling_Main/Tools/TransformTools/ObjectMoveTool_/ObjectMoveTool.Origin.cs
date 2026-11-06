@@ -482,6 +482,9 @@ namespace Poly_Ling.Tools
         {
             if (mc == null || s == null) return false;
 
+            // 畳まれた結果は元と 1 つのオブジェクト。掴むのは元（操作統合計画 段 2）。
+            if (Poly_Ling.Modifiers.ModifierResultOps.IsFoldedResult(mc)) return false;
+
             var t = mc.Type;
 
             // モーフ・剛体・ジョイント・グループ・作業軸は常に除外

@@ -317,16 +317,15 @@ e5 厚みを足す　　　　　　　理由：はしごを残したまま、�
 ■ 5. 厚み付きのはしごを作る
 
 オブジェクトリストで「キョンシーのお札用」を選びます。
-左ペインの「選択」の折り畳みを開きます。
-「処理列」を押します。
+右ペインの上の「モディファイア」を押します。
 
-右のパネルの種類で「厚み（thickness）」を選び、「追加」を押します。
-追加した項目を一覧で選び、「厚み」の欄に 0.003 を入れます。
+「モディファイアを追加」を押し、「厚み」を押します。
+できたカードの「厚み」の欄に 0.003 を入れます。
 
 「キョンシーのお札用_mod」という厚み付きのはしごが、
 元のはしごの子としてできます。元のはしごは残ります。
 
-ここでは「適用」を押しません。適用するのは、モデルにする直前です。
+ここでは「すべて適用」を押しません。適用するのは、モデルにする直前です。
 ```
 
 ## 5. 段
@@ -346,7 +345,7 @@ e5 厚みを足す　　　　　　　理由：はしごを残したまま、�
 | `importMqoFile` | ファイル（`leftPane.fold.File`）→ MQO読み込み（`leftPane.mqoLoadBtn`） | `importMqo`。「開く」（`importMqo.open`）と「...」（`importMqo.browse`）は `userOnly` で `uiClick` が押せない |
 | `selectDrawablesByName` | 無い | オブジェクトリストで選ぶ操作へ置き換える |
 | `placeSpringBoneLadderChains` | 図形生成（`leftPane.fold.Primitive`）→ 揺れものボーン（3D連携）（`leftPane.liveSpringBonePrimitiveBtn`） | `primitiveSpringBone`。揺れボーン はしご（`.shape.SpringBoneLadder`）→ 生成（`.create`） |
-| `addMeshModifier` | 選択（`leftPane.fold.Select`）→ 処理列（`leftPane.modifierChainBtn`） | `modifierChain`。追加（`.add`） |
+| `addMeshModifier` | モディファイア（`rightPaneTop.modifierChain`）→ 追加メニュー（`modifierChain.addMenu`） | `modifierChain`。種類のボタン（`.add.<種類>`）を押すと足される |
 | `solidify` | トポロジー編集（`leftPane.fold.Topology`）→ 厚み付け（`leftPane.solidifyBtn`） | `solidify`。厚み付け実行（`.run`） |
 | `convertMeshFilterToSkinned` | ボーン・モーフ（`leftPane.fold.BoneMorph`）→ メッシュからボーンとスキンの生成（`leftPane.meshFilterToSkinnedBtn`） | `meshFilterToSkinned`。変換実行（`.convert`） |
 
@@ -369,7 +368,7 @@ e5 厚みを足す　　　　　　　理由：はしごを残したまま、�
 | `chainStride` | `SBLadderChainStride` | 本ストライド（何本に1つ） | |
 | `bundleMode` | `SBLadderBundleMode` | 本方向のやり方 | `Thin`：間引く（間は左右の鎖で補間） / `Merge`：まとめる（平均位置に鎖1本） |
 
-処理列の入力欄（ID の頭は `modifierChain.`）：種類 `kind`（表示は「厚み（thickness）」の形）、項目の一覧 `items`、有効 `enabled`、削除 `remove`、適用 `apply`（表示は「適用（結果を普通のメッシュにする）」）、厚み `arg.thickness`（表示は「厚み」。スライダーは `arg.thickness.slider`）。引数欄の ID は項目を選んだ後に `uiDescribe` に出る。
+モディファイアパネルの入力欄（ID の頭は `modifierChain.`）：追加メニュー `addMenu`、種類のボタン `add.<種類>`（表示は「厚み」の形）、選択中のカードの有効 `enabled`、削除 `remove`、すべて適用 `apply`、厚み `arg.thickness`（表示は「厚み」。スライダーは `arg.thickness.slider`）。選択中でないカードの欄は `item.<項目 ID>.` を頭に付ける。設定欄の ID はカードができた後に `uiDescribe` に出る。
 
 ### 段 1：ウェイトの追随
 
@@ -583,7 +582,7 @@ e5 厚みを足す　　　　　　　理由：はしごを残したまま、�
 - `unity_capture` の `folder` に `SandBox/Captures/tut6` を渡すと、`SandBox/Captures/SandBox/Captures/tut6/` に保存される。作成の途中でも、終わった後でも同じ
 - 案内バーの「見せ方」は流し始めてからでないと変えられない。既定の「今なにをしているか」で項目が実行されるので、「人間の入力待ち」で先頭から始めるには一度やめて流し直す
 - `queryScenarios` の引数 `query` の説明に、前提と成功条件が載っていない（コマンドの説明には載っている）
-- 処理列のパネルの一覧が空のとき、英語の「List is empty」が出る
+- 処理列のパネルの一覧が空のとき、英語の「List is empty」が出る（モディファイア操作統合計画の段 1 でカード表示に変え、一覧が無くなった）
 - 下書きの見出しは理由の文のままなので（例「元になる形を取り込むため」）、毎回直す手間がある
 
 ### 段 7：実地の確認

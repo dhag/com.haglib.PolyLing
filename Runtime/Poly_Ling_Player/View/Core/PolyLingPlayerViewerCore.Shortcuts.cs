@@ -51,6 +51,7 @@ namespace Poly_Ling.Player
                         + $" CSV 未使用 (無し / 有効行 0 / 読取失敗): {ShortcutMap.DefaultCsvPath}");
 
             _shortcutController = new PlayerShortcutController(map);
+            _shortcutController.PanelKeyHandler = e => _modifierChainSubPanel != null && _modifierChainSubPanel.HandleKey(e, _lastPointerPanelPosition);
 
             // コマンドID → 実行内容。対応するツールボタンと同じ処理を割り当てる。
             _shortcutController.Register(ShortcutMap.CmdUndo,

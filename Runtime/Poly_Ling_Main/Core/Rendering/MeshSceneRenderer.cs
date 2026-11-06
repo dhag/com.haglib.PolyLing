@@ -888,6 +888,12 @@ namespace Poly_Ling.Core
                         if (!anyOrigin) continue;
                         if (!IsMeshOriginTarget(ctx.Type)) continue;
                         if (!ShowMirrorMeshOrigin && IsMirrorSideType(ctx.Type)) continue;
+                        // 畳まれた結果は元と同じ場所にあり、元のマーカーだけを出す。
+                        if (Poly_Ling.Modifiers.ModifierResultOps.IsFoldedResult(ctx))
+                        {
+                            _boneMeshCache.Remove((mi, ci));
+                            continue;
+                        }
                         bool isSelMesh = selMeshes.Contains(ci);
                         if ( isSelMesh && !ShowSelectedMeshOrigin)   continue;
                         if (!isSelMesh && !ShowUnselectedMeshOrigin) continue;

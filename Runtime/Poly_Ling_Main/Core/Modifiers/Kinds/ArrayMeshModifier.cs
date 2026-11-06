@@ -22,8 +22,17 @@ namespace Poly_Ling.Modifiers
     [PLMeshModifier("array", DisplayName = "配列", Category = "topology",
                     Change = MeshModifierChange.Topology,
                     Description = "範囲の面を一定間隔で並べて写す（個数は元を含む）")]
-    public sealed class ArrayMeshModifier : IMeshModifier
+    public sealed class ArrayMeshModifier : IMeshModifier, IMeshModifierAddDefaults
     {
+        /// <summary>入力が X 方向に厚みを持たないと写しが元に重なるので、いちばん長い向きへずらす。</summary>
+        public void ApplyAddDefaults(MeshObject input)
+        {
+            if (!MeshModifierAddDefaultOps.TryBounds(input, out _, out var size)) return;
+            float longest = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
+            if (size.x > longest * 1e-4f) return;
+            RelativeOffset = size.y >= size.z ? new Vector3(0f, 1f, 0f) : new Vector3(0f, 0f, 1f);
+        }
+
         [PLParam(Description = "個数（元を含む）", Min = 1, Max = 64, Step = 1)]
         public int Count { get; set; } = 2;
 

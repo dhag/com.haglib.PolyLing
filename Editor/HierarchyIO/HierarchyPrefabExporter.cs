@@ -67,6 +67,7 @@ namespace Poly_Ling.EditorIO
         public bool SceneAnimator             = true;   // シーン出力時にルートへ空の Animator を付与
         public bool TolerantMirrorBranch      = true;   // ミラー設定漏れを許容
         public bool AttachSpringBones         = true;   // 揺れもの（UniVRM の SpringBone）をプレファブに付ける。VRM パッケージが無ければ付けない
+        public bool ApplyModifiers            = true;   // モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけ
 
         /// <summary>レンダラ種別。定義は Runtime（HierarchyRendererMode）が正本。</summary>
         public HierarchyRendererMode RendererMode = HierarchyRendererMode.Auto;
@@ -364,6 +365,9 @@ namespace Poly_Ling.EditorIO
             // 読込直後の ModelContext はボーンの WorldMatrix が未計算。
             model.ComputeWorldMatrices();
 
+            // モディファイアの元と結果を 1 つのオブジェクトにして書く（ワールド行列を計算した後で写す）。
+            model = Poly_Ling.Modifiers.ModifierExportView.For(model, _opt.ApplyModifiers);
+
             WarnAboutExpectations(model);
 
             if (_opt.SaveAsPrefab)
@@ -526,7 +530,6 @@ namespace Poly_Ling.EditorIO
                     if (avMap.Count == 0)
                     {
                         _report.AvatarResult = "スキップ（Humanoid 割当なし）";
-                        _report.Warn("Humanoid 割当が無いため Avatar 生成をスキップ。");
                     }
                     else
                     {
@@ -598,6 +601,12 @@ namespace Poly_Ling.EditorIO
                 // 同名プレファブへ上書き保存（繰り返しても増えない）
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
                 AssetDatabase.SaveAssets();
+
+                // 上書きの書き出しでは、メッシュを消して同じ GUID で作り直す（下の persistMesh）。
+                // 読み込み済みのプレファブが消えたメッシュを指したままになり、Play でメッシュが空になる
+                // （2026-11-04 に確かめた。ファイル上の参照は正しい）ので、読み直させる。
+                AssetDatabase.ImportAsset(prefabPath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
 
                 if (!_opt.AddToHierarchy)
                 {
@@ -1045,10 +1054,10 @@ namespace Poly_Ling.EditorIO
             if (_opt.SaveAsPrefab && _opt.BuildAvatar &&
                 (model.HumanoidMapping == null || model.HumanoidMapping.IsEmpty))
             {
-                _report.Warn(
-                    "Humanoid 割当が空です。Avatar は生成できません。\n"
-                    + "先に Humanoid 割当（最低でも Hips）を設定してください。"
-                    + "「不足関節を補完」は Hips を起点に脚・腕を補うため、Hips が無いと動きません。");
+                // 人型でないモデルは普通にある。警告にしない。
+                _report.Note(
+                    "Humanoid の割当が無いので Avatar は作りません。"
+                    + "人型として使うときは、先に Humanoid 割当（最低でも Hips）を設定してください。");
             }
         }
 

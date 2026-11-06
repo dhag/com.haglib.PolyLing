@@ -375,6 +375,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
         InverseLoses = "波形の歪み（段の前後の区間ごとの相似でない変形）、補間した段だけの動き、厚みの変化")]
+    [PLModifierInput(Accepts = "帯（面の列）を持つオブジェクト", Decide = "帯の取り込み方（根元の目印・輪・選択辞書）", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と入力のオブジェクト", DefaultInput = "なし：帯が要る（独自の生成で、合わせる先が無い）")]
     public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Frill", Description = "フリルのパラメータ", Required = true)]
@@ -427,8 +429,11 @@ namespace Poly_Ling.Data
     /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
     [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
+        FollowsDrag = true,   // 面構成を変えず位置だけ書く（PlayerCommandDispatcher.ModifierDragFollow）。離したときに作り直す
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、断面、引数",
         InverseLoses = "輪のひしゃげ（相似でない変形）、段の軸まわりのねじれ、補間した段だけの動き、厚みの変化")]
+    [PLModifierInput(Accepts = "帯（面の列）を持つオブジェクト", Decide = "帯の取り込み方（根元の目印・輪・選択辞書）", Result = "新しいオブジェクト",
+        ReEdit = "履歴カード（カーブを編集・太さ・断面）", DefaultInput = "createSweepMesh が直線のカーブから作る（Maya の Sweep Mesh）")]
     public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
@@ -492,6 +497,8 @@ namespace Poly_Ling.Data
         Inverse = ModifierInverseMethod.CopiedVertices,
         InverseKeeps = "パイプの面構成・頂点 ID・ウェイト、輪のレール以外の頂点、引数",
         InverseLoses = "開始タグの位置（始点と最初の段から導く）、輪のレール以外の頂点の追随（レールの 2 頂点と始点・終点だけを書く）")]
+    [PLModifierInput(Accepts = "パイプのオブジェクト", Decide = "図形生成のパネルで選ぶ", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄", DefaultInput = "なし：パイプが要る")]
     public sealed class ExtractPipeBeltCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "PipeBeltExtract", Description = "取り出しのパラメータ", Required = true)]
@@ -528,6 +535,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.BeltFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、配置元、引数",
         InverseLoses = "部品の歪み、段の向きまわりの傾き、倍率（倍率の決め方が一律のとき）、間引いた段・補間した段だけの動き")]
+    [PLModifierInput(Accepts = "帯（面の列）と配置元のオブジェクト", Decide = "帯の取り込み方と、パネルで選ぶ配置元", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と入力のオブジェクト", DefaultInput = "なし：配置元が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "PlaceObject", Description = "配置のパラメータ", Required = true)]
@@ -582,6 +591,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.LushFrames,
         InverseKeeps = "梯子の面構成・頂点 ID・ウェイト、原型、段の補間・置く位置・倍率の引数",
         InverseLoses = "部品の歪み、段の向き（1 本の向きの変化は回転の引数へ寄せる）、段ごとの回転のうち始点→終点の線形の補間で表せない分、補間した段だけの動き（元の段へ最小二乗で当てはめる）、倍率の変化")]
+    [PLModifierInput(Accepts = "帯（面の列）と原型のオブジェクト", Decide = "帯の取り込み方と、パネルで選ぶ原型", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と入力のオブジェクト", DefaultInput = "なし：原型が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public sealed class CreateLushCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Lush", Description = "まつげのパラメータ", Required = true)]
@@ -636,6 +647,8 @@ namespace Poly_Ling.Data
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack, Inverse = ModifierInverseMethod.SurfacePaste,
         InverseKeeps = "入力の面構成・頂点 ID・ウェイト、参照面、引数",
         InverseLoses = "平面化するとき方向に沿った成分の変化（参照面へ貼り直す）。交点の無い頂点は出力の位置がそのまま入力になる")]
+    [PLModifierInput(Accepts = "入力のオブジェクトと参照面のオブジェクト", Decide = "図形生成のパネルで選ぶ", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と入力のオブジェクト", DefaultInput = "なし：入力と参照面が要る")]
     public sealed class CreateSurfacePasteCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "SurfacePaste", Description = "平面化＋貼り付けのパラメータ", Required = true)]

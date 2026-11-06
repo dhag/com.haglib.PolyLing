@@ -47,6 +47,12 @@ namespace Poly_Ling.MQO
                 };
             }
 
+            // モディファイアの元と結果を 1 つのオブジェクトにして書く。行の行列はここで写すので、
+            // 先にワールド行列を最新化する（ConvertToDocument の EnsureWorldMatrices は写しの行に届かない）。
+            bool apply = settings?.ApplyModifiers ?? true;
+            if (model.HasModifierStacks) model.ComputeWorldMatrices();
+            model = Poly_Ling.Modifiers.ModifierExportView.For(model, apply);
+
             return ExportFile(filePath, model.MeshContextList, model.Materials, settings, model.MaterialReferences);
         }
 

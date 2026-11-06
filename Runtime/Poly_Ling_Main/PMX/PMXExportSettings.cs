@@ -81,6 +81,10 @@ namespace Poly_Ling.PMX
         [PLParam(Description = "ジョイントを出力")]
         public bool ExportJoints = false;
 
+        /// <summary>モディファイアを適用した形を元の名前で出力。切ると元のメッシュだけ。</summary>
+        [PLParam(Description = "モディファイアを適用した形を元の名前で出力する。切ると元のメッシュだけを出力する")]
+        public bool ApplyModifiers = true;
+
         /// <summary>テクスチャパスを相対パスで出力</summary>
         [PLParam(Description = "テクスチャパスを相対パスで出力")]
         public bool UseRelativeTexturePath = true;

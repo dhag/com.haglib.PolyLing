@@ -97,13 +97,15 @@ namespace Poly_Ling.MeshListV2
             };
             if (list == null) return;
 
+            // モディファイアの結果は選べない（選ぶと元へ回る）ので最初から外す。
+            var results = new HashSet<int>(model.ModifierResultIndices);
             var indices = new List<int>();
             foreach (var v in list)
             {
                 if (v == null) continue;
                 // 生成ミラーだけ外す（OnSelectionChanged と同じ判定）。
                 if ((v.IsBakedMirror || v.IsMirrorSide) && v.MirrorGeometryDerived) continue;
-                if (v.MasterIndex < 0) continue;
+                if (v.MasterIndex < 0 || results.Contains(v.MasterIndex)) continue;
                 indices.Add(v.MasterIndex);
             }
             if (indices.Count == 0) return;
@@ -283,25 +285,32 @@ namespace Poly_Ling.MeshListV2
             _tabRigidBody?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.RigidBody));
             _tabJoint   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Joint));
 
-            Q<Button>("btn-add")      ?.RegisterCallback<ClickEvent>(_ => OnAdd());
-            Q<Button>("btn-up")       ?.RegisterCallback<ClickEvent>(_ => MoveSelected(-1));
-            Q<Button>("btn-down")     ?.RegisterCallback<ClickEvent>(_ => MoveSelected(1));
-            Q<Button>("btn-outdent")  ?.RegisterCallback<ClickEvent>(_ => OutdentSelected());
-            Q<Button>("btn-indent")   ?.RegisterCallback<ClickEvent>(_ => IndentSelected());
-            Q<Button>("btn-duplicate")?.RegisterCallback<ClickEvent>(_ => DuplicateSelected());
-            Q<Button>("btn-delete")   ?.RegisterCallback<ClickEvent>(_ => DeleteSelected());
-            Q<Button>("btn-select-all")?.RegisterCallback<ClickEvent>(_ => SelectAllObjects());
+            // clicked で受ける。ClickEvent はマウスでしか来ず、uiClick やキーボードの決定で動かない。
+            void OnPress(string name, System.Action action)
+            {
+                var button = Q<Button>(name);
+                if (button != null) button.clicked += action;
+            }
 
-            Q<Button>("btn-show")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
-            Q<Button>("btn-hide")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
+            OnPress("btn-add",        () => OnAdd());
+            OnPress("btn-up",         () => MoveSelected(-1));
+            OnPress("btn-down",       () => MoveSelected(1));
+            OnPress("btn-outdent",    () => OutdentSelected());
+            OnPress("btn-indent",     () => IndentSelected());
+            OnPress("btn-duplicate",  () => DuplicateSelected());
+            OnPress("btn-delete",     () => DeleteSelected());
+            OnPress("btn-select-all", () => SelectAllObjects());
 
-            Q<Button>("btn-lock")      ?.RegisterCallback<ClickEvent>(_ => SetSelectedLock(true));
-            Q<Button>("btn-unlock")    ?.RegisterCallback<ClickEvent>(_ => SetSelectedLock(false));
-            Q<Button>("btn-mirror-on") ?.RegisterCallback<ClickEvent>(_ => SetSelectedMirror(1));
-            Q<Button>("btn-mirror-off")?.RegisterCallback<ClickEvent>(_ => SetSelectedMirror(0));
+            OnPress("btn-show",       () => SetSelectedVisibility(true));
+            OnPress("btn-hide",       () => SetSelectedVisibility(false));
 
-            Q<Button>("btn-seldic-apply")?.RegisterCallback<ClickEvent>(_ => ApplySelectionDictionary(false));
-            Q<Button>("btn-seldic-add")  ?.RegisterCallback<ClickEvent>(_ => ApplySelectionDictionary(true));
+            OnPress("btn-lock",       () => SetSelectedLock(true));
+            OnPress("btn-unlock",     () => SetSelectedLock(false));
+            OnPress("btn-mirror-on",  () => SetSelectedMirror(1));
+            OnPress("btn-mirror-off", () => SetSelectedMirror(0));
+
+            OnPress("btn-seldic-apply", () => ApplySelectionDictionary(false));
+            OnPress("btn-seldic-add",   () => ApplySelectionDictionary(true));
 
             Q<Button>("btn-rename-template")?.RegisterCallback<ClickEvent>(_ => OnRenameSaveTemplate());
             Q<Button>("btn-rename-load")    ?.RegisterCallback<ClickEvent>(_ => OnRenameLoad());
@@ -317,6 +326,13 @@ namespace Poly_Ling.MeshListV2
             _detailModeToggle?.RegisterValueChangedCallback(_ => OnDetailModeChanged());
             _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
             _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
+            // 行の組が変わるので、表示の作り直しだけでなく一覧の組み直しから行う。
+            _showModifierResultsToggle?.RegisterValueChangedCallback(_ =>
+            {
+                CreateTreeRoot();
+                RefreshAllImmediate();
+                SyncTreeViewSelection();
+            });
             _filterField?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
             _meshNameField?.RegisterCallback<KeyDownEvent>(e =>
             {

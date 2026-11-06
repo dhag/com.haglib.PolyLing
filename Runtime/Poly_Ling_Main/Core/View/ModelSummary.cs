@@ -63,6 +63,11 @@ namespace Poly_Ling.View
 
         /// <summary>モディファイアスタックはスナップショットに載せていない。空。</summary>
         public IReadOnlyList<ModifierStackView> ModifierStacks => System.Array.Empty<ModifierStackView>();
+        public IReadOnlyList<ModifierStackView> ModifierStacksOf(int masterIndex) => System.Array.Empty<ModifierStackView>();
+        public IReadOnlyList<ModifierUsageView> ModifierUsagesOf(int masterIndex) => System.Array.Empty<ModifierUsageView>();
+        public IReadOnlyCollection<int> ModifierObjectIndices => System.Array.Empty<int>();
+        public IReadOnlyCollection<int> ModifierResultIndices => System.Array.Empty<int>();
+        public IReadOnlyDictionary<int, int> ModifierResultParents => new Dictionary<int, int>();
 
         /// <summary>スナップショットは選択を持たないので作れない。</summary>
         public ModifierScopeArgsView BuildModifierScopeFromSelection(int masterIndex) => null;

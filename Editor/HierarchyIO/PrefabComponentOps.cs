@@ -135,8 +135,8 @@ namespace Poly_Ling.EditorIO
             return string.Join("/", names);
         }
 
-        /// <summary>名前から付けられる Component の型を 1 つに決める。</summary>
-        private static bool TryResolveType(string name, out Type type, out string message)
+        /// <summary>名前から付けられる Component の型を 1 つに決める。SceneObjectOps（scene_add_component）も使う。</summary>
+        internal static bool TryResolveType(string name, out Type type, out string message)
         {
             type    = null;
             message = null;

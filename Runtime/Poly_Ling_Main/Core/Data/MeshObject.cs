@@ -247,6 +247,15 @@ namespace Poly_Ling.Data
         public bool HideFaceShading { get; set; }
 
         /// <summary>
+        /// モディファイアの元の線（辺と頂点）を隠す。立てると GPU のバッファに載せない
+        /// （UnifiedBufferManager.ShouldIncludeInBuffers）ので、クリック判定にも掛からない。
+        /// 操作統合計画 段 2 の「元の線の表示切り替え」。
+        ///
+        /// 【保存しない】HideFaceShading と同じく .mfproj / CSV / リモートのいずれにも書かない。
+        /// </summary>
+        public bool HideCageLines { get; set; }
+
+        /// <summary>
         /// 法線の自動再計算から除外するセット一覧（パーツ選択辞書と同じ構造）。
         /// リストに載っているセットが指す要素は、RecalculateNormals /
         /// RecalculateSmoothNormals の直前に法線を退避し、計算後に書き戻す。

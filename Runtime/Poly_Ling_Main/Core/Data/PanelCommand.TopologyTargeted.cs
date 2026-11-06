@@ -293,9 +293,14 @@ namespace Poly_Ling.Data
     /// </summary>
     [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
     [PLModifier(Capture = PLStackCapture.OnKeepAsModifierStack,    // PlayerCommandDispatcher.EditTools.cs
+        DisplayName = "カーブの帯",
+        BuildsInBindWorld = true,   // 頂点はバインド姿勢のワールド（ExecuteEdgeRibbonFace）
+        FollowsDrag = true,   // 面構成を変えず位置だけ書く（PlayerCommandDispatcher.ModifierDragFollow）。離したときに作り直す
         Inverse = ModifierInverseMethod.RibbonCenters,
         InverseKeeps = "辺の面構成・頂点 ID・ウェイト、帯の幅、辺の辞書",
         InverseLoses = "帯の幅と向きの変化（左右の中点の移動だけを辺の頂点へ戻す）、先端・タグの動き")]
+    [PLModifierInput(Accepts = "辺の選択、または辺のパーツ選択辞書", Decide = "選択の辺を辞書へ保存して読む", Result = "新しいオブジェクト（パイプの帯は一覧に出さない）",
+        ReEdit = "履歴カード（カーブを編集・太さ）", DefaultInput = "createSweepMesh が直線のカーブから作る（Maya の Sweep Mesh）")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
         // 書くのは「モディファイアスタックとして残す」かつ辞書名が空のとき、選択辺を辞書として保存する場合だけ
@@ -378,11 +383,86 @@ namespace Poly_Ling.Data
     ///   EdgeSetName が空なら選択辺を新しいパーツ選択辞書へ保存して使う
     ///   （対象は選択中の描画オブジェクトと一致すること）。
     /// </summary>
-    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのモディファイアスタックになる。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.ModelWide,
+        Description = "選択からカーブとパイプを作る（Maya の Sweep Mesh）。選択が無ければ直線のカーブ、辺は連なりごとに複製してカーブ（分岐と不連続は別のカーブ、輪は閉じたカーブと閉じたパイプ）、面の帯は複製して帯、線分だけのオブジェクトと目印のある帯はそのまま参照する。followSource=true は複製せず元の辺や面を読み、元の編集に追随する。curveOnly=true はカーブだけ作る。断面を指定しなくても円で立体が出る。Undo 1 回で戻る。")]
+    [PLResult("curveIndices", PLResultKind.IntegerArray, Description = "作った・使ったカーブの描画オブジェクトの索引")]
+    [PLResult("pipeIndices",  PLResultKind.IntegerArray, Description = "作ったパイプの描画オブジェクトの索引")]
+    [PLResult("stackNames",   PLResultKind.TextArray,    Description = "作った履歴（モディファイアスタック）の名前")]
+    [PLModifier(Capture = PLStackCapture.ViaSteps)]   // 帯面＋パイプを項目にする（PlayerCommandDispatcher.Sweep.cs）
+    [PLUiRoute("モディファイアパネル（パイプ）", "rightPaneTop.modifierChain", "modifierChain.addMenu", "modifierChain.add.pipe",
+        Run = "modifierChain.add.pipe", Note = "辺や面を選んでから（選ばなければ直線で）「モディファイアを追加」の「パイプ」を押す。元に追随させるならメニューの「元に追随」を入れる")]
+    [PLUiNoField("種類の既定で作り、履歴のカードで変える", "width", "sectionKind", "sides")]
+    [PLUiNoField("メニューのカーブのボタン", "curveOnly")]
+    [PLUiNoField("メニューのチェック", "followSource")]
+    public class CreateSweepMeshCommand : PanelCommand
+    {
+        [PLParam(Description = "カーブだけ作り、パイプを作らない")]
+        public bool CurveOnly { get; }
+
+        [PLParam(Description = "複製せず元の辺や面を読み、元の編集に追随する")]
+        public bool FollowSource { get; }
+
+        [PLParam(Description = "パイプの太さ。ワールド単位", Min = 0.000001f)]
+        public float Width { get; }
+
+        [PLParam(Description = "断面の種類。カスタムは円として作る")]
+        public Poly_Ling.Pipe.SweepSectionKind SectionKind { get; }
+
+        [PLParam(Description = "断面の辺の数（弧・波は分割数）", Min = 2, Max = 64, Step = 1)]
+        public int Sides { get; }
+
+        public CreateSweepMeshCommand(int modelIndex, bool curveOnly = false, bool followSource = false, float width = 0.1f,
+            Poly_Ling.Pipe.SweepSectionKind sectionKind = Poly_Ling.Pipe.SweepSectionKind.Circle, int sides = 8)
+            : base(modelIndex)
+        {
+            CurveOnly    = curveOnly;
+            FollowSource = followSource;
+            Width        = width;
+            SectionKind  = sectionKind == Poly_Ling.Pipe.SweepSectionKind.Custom ? Poly_Ling.Pipe.SweepSectionKind.Circle : sectionKind;
+            Sides        = sides;
+        }
+    }
+
+    /// <summary>
+    /// 履歴の帯（パイプ・フリルなどが読むカーブの帯）から揺れ鎖を作る（操作統合計画 段 7）。
+    /// カーブを直すとボーンまで追随する。帯と生成物をスキンド化して帯へウェイトを塗り、生成物へ引き継ぎ、揺れ方まで入れる。
+    /// </summary>
+    [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights,
+        Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.ModelWide,
+        Description = "履歴の帯（同じカーブ）から揺れ鎖を作り、その帯を読む生成物（パイプ・フリルなど。他の履歴のものも）を揺れるようにする。鎖の根元は最寄りの体のボーンへ付くので、足首のカーブなら足首と一緒に動く。ボーンを作り、スキンド化していない帯と生成物はスキンド化し（カーブはそのまま）、帯へ塗ったウェイトを生成物へ引き継ぎ、揺れ方（stiffness 0.5, dragForce 0.4, gravityPower 0, hitRadius 0.02）と鎖の先頭を入れる。カーブを直すとボーンもウェイトも追随する。Undo 1 回で戻る。")]
+    [PLResult("chainRootIndices", PLResultKind.IntegerArray, Description = "作った鎖の根元のボーンの索引")]
+    [PLResult("weightsInherited", PLResultKind.Flag, Description = "生成物の全頂点へウェイトを引き継いだか。成功すれば常に true")]
+    [PLUiRoute("モディファイアパネル（履歴カード）", "rightPaneTop.modifierChain", "modifierChain.history.0.chain",
+        Run = "modifierChain.history.0.chain", Note = "パイプを選び、履歴カードの「揺れ鎖を作る」を押す")]
+    [PLUiNoField("履歴カードのボタンが今のカードの履歴を渡す", "stackName")]
+    [PLUiNoField("履歴の名前から作る。コマンドからだけ指定できる", "namePrefix")]
+    public class AddSpringChainFromHistoryCommand : PanelCommand
+    {
+        [PLParam(Description = "帯を読む履歴（モディファイアスタック）の名前", Required = true)]
+        public string StackName { get; }
+
+        [PLParam(Description = "作るボーンの名前の接頭辞。空なら生成物の名前から作る")]
+        public string NamePrefix { get; }
+
+        public AddSpringChainFromHistoryCommand(int modelIndex, string stackName, string namePrefix = "")
+            : base(modelIndex)
+        {
+            StackName  = stackName ?? "";
+            NamePrefix = namePrefix ?? "";
+        }
+    }
+
+    /// <summary>
+    /// 辺をパイプにする。
+    ///   開いた連なりは開始タグを付けて梯子で読み、輪だけなら閉じた帯のまま円環で読む（addStartTag は開いた連なりでは常に立つ）。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面を作って取り込み、パイプを作って帯を隠す。輪だけの辺は閉じたパイプになる。帯とパイプは 1 つのモディファイアスタックになる。選択からカーブごと作るなら createSweepMesh。")]
     [PLResult("groupName", PLResultKind.Text,    Description = "作ったモディファイアスタックの名前")]
     [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
     [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
     [PLModifier(Capture = PLStackCapture.ViaSteps)]   // 帯面＋パイプを項目にする（PlayerCommandDispatcher.EdgePipe.cs）
+    [PLModifierInput(Accepts = "辺の選択、または辺のパーツ選択辞書", Decide = "選択の辺を辞書へ保存して読む。元の辺に追随する", Result = "新しいオブジェクト（帯は一覧に出さない）",
+        ReEdit = "履歴カード（カーブを編集・太さ・断面）", DefaultInput = "createSweepMesh が直線のカーブから作る（Maya の Sweep Mesh）")]
     public class CreateEdgePipeCommand : PanelCommand
     {
         // 書くのは辞書名が空のとき、選択辺を辞書として保存する場合だけ（PlayerCommandDispatcher.EdgePipe.cs。段 D）。
@@ -399,7 +479,7 @@ namespace Poly_Ling.Data
         [PLParam(Description = "帯（梯子）の幅。ワールド単位。0 より大きいこと", Min = 0.000001f)]
         public float WidthWorld { get; }
 
-        [PLParam(Description = "開始三角と開始タグ三角を付ける。梯子の自動検索の起点なので、パイプにするには必須")]
+        [PLParam(Description = "使わない（開いた連なりには常に開始タグを付ける。互換のために残す）")]
         public bool AddStartTag { get; }
 
         [PLParam(Description = "終了三角を付ける")]
@@ -480,6 +560,8 @@ namespace Poly_Ling.Data
         Inverse = ModifierInverseMethod.VertexFrames,
         InverseKeeps = "入力の面構成・頂点 ID・ウェイト、配置元、引数",
         InverseLoses = "部品の回転・倍率・歪み（全部品で共通の向き・倍率で置くため）")]
+    [PLModifierInput(Accepts = "頂点の選択と配置元のオブジェクト", Decide = "選択の頂点を辞書へ保存して読む", Result = "新しいオブジェクト",
+        ReEdit = "履歴カードの設定欄と入力のオブジェクト", DefaultInput = "なし：頂点と配置元が要る（Maya の MASH も選んだオブジェクトから作る）")]
     public class CreateVertexBillboardPlaceCommand : PanelCommand
     {
         // 書くのは「モディファイアスタックとして残す」かつ辞書名が空かつ対象が頂点のとき、選択頂点を辞書として保存する場合だけ

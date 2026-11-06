@@ -294,7 +294,7 @@ namespace Poly_Ling.Modifiers
             }
 
             if (!scope.TryResolve(input, source.PartsSelectionSetList, out var resolved, out error))
-            { error = "処理範囲: " + error; return false; }
+            { error = "頂点グループ: " + error; return false; }
 
             var mi = new MeshModifierInput { Source = input, Scope = resolved, References = refs, ReferenceToSource = refMats };
             MeshObject output;
@@ -315,6 +315,39 @@ namespace Poly_Ling.Modifiers
             ic = new ItemCache { Fp = fp, Output = output, Modifier = mod, Info = info, Scope = resolved, References = refs,
                                  ReferenceToSource = refMats };
             return true;
+        }
+
+        /// <summary>
+        /// 元メッシュの今の形から items を順に流した形を返す（1 個の適用・途中までの適用。Blender の Apply は
+        /// 前の項目を飛ばして元に掛ける）。モデルは書き換えない。失敗したら null と理由。
+        /// </summary>
+        public static MeshObject EvaluateOnSource(ModelContext model, IList<ModifierStackStep> items, MeshContext source, out string error)
+        {
+            error = null;
+            var map = ModifierEvaluator.BuildIdMap(model);
+            var mesh = SourceCopy(source);
+            foreach (var s in items)
+            {
+                if (!RunItem(s, mesh, source, map, 0UL, out var ic, out error)) return null;
+                mesh = ic.Output;
+            }
+            return mesh;
+        }
+
+        /// <summary>
+        /// 「ここまで表示」を全部解除し、結果を最後までの形へ作り直す。適用と書き出しの前に呼ぶ。
+        /// 書き出しは作り直した結果を読むので、ここで同期して流す。
+        /// </summary>
+        public static void ClearDisplayUpTo(ModelContext model)
+        {
+            if (model?.ModifierStacks == null) return;
+            foreach (var g in model.ModifierStacks)
+            {
+                if (g == null || string.IsNullOrEmpty(g.DisplayUpToItemId)) continue;
+                g.DisplayUpToItemId = "";
+                foreach (var e in ModifierEvaluator.GetGraph(model))
+                    if (e.IsChain && ReferenceEquals(e.Group, g)) { Handler.Refresh(model, e, true); break; }
+            }
         }
 
         // ================================================================
@@ -357,6 +390,22 @@ namespace Poly_Ling.Modifiers
             mm.hideFlags = HideFlags.HideAndDontSave;
             mc.ReplaceUnityMeshDeferred(mm);
             mc.OriginalPositions = (Vector3[])mc.MeshObject.Positions.Clone();
+        }
+
+        /// <summary>
+        /// ドラッグ中に、表示ミラーのミラー側へ位置を写す（段 8）。ミラー側は添字恒等対応（BuildMirroredMeshObject）。
+        /// MirrorPair.MirrorPosition は距離を使わないので、生成ミラーと同じ MirrorPoint（軸・距離）で写す。
+        /// </summary>
+        public static void SyncMirrorSidePositions(ModelContext model, MeshContext result, Vector3[] pos, Action<MeshContext> upload)
+        {
+            var pair = model.GetMirrorPair(result);
+            var mmo = pair != null && ReferenceEquals(pair.Real, result) ? pair.Mirror?.MeshObject : null;
+            if (mmo == null || mmo.Vertices.Count != pos.Length) return;
+            int axis = MirrorBranchOps.ResolveMirrorAxis(result);
+            float dist = result.MirrorDistance;
+            for (int i = 0; i < pos.Length; i++) mmo.Vertices[i].Position = MirrorBranchOps.MirrorPoint(axis, dist, pos[i]);
+            mmo.InvalidatePositionCache();
+            upload?.Invoke(pair.Mirror);
         }
 
         private static string StatesText(List<ItemState> states)
@@ -416,6 +465,9 @@ namespace Poly_Ling.Modifiers
                     fp = Mix(fp, ItemSig(s, map, source));
                     steps.Add(s);
                     fps.Add(fp);
+                    // 「ここまで表示」：この項目より後は流さない（保存しない表示設定）。
+                    if (!string.IsNullOrEmpty(g.DisplayUpToItemId)
+                        && string.Equals(s.ScenarioItemId, g.DisplayUpToItemId, StringComparison.Ordinal)) break;
                 }
                 ulong finalFp = Mix(fp, (ulong)steps.Count + 1UL);
 
@@ -567,19 +619,7 @@ namespace Poly_Ling.Modifiers
                 for (int i = 0; i < pos.Length; i++) verts[i].Position = pos[i];
                 result.MeshObject.InvalidatePositionCache();
                 upload?.Invoke(result);
-
-                // 表示ミラーのミラー側も写す（段 8）。ミラー側は添字恒等対応（BuildMirroredMeshObject）。
-                // MirrorPair.MirrorPosition は距離を使わないので、生成ミラーと同じ MirrorPoint（軸・距離）で写す。
-                var pair = model.GetMirrorPair(result);
-                var mmo = pair != null && ReferenceEquals(pair.Real, result) ? pair.Mirror?.MeshObject : null;
-                if (mmo != null && mmo.Vertices.Count == pos.Length)
-                {
-                    int axis = MirrorBranchOps.ResolveMirrorAxis(result);
-                    float dist = result.MirrorDistance;
-                    for (int i = 0; i < pos.Length; i++) mmo.Vertices[i].Position = MirrorBranchOps.MirrorPoint(axis, dist, pos[i]);
-                    mmo.InvalidatePositionCache();
-                    upload?.Invoke(pair.Mirror);
-                }
+                SyncMirrorSidePositions(model, result, pos, upload);
             }
 
             public void Release(ModelContext model, ModifierEvaluator.Entry entry)
@@ -592,7 +632,7 @@ namespace Poly_Ling.Modifiers
                 }
                 // 元メッシュの面の塗りを戻す（Refresh で止めたもの）。
                 var source = entry?.Input(SourceKey);
-                if (source != null) source.HideFaceShading = false;
+                if (source != null) { source.HideFaceShading = false; source.HideCageLines = false; }
             }
         }
     }

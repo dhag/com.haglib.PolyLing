@@ -278,6 +278,7 @@ namespace Poly_Ling.Player
             parent.Add(ToggleRow("morphs",    "モーフ", () => _pmxSettings.ExportMorphs,    v => _pmxSettings.ExportMorphs    = v));
             parent.Add(ToggleRow("bodies",    "剛体",   () => _pmxSettings.ExportBodies,    v => _pmxSettings.ExportBodies    = v));
             parent.Add(ToggleRow("joints",    "ジョイント", () => _pmxSettings.ExportJoints, v => _pmxSettings.ExportJoints  = v));
+            parent.Add(ApplyModifiersRow(() => _pmxSettings.ApplyModifiers, v => _pmxSettings.ApplyModifiers = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
@@ -300,6 +301,7 @@ namespace Poly_Ling.Player
                 ExportMorphs     = _pmxSettings.ExportMorphs,
                 ExportBodies     = _pmxSettings.ExportBodies,
                 ExportJoints     = _pmxSettings.ExportJoints,
+                ApplyModifiers   = _pmxSettings.ApplyModifiers,
                 OutputBinaryPMX  = _pmxSettings.OutputBinaryPMX,
                 OutputCSV        = _pmxSettings.OutputCSV,
                 DecimalPrecision = _pmxSettings.DecimalPrecision,
@@ -325,6 +327,7 @@ namespace Poly_Ling.Player
             parent.Add(ToggleRow("embedBoneWeights", "BWを埋め込む",    () => _mqoSettings.EmbedBoneWeightsInMQO, v => _mqoSettings.EmbedBoneWeightsInMQO = v));
             parent.Add(ToggleRow("skipBakedMirror",  "BakedMirrorをスキップ", () => _mqoSettings.SkipBakedMirror, v => _mqoSettings.SkipBakedMirror       = v));
             parent.Add(ToggleRow("skipNamedMirror",  "名前ミラー(+)をスキップ", () => _mqoSettings.SkipNamedMirror, v => _mqoSettings.SkipNamedMirror    = v));
+            parent.Add(ApplyModifiersRow(() => _mqoSettings.ApplyModifiers, v => _mqoSettings.ApplyModifiers = v));
         }
 
         private MQOExportSettings CloneMqoSettings() => _mqoSettings.Clone();
@@ -356,6 +359,7 @@ namespace Poly_Ling.Player
                 () => _objSettings.ExportHiddenFaces, v => _objSettings.ExportHiddenFaces = v));
             parent.Add(ToggleRow("lines", "補助線を l 行で出力",
                 () => _objSettings.ExportLines, v => _objSettings.ExportLines = v));
+            parent.Add(ApplyModifiersRow(() => _objSettings.ApplyModifiers, v => _objSettings.ApplyModifiers = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
@@ -405,6 +409,7 @@ namespace Poly_Ling.Player
                 () => _stlSettings.ExportInvisibleObjects, v => _stlSettings.ExportInvisibleObjects = v));
             parent.Add(ToggleRow("hiddenFaces", "非表示面も出力",
                 () => _stlSettings.ExportHiddenFaces, v => _stlSettings.ExportHiddenFaces = v));
+            parent.Add(ApplyModifiersRow(() => _stlSettings.ApplyModifiers, v => _stlSettings.ApplyModifiers = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
@@ -457,6 +462,7 @@ namespace Poly_Ling.Player
             parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
                 () => _vrmSettings.ExportInvisibleObjects,
                 v => _vrmSettings.ExportInvisibleObjects = v));
+            parent.Add(ApplyModifiersRow(() => _vrmSettings.ApplyModifiers, v => _vrmSettings.ApplyModifiers = v));
 
             // 必須関節が欠けると VRM ビューアは読み込みを拒否する。
             // 上半身だけ・片側だけのモデルを確認したいときに使う。
@@ -525,6 +531,7 @@ namespace Poly_Ling.Player
                 () => _gltfSettings.ExportMorphTargets, v => _gltfSettings.ExportMorphTargets = v));
             parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
                 () => _gltfSettings.ExportInvisibleObjects, v => _gltfSettings.ExportInvisibleObjects = v));
+            parent.Add(ApplyModifiersRow(() => _gltfSettings.ApplyModifiers, v => _gltfSettings.ApplyModifiers = v));
 
             parent.Add(Separator());
             var note = new Label("アニメーション・カメラ・ライトは出力しません。");
@@ -559,6 +566,7 @@ namespace Poly_Ling.Player
                 () => _fbxSettings.ExportMorphTargets, v => _fbxSettings.ExportMorphTargets = v));
             parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
                 () => _fbxSettings.ExportInvisibleObjects, v => _fbxSettings.ExportInvisibleObjects = v));
+            parent.Add(ApplyModifiersRow(() => _fbxSettings.ApplyModifiers, v => _fbxSettings.ApplyModifiers = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
@@ -627,6 +635,14 @@ namespace Poly_Ling.Player
             v.style.marginBottom    = 4;
             v.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
             return v;
+        }
+
+        /// <summary>全形式に共通の「モディファイアを適用」（Blender の Apply Modifiers）。切ると元のメッシュだけを書く。</summary>
+        private VisualElement ApplyModifiersRow(Func<bool> get, Action<bool> set)
+        {
+            var row = ToggleRow("applyModifiers", "モディファイアを適用", get, set);
+            row.tooltip = "モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す";
+            return row;
         }
 
         private VisualElement ToggleRow(string id, string label, Func<bool> get, Action<bool> set)

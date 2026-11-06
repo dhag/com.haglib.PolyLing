@@ -1054,6 +1054,7 @@ namespace Poly_Ling.Remote
             to.Billboard            = from.Billboard;
             to.DoubleSidedDisplay   = from.DoubleSidedDisplay;
             to.HideFaceShading      = from.HideFaceShading;
+            to.HideCageLines        = from.HideCageLines;
             to.MirrorBakeState      = from.MirrorBakeState;
             to.BoneTransform        = from.BoneTransform;
             to.PmxBone              = from.PmxBone;

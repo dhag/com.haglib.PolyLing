@@ -29,6 +29,7 @@ using Poly_Ling.UndoSystem;
 using Poly_Ling.Selection;
 using Poly_Ling.Ops;
 using Poly_Ling.PrimitiveMesh;
+using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
@@ -48,14 +49,32 @@ namespace Poly_Ling.Player
         {
             switch (cmd)
             {
+                case CreateSweepMeshCommand c:
+                {
+                    // モデルが無くても作れる（Maya の Sweep Mesh と同じ。図形生成と同じくプロジェクトを用意する）。
+                    int swModel = c.ModelIndex;
+                    string swWhy = EnsureModelForAssembly(ref project, ref model, ref swModel);
+                    if (swWhy != null) { Fail(swWhy); return true; }
+                    if (OnEdgeRibbonFace == null) { Fail("edge ribbon face handler not wired"); return true; }
+                    if (OnCreatePrimitiveMesh == null) { Fail("primitive mesh handler not wired"); return true; }
+                    string reason = ExecuteCreateSweep(project, model, c);
+                    if (reason != null) Fail(reason);
+                    return true;
+                }
+
+                case AddSpringChainFromHistoryCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return true; }
+                    string chainWhy = ExecuteAddSpringChainFromHistory(project, model, c);
+                    if (chainWhy != null) Fail(chainWhy);
+                    return true;
+                }
+
                 case CreateEdgePipeCommand c:
                 {
                     if (model == null || project == null) { Fail("no current model"); return true; }
                     if (OnEdgeRibbonFace == null) { Fail("edge ribbon face handler not wired"); return true; }
                     if (OnCreatePrimitiveMesh == null) { Fail("primitive mesh handler not wired"); return true; }
-
-                    if (!c.AddStartTag)
-                    { Fail("パイプにするには開始タグが要ります（梯子の自動検索の起点）"); return true; }
 
                     if (c.Placement.AddMode != PrimitiveAddMode.NewObject &&
                         c.Placement.AddMode != PrimitiveAddMode.AddToExisting)
@@ -150,9 +169,14 @@ namespace Poly_Ling.Player
 
             int groupsBeforeRibbon = model.ModifierStackCount;
 
+            // 開いた連なりは開始タグを付けて梯子で読み、輪だけの辺はタグを付けられないので
+            // 閉じた帯のまま円環で読む（EdgeRibbonFaceOps の【梯子タグ】）。
+            bool ringOnly = AllEdgeChainsClosed(model, c.MasterIndices, setName);
+            var acquireMethod = ringOnly ? BeltAcquireMethod.AutoRing : BeltAcquireMethod.AutoLadder;
+
             var ribbonResult = Dispatch(new EdgeRibbonFaceCommand(
                 c.ModelIndex, c.MasterIndices, c.WidthWorld, ribbonPl, c.ObjectIds,
-                true, c.AddEndTag, setName));
+                !ringOnly, !ringOnly && c.AddEndTag, setName));
             if (ribbonResult != null && !ribbonResult.Success)
                 return $"帯面を作れませんでした: {ribbonResult.Reason}";
 
@@ -165,7 +189,7 @@ namespace Poly_Ling.Player
             if (ribbonGroup == null) return "帯面のモディファイアスタックが作られていません";
 
             // ── 3. 帯を梯子として取り込む ──
-            var acquired = BeltAcquire.Acquire(ribbonCtx, BeltAcquireMethod.AutoLadder, false, "");
+            var acquired = BeltAcquire.Acquire(ribbonCtx, acquireMethod, false, "");
             if (!acquired.Ok) return $"帯から梯子を取り込めませんでした: {acquired.Message}";
             ladders = acquired.Belts.Count;
 
@@ -192,7 +216,7 @@ namespace Poly_Ling.Player
                 left, right, starts, closed, flip, height,
                 c.Orient, c.Spline, pipePl,
                 model.MeshContextList.IndexOf(ribbonCtx),
-                BeltAcquireMethod.AutoLadder, false, ""));
+                acquireMethod, false, ""));
             if (pipeResult != null && !pipeResult.Success)
                 return $"パイプを作れませんでした: {pipeResult.Reason}";
 
@@ -219,7 +243,33 @@ namespace Poly_Ling.Player
             if (hideResult != null && !hideResult.Success)
                 return $"帯面を隠せませんでした: {hideResult.Reason}";
 
+            // 帯とカーブは形を決める材料で、書き出すのはパイプだけ（Maya のカーブと同じ）。
+            // PMX は隠したものも書き出すので、印を立てないと帯が板のままパイプと重なって出る。
+            ribbonCtx.ExcludeFromExport = true;
+            foreach (int src in c.MasterIndices ?? Array.Empty<int>())
+            {
+                var srcCtx = model.GetMeshContext(src);
+                if (srcCtx != null && IsCurveObject(srcCtx.MeshObject)) srcCtx.ExcludeFromExport = true;
+            }
+
             return null;
+        }
+
+        /// <summary>辞書の辺が全部、閉じた連なりか。</summary>
+        private static bool AllEdgeChainsClosed(ModelContext model, int[] masterIndices, string setName)
+        {
+            bool any = false;
+            foreach (int idx in masterIndices ?? Array.Empty<int>())
+            {
+                var edges = EdgeRibbonFaceTool.ResolveEdges(model.GetMeshContext(idx), setName);
+                if (edges == null || edges.Count == 0) continue;
+                foreach (var chain in LineGroupEditOps.SplitChains(edges))
+                {
+                    if (!chain.Closed) return false;
+                    any = true;
+                }
+            }
+            return any;
         }
 
         /// <summary>

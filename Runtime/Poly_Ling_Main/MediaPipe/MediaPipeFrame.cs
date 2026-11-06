@@ -3,7 +3,7 @@
 // 読み取りはここだけで行い、使う側（姿勢・表情転写）は読み取り済みのこの型を使う。
 // Runtime/Poly_Ling_Main/MediaPipe/ に配置
 //
-// ■ 形（送り手は データとツール/VRMビュワー/polyling_motion_studio/mediapipe_client.html）
+// ■ 形（送り手は データとツール/ツール/VRMビュワー/polyling_motion_studio/mediapipe_client.html）
 //   {type:'mediapipe', seq, time, image:{w,h},
 //    face:     {landmarks:[[x,y,z,visibility], …]},                       … 478 点（先頭 468 点が顔、残りは虹彩）
 //    pose:     {landmarks:[[x,y,z,visibility], …], world:[[x,y,z,visibility], …]}   … 33 点

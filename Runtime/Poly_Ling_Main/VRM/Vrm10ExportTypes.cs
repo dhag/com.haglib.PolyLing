@@ -89,6 +89,10 @@ namespace Poly_Ling.Vrm
         [PLParam(Description = "非表示のメッシュも書き出す")]
         public bool ExportInvisibleObjects = false;
 
+        /// <summary>モディファイアを適用した形を元の名前で書き出すか。切ると元のメッシュだけ。</summary>
+        [PLParam(Description = "モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけを書き出す")]
+        public bool ApplyModifiers = true;
+
         // ================================================================
         // モーフ・表情・揺れ
         // ================================================================
@@ -153,6 +157,7 @@ namespace Poly_Ling.Vrm
                 ExportNormals = this.ExportNormals,
                 ExportUVs = this.ExportUVs,
                 ExportInvisibleObjects = this.ExportInvisibleObjects,
+                ApplyModifiers = this.ApplyModifiers,
                 ExportMorphTargets = this.ExportMorphTargets,
                 ExportExpressions = this.ExportExpressions,
                 ExportSpringBones = this.ExportSpringBones,

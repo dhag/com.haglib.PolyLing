@@ -18,6 +18,8 @@ namespace Poly_Ling.Data
         Description = "メッシュを親（ケージ）として Catmull-Clark で細分化した滑らかな子を作る。子は親の子に置かれ、親の頂点編集・面の増減・移動に追随する。")]
     [PLUiRoute("サブディビジョン", "leftPane.fold.Topology", "leftPane.subdivisionBtn", "subdivision.level", "subdivision.create")]
     [PLModifier(Capture = PLStackCapture.Always, FollowsDrag = true)]   // 新しく子を作るとき（PlayerCommandDispatcher.Subdivision.cs）。ドラッグ中はステンシルで追随
+    [PLModifierInput(Accepts = "選択中のオブジェクト", Decide = "選択", Result = "親の子の新しいオブジェクト（モディファイアパネルでは 1 つに見せる）",
+        ReEdit = "カードの回数", DefaultInput = "なし：対象が要る（Blender のモディファイアも対象のオブジェクトへ足す）")]
     public class SubdivideMeshCommand : PanelCommand
     {
         [PLParam(Description = "細分化する親（ケージ）の masterIndex", Required = true,

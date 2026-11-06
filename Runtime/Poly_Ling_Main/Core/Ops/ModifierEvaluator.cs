@@ -989,7 +989,7 @@ namespace Poly_Ling.Ops
         /// </summary>
         public static bool IsOutputEdited(MeshContext o)
         {
-            if (o == null || o.ModifierForwardSig == 0UL) return false;
+            if (o == null || o.ModifierForwardSig == 0UL || _dragFollowedOutputs.Contains(o)) return false;
             return o.ModifierForwardSig != OutputContentSig(o);
         }
 
@@ -1006,7 +1006,7 @@ namespace Poly_Ling.Ops
             bool pending = false;
             foreach (var o in e.Outputs)
             {
-                if (o == null) continue;
+                if (o == null || _dragFollowedOutputs.Contains(o)) continue;   // ドラッグ中の追随は手の編集ではない
                 if (o.ModifierForwardSig == 0UL) { o.ModifierForwardSig = OutputContentSig(o); continue; }
                 if (o.ModifierForwardSig != OutputContentSig(o)) pending = true;
             }
@@ -1210,6 +1210,9 @@ namespace Poly_Ling.Ops
         {
             var pass = new PassInfo { Trigger = trigger ?? "" };
             if (model == null || run == null || _evaluating) return pass;
+
+            // ドラッグ中の追随が書いた出力は手の編集ではない（未確定の判定に掛けない）。
+            SettleDragFollowedOutputs();
 
             var order  = GetGraph(model);
             var states = States(model);
@@ -1457,30 +1460,88 @@ namespace Poly_Ling.Ops
             if (model == null || mc?.MeshObject == null) return;
             var list = CachedGraph(model);
             if (list == null) return;
-            var states = States(model);
+            SyncFromInputCore(model, list, States(model), mc, upload, new HashSet<MeshContext> { mc });
+        }
 
+        /// <summary>
+        /// 位置を書いた出力を次の入力にして下流へ順に伝える（カーブ → 帯 → パイプ → 処理列。操作統合計画 段 6）。
+        /// visited は 1 回の同期で同じ出力を二度たどらないための控え。
+        /// </summary>
+        private static void SyncFromInputCore(ModelContext model, List<Entry> list, Dictionary<ulong, State> states,
+            MeshContext mc, Action<MeshContext> upload, HashSet<MeshContext> visited)
+        {
             foreach (var e in list)
             {
                 if (!e.HasInput(mc)) continue;
+
+                List<MeshContext> moved = null;
+                Action<MeshContext> up = o =>
+                {
+                    upload?.Invoke(o);
+                    if (moved == null) moved = new List<MeshContext>();
+                    moved.Add(o);
+                };
 
                 // 処理列は項目の並び・有効・種類がグラフを作り直さずに変わるので、その時点の値で決める（段 3）。
                 bool follows = e.IsChain ? Poly_Ling.Modifiers.ModifierChainHandler.FollowsDrag(e) : e.FollowsDrag;
                 if (follows && _handlers.TryGetValue(e.HandlerKey, out var h))
                 {
-                    h.SyncDrag(model, e, mc, upload);
+                    h.SyncDrag(model, e, mc, up);
                     // 面構成を変える項目を追随の口で写した処理列（段 8）は、写しは位置だけ（法線・ミラー実体化の
                     // 境界の組は最後の Evaluate のまま）なので、離したとき・コマンドの終わりに作り直す印も立てる。
                     if (e.IsChain && Poly_Ling.Modifiers.ModifierChainHandler.HasTopologyItem(e)
                         && e.StateId != 0UL && states.TryGetValue(e.StateId, out var cst))
                         cst.Dirty = true;
                 }
-                else if (e.StateId != 0UL && states.TryGetValue(e.StateId, out var st))
+                else
                 {
+                    // 処理器の無い生成（帯・パイプ）は位置だけ書く。作り直しは印で離したときに流す。
+                    if (follows && !_evaluating && e.Status == ModifierEntryStatus.Evaluate)
+                        GeneratorDragFollower?.Invoke(model, e, mc, up);
+
                     // 追随しない項目は印だけ。署名はドラッグの毎フレームでは取らない。
                     // 流すのは頂点ドラッグを離したとき・コマンドの終わり（EvaluatePending。処理器の節点もそこで流す）。
-                    st.Dirty = true;
+                    if (e.StateId != 0UL && states.TryGetValue(e.StateId, out var st))
+                        st.Dirty = true;
                 }
+
+                if (moved == null) continue;
+                foreach (var o in moved)
+                    if (visited.Add(o)) SyncFromInputCore(model, list, states, o, upload, visited);
             }
+        }
+
+        // ================================================================
+        // 処理器の無い生成のドラッグ中の追随（操作統合計画 段 6）
+        // ================================================================
+
+        /// <summary>生成の項目の出力へ位置だけを書く口。書いた出力は upload へ渡す。</summary>
+        public delegate void GeneratorDragFollow(ModelContext model, Entry entry, MeshContext movedInput, Action<MeshContext> upload);
+
+        /// <summary>
+        /// 生成の項目（FollowsDrag で処理器の無いもの）の追随。作り直しの組み立てが Player 層にあるので、
+        /// Player 層の PlayerCommandDispatcher が登録する。
+        /// </summary>
+        public static GeneratorDragFollow GeneratorDragFollower;
+
+        /// <summary>追随で位置を書いた出力（離したときに未確定と取り違えないため）。</summary>
+        private static readonly HashSet<MeshContext> _dragFollowedOutputs = new HashSet<MeshContext>();
+
+        /// <summary>
+        /// 追随で出力へ位置を書いたことを控える。手の編集ではないので、次の流しの前に
+        /// 最後に書いた中身の記録（ModifierForwardSig）を今の中身へ合わせる（SettleDragFollowedOutputs）。
+        /// </summary>
+        public static void NoteDragFollowed(MeshContext output)
+        {
+            if (output != null) _dragFollowedOutputs.Add(output);
+        }
+
+        private static void SettleDragFollowedOutputs()
+        {
+            if (_dragFollowedOutputs.Count == 0) return;
+            foreach (var o in _dragFollowedOutputs)
+                if (o != null && o.ModifierForwardSig != 0UL) o.ModifierForwardSig = OutputContentSig(o);
+            _dragFollowedOutputs.Clear();
         }
     }
 }

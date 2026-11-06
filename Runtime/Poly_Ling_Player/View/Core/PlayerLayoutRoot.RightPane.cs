@@ -64,6 +64,8 @@ namespace Poly_Ling.Player
         public Button MaterialListBtn { get; private set; }
         /// <summary>右ペイン最上部：ヒューマノイドボーン選択の開閉ボタン。</summary>
         public Button HumanoidBoneSelectBtn { get; private set; }
+        /// <summary>右ペイン最上部：モディファイアパネルの開閉ボタン（操作統合計画 段 1）。</summary>
+        public Button ModifierPanelBtn { get; private set; }
 
         /// <summary>AddSection で作った全セクション（作成順）。</summary>
         public System.Collections.Generic.IReadOnlyList<VisualElement> RightSections => _rightSections;
@@ -198,7 +200,7 @@ namespace Poly_Ling.Player
         public VisualElement PartsSelectionSetSection { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
         public VisualElement ModifierStackSection    { get; private set; }
-        /// <summary>処理列（モディファイア枠組み計画 段 5）。元メッシュの選択を範囲にするので 3D 操作を保つ。</summary>
+        /// <summary>モディファイアパネル（常駐リスト。操作統合計画 段 1）。</summary>
         public VisualElement ModifierChainSection    { get; private set; }
         public VisualElement NormalExcludeSetSection { get; private set; }
         public VisualElement NormalEditSection     { get; private set; }
@@ -395,6 +397,7 @@ namespace Poly_Ling.Player
             // 最上部：常駐リストの開閉ボタン。スクロールの外に置き、常に見えるようにする。
             var pinnedBar = new VisualElement();
             pinnedBar.style.flexDirection = FlexDirection.Row;
+            pinnedBar.style.flexWrap      = Wrap.Wrap;
             pinnedBar.style.flexShrink    = 0;
             pinnedBar.style.paddingTop    = 4;
             pinnedBar.style.paddingLeft   = 4;
@@ -403,10 +406,12 @@ namespace Poly_Ling.Player
             MeshListBtn     = MakeBtn("オブジェクトリスト");
             MaterialListBtn = MakeBtn("マテリアルリスト");
             HumanoidBoneSelectBtn = MakeBtn("ヒューマノイドボーン");
-            foreach (var b in new[] { ModelListBtn, MeshListBtn, MaterialListBtn, HumanoidBoneSelectBtn })
+            ModifierPanelBtn = MakeBtn("モディファイア");
+            // 5 つを 1 行に並べると文字が切れるので、3 つと 2 つの 2 行に折り返す。
+            foreach (var b in new[] { ModelListBtn, MeshListBtn, MaterialListBtn, HumanoidBoneSelectBtn, ModifierPanelBtn })
             {
                 b.style.flexGrow  = 1;
-                b.style.flexBasis = 0;
+                b.style.flexBasis = new Length(30f, LengthUnit.Percent);
                 b.style.minWidth  = 0;
                 pinnedBar.Add(b);
             }
@@ -504,6 +509,8 @@ namespace Poly_Ling.Player
             MaterialListSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
             // ヒューマノイドボーン選択
             HumanoidBoneSelectSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
+            // モディファイア（選択中のオブジェクトの履歴とモディファイア）。下区画のパネルを開いても閉じない。
+            ModifierChainSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
 
             // ── オブジェクト移動TRSセクション
             ObjectMoveTRSSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
@@ -566,7 +573,6 @@ namespace Poly_Ling.Player
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
             ModifierStackSection         = AddSection(visible: false, kind: RightPanelKind.General);
-            ModifierChainSection         = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalExcludeSetSection    = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalEditSection          = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalTransplantSection    = AddSection(visible: false, kind: RightPanelKind.General);
@@ -774,6 +780,28 @@ namespace Poly_Ling.Player
                 _toolArea.style.flexGrow = 1;
                 _toolArea.style.height   = StyleKeyword.Auto;
             }
+        }
+
+        /// <summary>
+        /// 上区画の節を見える位置へ出す。下区画がペインの半分より高いときは半分まで下げる
+        /// （保存値は変えない。仕切りをドラッグしたときだけ保存する）。
+        /// </summary>
+        public void RevealPinnedSection(VisualElement section)
+        {
+            if (section == null || _pinnedScroll == null) return;
+
+            if (_toolArea != null && _toolArea.style.display == DisplayStyle.Flex && _rightPaneRoot != null)
+            {
+                float half = _rightPaneRoot.resolvedStyle.height * 0.5f;
+                if (half > 0f && _toolAreaDesiredH > half)
+                {
+                    _toolAreaDesiredH = half;
+                    ApplyToolAreaHeight();
+                }
+            }
+
+            // 開いたばかりの節はまだ配置されていないので、配置のあとで 1 回だけスクロールする。
+            _pinnedScroll.schedule.Execute(() => _pinnedScroll.ScrollTo(section)).ExecuteLater(50);
         }
 
         /// <summary>

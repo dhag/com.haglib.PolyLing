@@ -23,7 +23,15 @@ namespace Poly_Ling.Player
     public partial class PlayerPrimitiveMeshSubPanel
     {
         private static CubeMeshGenerator.CubeParams DefaultCubeParams()
-        { var p = CubeMeshGenerator.CubeParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        {
+            // パネルの既定は角丸なしの箱（Blender の Cube・Maya の polyCube と同じ）。
+            // コマンドの省略時の既定（CubeParams.Default）は既存のシナリオのために変えない。
+            var p = CubeMeshGenerator.CubeParams.Default;
+            p.Pivot = DefaultPivotBottom;
+            p.CornerRadius = 0f;
+            p.MeshName = "Cube";
+            return p;
+        }
         private static SphereMeshGenerator.SphereParams DefaultSphereParams()
         { var p = SphereMeshGenerator.SphereParams.Default; p.Pivot = DefaultPivotBottom; return p; }
         private static CylinderMeshGenerator.CylinderParams DefaultCylinderParams()
