@@ -194,17 +194,19 @@ namespace Poly_Ling.Player
         // 欄は残してあるので、別のデータで試すときは書き換えればよい。
         // ================================================================
 
-        private const string DefaultMqoPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\roboF_T5_SK.mqo";
+        // いずれも作業フォルダからの相対（PLSandbox が作業フォルダ基準で解決する）。
+        // データフォルダとシナリオ用の置き場の名前は PLProjectLayout から引く。
+        private static string DefaultMqoPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/データ/テストデータろぼFろぼK/Tpose/roboF_T5_SK_.mqo";
 
-        private const string DefaultOriginCsvPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\ローカル原点MoldelFKDL_5T.csv";
+        private static string DefaultOriginCsvPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/データ/テストデータろぼFろぼK/Tpose/ローカル原点MoldelFKDL_5T.csv";
 
-        private const string DefaultProfileCsvPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\データ\線分プロファイルなど。\frill_profile_cos.csv";
+        private static string DefaultProfileCsvPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/データ/線分プロファイルなど。/frill_profile_cos.csv";
 
-        private const string DefaultVrmPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\サンドボックス_シナリオ用\MCPで自動生成\tmpp.vrm";
+        private static string DefaultVrmPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/" + Poly_Ling.Core.PLProjectLayout.ScenarioSandboxFolder + "/MCPで自動生成/tmpp.vrm";
 
         private const string DefaultLadderName = "円筒24C";
 

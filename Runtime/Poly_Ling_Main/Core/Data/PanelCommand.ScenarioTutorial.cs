@@ -27,7 +27,7 @@ namespace Poly_Ling.Data
         [PLParam(Description = "流すシナリオの名前", Required = true)]
         public string ScenarioName { get; }
 
-        [PLParam(Description = "書き出す MD のパス。作業フォルダからの相対で、拡張子は .md。置き場は データとツール/サンドボックス_シナリオ用/ の下。画像は同じフォルダの <名前>_images/ に残る", Required = true)]
+        [PLParam(Description = "書き出す MD のパス。作業フォルダからの相対で、拡張子は .md。置き場は {layout:DataFolder}/{layout:ScenarioSandboxFolder}/ の下。画像は同じフォルダの <名前>_images/ に残る", Required = true)]
         public string OutPath { get; }
 
         [PLParam(Description = "原稿のファイルのパス。作業フォルダからの相対。markdownText とどちらか一方")]

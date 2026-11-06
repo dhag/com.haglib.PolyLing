@@ -49,11 +49,11 @@ namespace Poly_Ling.Core
         private const string UnsetMessage =
             "作業フォルダが未設定です。左ペインの「その他 → 作業フォルダ」で選んでください";
 
-        /// <summary>コマンドから直下に新規作成させないフォルダ（作業フォルダ直下の名前）。</summary>
-        private const string NoDirectWriteFolder = "データとツール";
+        /// <summary>コマンドから直下に新規作成させないフォルダ（作業フォルダ直下の名前。PLProjectLayout）。</summary>
+        private static string NoDirectWriteFolder => PLProjectLayout.DataFolder;
 
-        /// <summary>シナリオ・ランタイムの生成物の置き場（拒否の文言で案内する）。</summary>
-        private const string ScenarioSandboxFolder = "サンドボックス_シナリオ用";
+        /// <summary>シナリオ・ランタイムの生成物の置き場（拒否の文言で案内する。PLProjectLayout）。</summary>
+        private static string ScenarioSandboxFolder => PLProjectLayout.ScenarioSandboxFolder;
 
         private static readonly object _lock = new object();
 
@@ -371,7 +371,7 @@ namespace Poly_Ling.Core
             int sep = rest.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
             if (sep >= 0 && Directory.Exists(Path.Combine(guarded, rest.Substring(0, sep)))) return true;
 
-            reason = $"{NoDirectWriteFolder} の直下には作れません。{NoDirectWriteFolder}/{ScenarioSandboxFolder}（シナリオ・ランタイムの生成物）か SandBox（デバッグ）の下を指定してください";
+            reason = $"{NoDirectWriteFolder} の直下には作れません。{NoDirectWriteFolder}/{ScenarioSandboxFolder}（シナリオ・ランタイムの生成物）か {PLProjectLayout.DebugSandboxFolder}（デバッグ）の下を指定してください";
             return false;
         }
 

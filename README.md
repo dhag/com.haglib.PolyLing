@@ -51,8 +51,8 @@ ModelListClient.cs / MaterialListClient.cs / MeshListClient.cs
 各種パラメータ置き場
 
 C:\Users\<ユーザー名>\AppData\LocalLow\HagiharaLab\PolyLing\PolyLing
-例えばユーザー名がdhagなら
-C:\Users\dhag\AppData\LocalLow\HagiharaLab\PolyLing\PolyLing
+（<ユーザー名> は Windows のユーザー名。Application.persistentDataPath/PolyLing）
+作業フォルダ内の置き場所の名前（データとツール・サンドボックス_シナリオ用・SandBox）は、このフォルダの ProjectLayout.json で変えられる（無ければ既定値。PLProjectLayout.cs）。
 ----------------------------------
 PMX
 1.読みこみ

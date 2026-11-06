@@ -121,8 +121,17 @@ namespace Poly_Ling.Data
         /// </summary>
         public string TextKey { get; set; } = "";
 
-        /// <summary>スキーマの説明文。空なら説明なし。</summary>
-        public string Description { get; set; } = "";
+        /// <summary>
+        /// スキーマの説明文。空なら説明なし。
+        /// {layout:項目名} は読み出し時に置き場所の設定の値へ置き換わる（Poly_Ling.Core.PLProjectLayout.Expand）。
+        /// 属性には定数しか書けないため、作業フォルダ内の置き場所の名前は目印で書く。
+        /// </summary>
+        public string Description
+        {
+            get => Poly_Ling.Core.PLProjectLayout.Expand(_description);
+            set => _description = value ?? "";
+        }
+        private string _description = "";
 
         /// <summary>下限。double.NaN は指定なし。</summary>
         public double Min { get; set; } = double.NaN;

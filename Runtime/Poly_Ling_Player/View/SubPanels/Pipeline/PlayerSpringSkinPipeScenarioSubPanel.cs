@@ -183,14 +183,16 @@ namespace Poly_Ling.Player
         // 梯子と断面は同じ MQO の中に入っているオブジェクトを名前で指す。
         // ================================================================
 
-        private const string DefaultMqoPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\roboF_T5_SK.mqo";
+        // いずれも作業フォルダからの相対（PLSandbox が作業フォルダ基準で解決する）。
+        // データフォルダとシナリオ用の置き場の名前は PLProjectLayout から引く。
+        private static string DefaultMqoPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/データ/テストデータろぼFろぼK/Tpose/roboF_T5_SK_.mqo";
 
-        private const string DefaultOriginCsvPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\テストデータろぼFろぼK\Tpose\ローカル原点MoldelFKDL_5T.csv";
+        private static string DefaultOriginCsvPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/データ/テストデータろぼFろぼK/Tpose/ローカル原点MoldelFKDL_5T.csv";
 
-        private const string DefaultVrmPath =
-            @"D:\UNITY保存の品\TEO3.0開発中\PolyLing\データとツール\サンドボックス_シナリオ用\MCPで自動生成\tmpp_pipe.vrm";
+        private static string DefaultVrmPath =>
+            Poly_Ling.Core.PLProjectLayout.DataFolder + "/" + Poly_Ling.Core.PLProjectLayout.ScenarioSandboxFolder + "/MCPで自動生成/tmpp_pipe.vrm";
 
         /// <summary>梯子。MQO の「頭」の下にある開いたはしご（四角形 8 枚＋開始／終了三角形）。</summary>
         private const string DefaultLadderName = "アホ毛用はしご";
