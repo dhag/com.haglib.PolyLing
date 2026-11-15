@@ -1,16 +1,22 @@
-// Assets/Editor/Poly_Ling_/Core/Data/MorphExpression.cs
-// モーフエクスプレッション（複数メッシュのモーフをグループ化）
-// PMXエクスポート時に統合して1つのモーフとして出力
+// MorphExpression.cs
+// 表情（PolyLing_モーフ整理計画.md 3.5）。
+//
+// 【中身】表情は「形の名前 × 重み」の並び（GroupChildren）と VRM の付帯データだけを持つ。
+//   ・グループの表情（Type == Group）：子の名前 × 重み。子は形の名前（ShapeBlendOps.Resolve で解決）。
+//   ・頂点の表情（Type == Vertex 等）：同じ名前の形を指す（形が正本）。VRM の付帯データを持つためだけに残す。
+//   名前・英語名・パネルは表情の表示名。形の名前・英語名・パネルは形（ShapeDef）が持つ。
+//   段 7 でオブジェクト番号で隠しオブジェクトを指す欄（MeshEntries・IsSymmetric）は廃止した。
+// 型の名前に Morph を残しているのは、PMX のモーフ（グループ・頂点…の種類）に対応する表情の型として、
+// 保存形式（morphExpressions）とリモートの語彙で使われているため。
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Poly_Ling.Data;
 
 namespace Poly_Ling.Data
 {
     /// <summary>
-    /// モーフタイプ（PMX仕様準拠）
+    /// モーフの種類（PMX 仕様準拠の番号）。表情の種類として使う。
     /// </summary>
     public enum MorphType
     {
@@ -27,38 +33,14 @@ namespace Poly_Ling.Data
         Impulse = 10
     }
 
-    /// <summary>
-    /// モーフメッシュエントリ（メッシュインデックス＋ウェイト）
-    /// </summary>
-    [Serializable]
-    public struct MorphMeshEntry
-    {
-        /// <summary>MeshContextリスト内のインデックス</summary>
-        public int MeshIndex;
-
-        /// <summary>このメッシュに適用するウェイト（グループモーフのWeight由来）</summary>
-        public float Weight;
-
-        public MorphMeshEntry(int meshIndex, float weight = 1f)
-        {
-            MeshIndex = meshIndex;
-            Weight = weight;
-        }
-
-        public override string ToString()
-        {
-            return $"({MeshIndex}, W:{Weight:F2})";
-        }
-    }
-
-    /// <summary>グループモーフの子への参照（名前主）。</summary>
+    /// <summary>グループの表情の子への参照（形の名前 × 重み）。</summary>
     [Serializable]
     public struct MorphGroupChild
     {
-        /// <summary>子モーフ名。</summary>
+        /// <summary>子の名前（形の名前）。</summary>
         public string Name;
 
-        /// <summary>適用率。</summary>
+        /// <summary>重み。</summary>
         public float Weight;
 
         public MorphGroupChild(string name, float weight)
@@ -68,14 +50,11 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>
-    /// モーフエクスプレッション
-    /// 複数メッシュのモーフを1つの名前でグループ化
-    /// </summary>
+    /// <summary>表情。</summary>
     [Serializable]
     public class MorphExpression
     {
-        /// <summary>モーフ名</summary>
+        /// <summary>表情の名前</summary>
         public string Name = "";
 
         /// <summary>英語名</summary>
@@ -84,50 +63,15 @@ namespace Poly_Ling.Data
         /// <summary>パネル（PMX: 0=眉, 1=目, 2=口, 3=その他）</summary>
         public int Panel = 3;
 
-        /// <summary>モーフタイプ</summary>
+        /// <summary>種類</summary>
         public MorphType Type = MorphType.Vertex;
-
-        /// <summary>
-        /// 【参照禁止・非推奨】対称モーフかどうか。
-        ///
-        /// ミラー適用の可否は MeshContext.MorphMirrorPolicy が持つ。
-        /// ミラーが MeshContext 単位の機構である以上、式レベルの真偽値では
-        /// 「どの実体にミラーを効かせるか」を表現できないため、本フィールドは役目を終えた。
-        /// 規約は MorphMirrorPolicy.cs 冒頭のコメントを正典とする。
-        ///
-        /// フィールド自体は、リモート転送のバイト列を動かさないために残している。
-        /// 新しい判断に使わないこと。
-        /// </summary>
-        public bool IsSymmetric = true;
-
-        /// <summary>所属するモーフメッシュのエントリリスト（インデックス＋ウェイト）</summary>
-        public List<MorphMeshEntry> MeshEntries = new List<MorphMeshEntry>();
-
-        /// <summary>
-        /// 後方互換用：メッシュインデックスのみのリスト（get/set対応）
-        /// </summary>
-        public List<int> MeshIndices
-        {
-            get => MeshEntries.Select(e => e.MeshIndex).ToList();
-            set
-            {
-                MeshEntries.Clear();
-                if (value != null)
-                {
-                    foreach (var idx in value)
-                        MeshEntries.Add(new MorphMeshEntry(idx, 1f));
-                }
-            }
-        }
 
         /// <summary>作成日時</summary>
         public DateTime CreatedAt = DateTime.Now;
 
         /// <summary>
-        /// グループモーフの子（Type == MorphType.Group のときのみ）。
-        /// PMX のグループモーフは子モーフを重み付きで参照する。取り込み時に
-        /// 子の内容を親へ展開してしまうと、この参照関係が失われて書き戻せない。
-        /// 参照は名前で持つ（番号はモーフの並び替えで壊れる）。
+        /// グループの子（Type == MorphType.Group のとき）。形の名前 × 重み。
+        /// 参照は名前で持つ（番号は並び替えで壊れる）。
         /// </summary>
         public List<MorphGroupChild> GroupChildren = new List<MorphGroupChild>();
 
@@ -139,10 +83,6 @@ namespace Poly_Ling.Data
         /// </summary>
         public VrmExpressionData Vrm = null;
 
-        // ================================================================
-        // コンストラクタ
-        // ================================================================
-
         public MorphExpression()
         {
         }
@@ -153,109 +93,11 @@ namespace Poly_Ling.Data
             Type = type;
         }
 
-        // ================================================================
-        // プロパティ
-        // ================================================================
-
-        /// <summary>有効なセットか</summary>
-        public bool IsValid => !string.IsNullOrEmpty(Name) && MeshEntries.Count > 0;
-
-        /// <summary>メッシュ数</summary>
-        public int MeshCount => MeshEntries.Count;
-
-        /// <summary>頂点モーフか</summary>
+        /// <summary>頂点の表情か（同じ名前の形を指す）</summary>
         public bool IsVertexMorph => Type == MorphType.Vertex;
 
-        /// <summary>UVモーフか</summary>
-        public bool IsUVMorph => Type == MorphType.UV || 
-                                  Type == MorphType.UV1 || 
-                                  Type == MorphType.UV2 || 
-                                  Type == MorphType.UV3 || 
-                                  Type == MorphType.UV4;
-
-        // ================================================================
-        // 操作
-        // ================================================================
-
-        /// <summary>メッシュを追加（weight=1.0）</summary>
-        public void AddMesh(int meshIndex)
-        {
-            AddMesh(meshIndex, 1f);
-        }
-
-        /// <summary>メッシュをウェイト付きで追加</summary>
-        public void AddMesh(int meshIndex, float weight)
-        {
-            if (!ContainsMesh(meshIndex))
-            {
-                MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
-            }
-        }
-
-        /// <summary>メッシュを削除</summary>
-        public bool RemoveMesh(int meshIndex)
-        {
-            int idx = MeshEntries.FindIndex(e => e.MeshIndex == meshIndex);
-            if (idx >= 0)
-            {
-                MeshEntries.RemoveAt(idx);
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>メッシュを含むか</summary>
-        public bool ContainsMesh(int meshIndex)
-        {
-            return MeshEntries.Exists(e => e.MeshIndex == meshIndex);
-        }
-
-        /// <summary>メッシュインデックスからエントリを取得</summary>
-        public MorphMeshEntry? GetEntry(int meshIndex)
-        {
-            int idx = MeshEntries.FindIndex(e => e.MeshIndex == meshIndex);
-            return idx >= 0 ? MeshEntries[idx] : (MorphMeshEntry?)null;
-        }
-
-        /// <summary>
-        /// メッシュインデックス調整（メッシュ削除時）
-        /// </summary>
-        public void AdjustIndicesOnRemove(int removedIndex)
-        {
-            // 該当インデックスのエントリを削除
-            MeshEntries.RemoveAll(e => e.MeshIndex == removedIndex);
-
-            // removedIndexより大きいインデックスを-1
-            for (int i = 0; i < MeshEntries.Count; i++)
-            {
-                if (MeshEntries[i].MeshIndex > removedIndex)
-                {
-                    var entry = MeshEntries[i];
-                    entry.MeshIndex--;
-                    MeshEntries[i] = entry;
-                }
-            }
-        }
-
-        /// <summary>
-        /// メッシュインデックス調整（メッシュ挿入時）
-        /// </summary>
-        public void AdjustIndicesOnInsert(int insertedIndex)
-        {
-            for (int i = 0; i < MeshEntries.Count; i++)
-            {
-                if (MeshEntries[i].MeshIndex >= insertedIndex)
-                {
-                    var entry = MeshEntries[i];
-                    entry.MeshIndex++;
-                    MeshEntries[i] = entry;
-                }
-            }
-        }
-
-        // ================================================================
-        // クローン
-        // ================================================================
+        /// <summary>UV の表情か（同じ名前の UV の形を指す）</summary>
+        public bool IsUVMorph => Type == MorphType.UV;
 
         public MorphExpression Clone()
         {
@@ -265,21 +107,15 @@ namespace Poly_Ling.Data
                 NameEnglish = this.NameEnglish,
                 Panel = this.Panel,
                 Type = this.Type,
-                IsSymmetric = this.IsSymmetric,
-                MeshEntries = this.MeshEntries.Select(e => new MorphMeshEntry(e.MeshIndex, e.Weight)).ToList(),
                 GroupChildren = this.GroupChildren.Select(c => new MorphGroupChild(c.Name, c.Weight)).ToList(),
                 Vrm = this.Vrm?.Clone(),
                 CreatedAt = this.CreatedAt
             };
         }
 
-        // ================================================================
-        // デバッグ
-        // ================================================================
-
         public override string ToString()
         {
-            return $"MorphExpression[{Name}]: {Type}, {(IsSymmetric ? "Symmetric" : "Asymmetric")}, {MeshCount} meshes";
+            return $"MorphExpression[{Name}]: {Type}, {GroupChildren.Count} children";
         }
     }
 }

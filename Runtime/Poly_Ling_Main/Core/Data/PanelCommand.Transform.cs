@@ -161,16 +161,25 @@ namespace Poly_Ling.Data
                  Description = "Delta の座標空間。Local は MasterIndices[0] のローカル空間", Required = true)]
         public MoveSelectedVerticesCommand.CoordSpace Space { get; }
 
+        /// <summary>
+        /// 直接の子も一緒に動かすか。false（既定）は子のワールド位置を保つよう補償する。
+        /// 「描画オブジェクトの姿勢」のギズモで原点だけ移動をドラッグしたときは、
+        /// そのパネルの「子を一緒に移動」の値が入る（ドラッグ中の見た目と同じ結果にするため）。
+        /// </summary>
+        [PLParam(Description = "直接の子も一緒に動かす。false（既定）は子のワールド位置を保つ")]
+        public bool MoveWithChildren { get; }
+
         public MovePivotCommand(
             int modelIndex, int[] masterIndices,
             Vector3 delta, MoveSelectedVerticesCommand.CoordSpace space,
-            ulong[] objectIds = null)
+            ulong[] objectIds = null, bool moveWithChildren = false)
             : base(modelIndex)
         {
             MasterIndices = masterIndices ?? System.Array.Empty<int>();
             ObjectIds     = objectIds;
             Delta         = delta;
             Space         = space;
+            MoveWithChildren = moveWithChildren;
         }
     }
 

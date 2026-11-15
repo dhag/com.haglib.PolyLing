@@ -509,6 +509,13 @@ namespace Poly_Ling.Player
                             _ => new Vector3(-p.x, p.y, p.z),
                         };
                     }
+                    // 形ごとの位置も実体側から取り直す（どちらも形を持たなければ何もしない）。
+                    Poly_Ling.Ops.ShapeOps.SyncMirrorShapes(realMo, mc.MeshObject, null, q => axis switch
+                    {
+                        Poly_Ling.Symmetry.SymmetryAxis.Y => new Vector3(q.x, -q.y, q.z),
+                        Poly_Ling.Symmetry.SymmetryAxis.Z => new Vector3(q.x, q.y, -q.z),
+                        _ => new Vector3(-q.x, q.y, q.z),
+                    });
                     onSyncMesh?.Invoke(mc);
                     break;
                 }
@@ -601,13 +608,20 @@ namespace Poly_Ling.Player
                     BakedMirrorSourceIndex = s.BakedMirrorSourceIndex,
                     HasBakedMirrorChild    = s.HasBakedMirrorChild,
                     MirrorGeometryDerived  = s.MirrorGeometryDerived,
-                    MorphParentIndex       = s.MorphParentIndex,
                     BindPose               = s.BindPose,
                     BonePoseData           = s.BonePoseData?.Clone(),
-                    MorphBaseData          = s.MorphBaseData?.Clone(),
                 };
                 dst.Add(d);
             }
+
+            // 形の一覧と今の形。頂点は形の控えごと複製されるので、一覧と今の形の番号も写す
+            // （写さないと、控えだけが残って今の形が基本の形として扱われる）。
+            if (src.Shapes != null)
+                foreach (var sd in src.Shapes)
+                    if (sd != null) dst.Shapes.Add(sd.Clone());
+            dst.CurrentShapeId  = src.CurrentShapeId;
+            dst.BaseShapeSource = src.BaseShapeSource?.Clone();
+            dst.PreviousShapeId = src.PreviousShapeId;
 
             if (src.MaterialReferences != null)
                 foreach (var m in src.MaterialReferences)

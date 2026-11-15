@@ -288,10 +288,6 @@ namespace Poly_Ling.Data
                         boneIndex++;
                         break;
 
-                    case MeshType.Morph:
-                        _cache[MeshCategory.Morph].Add(entry);
-                        break;
-
                     case MeshType.RigidBody:
                         _cache[MeshCategory.RigidBody].Add(entry);
                         break;

@@ -350,7 +350,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.NormalEditSection, ShowNormalEditPanel, _normalEditSubPanel);
             RegisterUiPanel("normalExcludeSet", "法線の除外セット",
                 _layoutRoot.NormalExcludeSetSection, ShowNormalExcludeSetPanel, _normalExcludeSubPanel);
-            RegisterUiPanel("meshSelectionSet", "オブジェクトの選択セット（描画・ボーン・モーフ）",
+            RegisterUiPanel("meshSelectionSet", "オブジェクトの選択セット（描画・ボーン）",
                 _layoutRoot.MeshSelectionSetSection, ShowMeshSelectionSetPanel, _meshSelSetSubPanel);
             RegisterUiPanel("partsSelectionSet", "パーツ選択セット（頂点・辺・面の選択辞書）",
                 _layoutRoot.PartsSelectionSetSection, ShowPartsSelectionSetPanel, _partsSelSetSubPanel);
@@ -388,10 +388,10 @@ namespace Poly_Ling.Player
                 _layoutRoot.ReferenceSymmetrySection, ShowReferenceSymmetryPanel, _referenceSymmetrySubPanel);
             RegisterUiPanel("modelBlend", "モデルブレンド（クローンにモデルごとの重みで混ぜる）",
                 _layoutRoot.ModelBlendSection, ShowModelBlendPanel, _modelBlendSubPanel);
-            RegisterUiPanel("morph", "モーフエクスプレッション（セット・エントリ・プレビュー・CSV）",
+            RegisterUiPanel("morph", "表情（形 × 重み）：作成・名前とパネル・形の重み・削除・試し表示・CSV",
                 _layoutRoot.MorphSection, ShowMorphPanel, _morphSubPanel);
-            RegisterUiPanel("morphCreate", "モーフ作成とモデルへの展開",
-                _layoutRoot.MorphCreateSection, ShowMorphCreatePanel, _morphCreateSubPanel);
+            RegisterUiPanel("shape", "形（名前付きの頂点位置）：一覧と切り替え・直前の形と入れ替え・追加・複製・削除・名前の変更・左右反転・モデルとして取り出す・試し表示・MQO",
+                _layoutRoot.ShapeSection, ShowShapePanel, _shapeSubPanel);
 
             // ── ボーン・ウェイト（SubPanels/Bone）──────────────────────
             RegisterUiPanel("skinWeightPaint", "スキンウェイトペイント（ボーン・モード・ブラシ・Flood/Normalize/Prune）",
@@ -477,7 +477,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.ModelListSection, ShowModelListPanel, _modelListSubPanel);
             RegisterUiPanel("boneEditor", "ボーン編集と描画オブジェクトの姿勢（TRS・ポーズ・原点 CSV）",
                 _layoutRoot.BoneEditorSection, ShowBoneEditorPanel, _boneEditorSubPanel);
-            RegisterUiPanel("meshList", "オブジェクト一覧（ツリー・詳細・ポーズ・名称一括変更・モーフ編集）",
+            RegisterUiPanel("meshList", "オブジェクト一覧（ツリー・詳細・ポーズ・名称一括変更）",
                 _layoutRoot.MeshListSection, ShowMeshListPanel, _meshListSubPanel);
 
             // ── 表示・環境 ───────────────────────────────────────────
@@ -658,6 +658,8 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUiCaptureStatus = ExecuteUiCaptureStatus;
             _commandDispatcher.OnQueryCapturePosition = ExecuteQueryCapturePosition;
             _commandDispatcher.OnUiClick         = ExecuteUiClick;
+            _commandDispatcher.OnUiViewportPointer = ExecuteUiViewportPointer;
+            _commandDispatcher.OnUiCanvasPointer   = ExecuteUiCanvasPointer;
             _commandDispatcher.OnQueryUiAutomationAudit = ExecuteQueryUiAutomationAudit;
             _commandDispatcher.OnQueryCommandUiOperation = cmd => _uiAutomationRegistry == null
                 ? CommandResult.Fail(UiAutomationNotReady)

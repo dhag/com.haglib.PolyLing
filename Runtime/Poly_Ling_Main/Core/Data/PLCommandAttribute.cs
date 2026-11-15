@@ -172,6 +172,11 @@ namespace Poly_Ling.Data
     {
         None                     = 0,
         InvalidatesSkinWeights   = 1 << 0,
+        /// <summary>
+        /// 形（シェイプ）と表情を失わせる。形は頂点が持つので、頂点の増減では付けない（段 7）。
+        /// 別のメッシュの頂点を持ち込む操作（ブーリアン・貼り付け）に付ける。
+        /// 名前はコマンド記述・利用シーンの語彙として残す。
+        /// </summary>
         InvalidatesMorphs        = 1 << 1,
         MaySplitVertices         = 1 << 2,
         ChangesVertexOrder       = 1 << 3,
@@ -215,7 +220,7 @@ namespace Poly_Ling.Data
         RequiresSkinWeights     = 1 << 1,
         /// <summary>モデルに Humanoid の割当があること。</summary>
         RequiresHumanoid        = 1 << 2,
-        /// <summary>対象にモーフがあること。</summary>
+        /// <summary>モデルに形（基本の形以外）か表情があること。</summary>
         RequiresMorphs          = 1 << 3,
         /// <summary>取り込み元と取り込み先の頂点数が一致していること。</summary>
         RequiresMatchingVertexCount = 1 << 4,

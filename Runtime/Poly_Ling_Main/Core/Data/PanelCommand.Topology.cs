@@ -445,7 +445,7 @@ namespace Poly_Ling.Data
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// 配列なのは他のコマンドと形をそろえて ObjectIds と対にするため。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.MaySplitVertices | PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Normals | PLCommandVerification.UVSeams, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets, Description = "選択頂点を面ごとに独立したコピーへ分離する。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.MaySplitVertices, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Normals | PLCommandVerification.UVSeams, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets, Description = "選択頂点を面ごとに独立したコピーへ分離する。")]
     public class SplitVerticesCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,

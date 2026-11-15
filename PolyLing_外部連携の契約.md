@@ -144,7 +144,7 @@ MCP の `call` はこれらを応答の直下に、リモートの `command` は
 受け渡しの単位はモデル丸ごと（決定の経緯は `PolyLing_外部受け渡し計画.md`）。
 
 **本体の形**（`Core/Serialization/ModelBundle.cs`）：
-- ModelDTO の JSON。`.mfproj` の `models[]` の 1 要素と同じ形で、書き方も同じ（`ProjectSerializer.ToJson`）。オブジェクト・頂点（位置・UV・法線・ウェイト・ID）・面・材質・ボーン・表情・Humanoid・揺れもの・VRM の情報まで、`.mfproj` が持つものは全部入る。
+- ModelDTO の JSON。`.mfproj` の `models[]` の 1 要素と同じ形で、書き方も同じ（`ProjectSerializer.ToJson`）。オブジェクト・頂点（位置・UV・法線・ウェイト・ID）・面・材質・ボーン・形（`shapes`・`currentShapeId`、頂点の `shi`・`shp`・`sui`・`suv`。§7.5）・表情・Humanoid・揺れもの・VRM の情報まで、`.mfproj` が持つものは全部入る。頂点の位置は今の形の位置（受け手が基本の形で扱うときは §7.2 の「形」と同じく移す）。
 - 材質が参照するテクスチャ画像を `embeddedTextures`（`[{"fileName":"…","data":"<base64>"}]`）として添える。受け手は材質のパスのファイル名で照合する（`ModelTextureTransfer`）。
 - UTF-8 のバイト列にして、封筒の Binary の項目（type 1）で運ぶ。JSON の引数には入れない（§2）。
 - 座標は PolyLing のまま（Unity 左手系）。外部ツールの座標系への変換は外側が行う。
@@ -390,10 +390,10 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 **表情・視線の表し方**
 
-- 表情の割り当ては PolyLing と同じ展開（`MotionClipApplier.FindExpression`・`ExpandToVertexMorphs`）。モデルの表情（取り込んだモデルの `morphExpressions`）を名前 → 英語名の順に完全一致で引き、頂点モーフ（type 1）とグループ（type 0）は `meshEntries`（無ければ `meshIndices` を重み 1）のモーフのシェイプキーへ「値 × 重み」を当てる。グループは取り込み（PMX・VRM）で子のモーフを重み付きで `meshEntries` に展開して持つので、`groupChildren`（PMX 書き出しの構造用。§7.5）は使わない（PolyLing の再生とモーフのパネルの試し当て〔`MorphPreviewState.BuildMorphBasePairs`〕と同じ）。それ以外の種類は当てない。モーフ → シェイプキーは §7.4 の「シェイプキーの引き方」で引く。
-- 表情の定義に無い名前は、同じ名前のシェイプキー（モデルのメッシュのどれでも）へ重み 1 で当てる。当たるものが無い表情は警告する。1 つのシェイプキーに複数の表情が当たれば値を足し、警告する。値がスライダーの範囲を外れれば範囲を広げる（±10 まで）。
+- 表情の割り当ては PolyLing と同じ展開（`ShapeBlendOps.Resolve`・`ExpandExpression`。Python は `format/shapes.py` の `resolve`）。名前を、モデルの表情（取り込んだモデルの `morphExpressions`）→ 形（`shapes`）の順に、名前 → 英語名の完全一致で引く。表情なら、頂点の表情（type 1）は同じ名前の形（重み 1）、グループ（type 0）は子（`groupChildren`。形の名前 × 重み）のうち形であるもの。それ以外の種類は当てない。形ならその形（重み 1）。形のシェイプキー（§7.4 の「シェイプキーの引き方」）を持つすべてのオブジェクトへ「値 × 重み」を当てる。
+- 表情にも形にも無い名前は、同じ名前のシェイプキー（モデルのメッシュのどれでも）へ重み 1 で当てる。当たるものが無い表情は警告する。1 つのシェイプキーに複数の表情が当たれば値を足し、警告する。値がスライダーの範囲を外れれば範囲を広げる（±10 まで）。
 - 読込のたびに、そのモデルのシェイプキーに付いていたアクションを外す（書き出しが今のクリップの表情だけを読むように）。
-- 書き出し：元の表情トラックは、当たるシェイプキー（重みが 0 でない最初のもの）の値 ÷ 重み（キーの決まりは上と同じ。当たるシェイプキーが無ければ元のトラックのまま）。元に無くアクションで動かしたシェイプキーは、そのモーフだけを重み 1 で持つ頂点モーフの表情があればその名前、無ければシェイプキー名のトラックにする。新しく足すトラックは `name` と `keys` だけを書く（`provider`・`category` は書かない。PolyLing は provider で引かない）。
+- 書き出し：元の表情トラックは、当たるシェイプキー（重みが 0 でない最初のもの）の値 ÷ 重み（キーの決まりは上と同じ。当たるシェイプキーが無ければ元のトラックのまま）。元に無くアクションで動かしたシェイプキーは、形に当たればその形の名前、当たらなければシェイプキー名のトラックにする（名前は表情 → 形の順に引かれるので、同じ名前の頂点の表情があればその表情として当たる）。新しく足すトラックは `name` と `keys` だけを書く（`provider`・`category` は書かない。PolyLing は provider で引かない）。
 - 視線の空：位置 = Head のレスト位置 + `lookAtOffsetFromHeadBone`（無ければ 0）、回転 = C·R(q)·C·Rx(−90°)（空の矢印＝ローカル +Z が視線の向き）。目のボーンは視線で動かさない（目は `bakedBones` の LeftEye・RightEye）。
 - 書き出し：視線の空に F カーブがあるときだけ書く。q = C·(R_空·Rx(+90°))·C。`lookAtOffsetFromHeadBone` = 空の位置（PolyLing 空間）− Head のレスト位置。元に無く 1e-5 以内なら書かず、元と 1e-5 以内なら元のまま。`lookAt` が無いファイルを読むと前の視線のアクションを外す（空は残る）。
 
@@ -474,10 +474,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 |---|---|---|
 | プロジェクト | コレクション「PolyLing ＜名前＞」 | `polyling_project`（models 以外の欄の JSON）、`polyling_source`（読んだファイル） |
 | モデル | その子のコレクション（モデル名） | `polyling_model`（meshDTOList 以外の欄の JSON）、`polyling_raw_meshes`（下の「表さない要素」の MeshDTO）、`polyling_mesh_count`、`polyling_model_index` |
-| Bone・Morph・Group・Helper・RigidBody・RigidBodyJoint・WorkAxis 以外の種類（Mesh・BakedMirror・MirrorSide など）で頂点か面を持つもの | メッシュのオブジェクト | `polyling_mesh`（vertices・faces を除いた MeshDTO）ほか下の控え |
+| Bone・Group・Helper・RigidBody・RigidBodyJoint・WorkAxis 以外の種類（Mesh・BakedMirror・MirrorSide など）で頂点か面を持つもの | メッシュのオブジェクト（頂点は基本の形。下の「形」） | `polyling_mesh`（vertices・faces を除いた MeshDTO）ほか下の控え |
 | Group・Helper、頂点も面も無いメッシュ | 空オブジェクト | `polyling_mesh`（MeshDTO 丸ごと） |
 | ボーン（Bone） | モデルごとに 1 つのアーマチュア「＜モデル名＞_Armature」のボーン | `polyling_mesh`（丸ごと）、`polyling_local_rotation`（元のローカル回転）、`polyling_rest_matrix`（取り込み時のレスト） |
-| モーフ（Morph） | 親メッシュのシェイプキー（親は `MorphPreviewState.FindBaseMeshIndex` と同じ規則。見つからなければ独立したメッシュ） | 親の `polyling_morphs`（シェイプキー名 `shapeKey`・`key_blocks` の中の位置 `keyOrder`・索引・vertices と faces を除いた MeshDTO・控え） |
+| 形（位置。`shapes` の kind 0） | メッシュのシェイプキー（名前は形の名前。基準キー「Basis」が基本の形） | オブジェクトの `polyling_shape_keys`（`[{id: 形の番号, key: シェイプキー名, keyOrder: key_blocks の中の位置}]`）。形の一覧・今の形の番号はモデルの `polyling_model`（`shapes`・`currentShapeId`） |
+| 形（UV。kind 1） | 表さない | オブジェクトの `polyling_uv_shapes`（基本の形へ移した UV の控え。`{頂点番号: [[形の番号, u, v], …]}`） |
 | マテリアル | Principled BSDF のマテリアル（使う番号だけをスロットに） | `polyling_material_index`、`polyling_material`（MaterialReferenceDTO の JSON）。オブジェクトの `polyling_slot_mi`（スロット → 番号） |
 | RigidBody・RigidBodyJoint・WorkAxis | 表さない | モデルの `polyling_raw_meshes` |
 
@@ -487,6 +488,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - UV・法線：面の角ごと（頂点の複数の UV・法線を面の `uvi`・`ni` で選ぶ）。UV はレイヤー「UVMap」、法線はカスタム法線。元の `uvi`・`ni` は角の属性 `pl_uvi`・`pl_ni`、元の法線は `pl_normal`（PolyLing 座標）。
 - その他の控え：制御点 `polyling_control_points`、2 頂点の面 `polyling_line_faces`。取り込みの直後に書き出しと同じ読み方で読み直し、戻らない頂点の欄・面だけを `polyling_vertex_extra`・`polyling_face_extra` に残す。頂点数・面のつながりの指紋 `polyling_topology`（頂点数、面の頂点の並びと元の面番号、線分の辺）。
 - Blender で表さないもの（IK・剛体・揺れもの・VRM 設定・表情の定義・選択セット・モディファイアスタック・T ポーズの控えなど）は `polyling_model`・`polyling_mesh` の JSON のまま。
+- **形**（`PolyLing_モーフ整理計画.md` 3.3・3.10。頂点の欄の扱いは `format/shapes.py`）：
+  - ファイルは今の形の位置と今の形の番号（`currentShapeId`）を持つ。取り込みはメッシュごとに頂点を基本の形へ移してから（`shapes.switch_mesh`。C# の `ShapeOps.SwitchMesh` と同じ規則）メッシュを作る。基準キー（＝メッシュの頂点）は今の形に関係なく基本の形になる。
+  - 位置の形 1 つ＝シェイプキー 1 つ。基本の形と位置が違う頂点のあるオブジェクトにだけ作る（PolyLing の書き出し `HierarchyMorphBuilder` と同じ）。今の形のシェイプキーは値 1、ほかは 0。名前が Blender の上限で詰められたときは警告する。
+  - UV の形は Blender に表さない（シェイプキーは位置しか持てず、UV マップは 1 メッシュ 8 個まで。顔だけで UV の形が 33 個あるデータがある）。基本の形へ移した控えを `polyling_uv_shapes` に残し、書き出しで戻す（§7.4）。
+  - 旧モーフ（種類 Morph の要素。段 7 で廃止）を含むデータは読まない。本体と同じ文言「旧モーフ（種類 Morph のオブジェクト）を N 個含む保存データは読めません…」のエラーで止める（`.mfproj`・CSV とも。`format/shapes.py` の `check_no_retired_morphs`）。
 
 ### 7.3 空間と姿勢
 
@@ -515,29 +521,31 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 | UV | レイヤー「UVMap」の角の値。頂点ごとの並びは `pl_uvi` の番号で元へ戻す（番号の食い違い・欠けがあれば出てきた順に振り直す） |
 | 法線 | 角の `pl_normal`。ただし「動いた頂点」（位置が `pl_co` と違う）と、それと面を共有する頂点の角は Blender が計算した法線（警告）。並びは `pl_ni` で元へ戻す |
 | ウェイト `bw` | 頂点グループの中身が元の `bw` と同じなら元の `bw`。違えば頂点グループから（重みの大きい順に 4 つ、4 つを超えたら 4 つで正規化）。ボーンに当たらない頂点グループは書かない（警告） |
-| モーフ | シェイプキーの差分（基準キーとの差）を basePositions に足した位置。ほかの欄は親の頂点の写し＋控え。シェイプキーは下の「シェイプキーの引き方」で引く |
+| 形 | 頂点の位置は基準キー（基本の形）。シェイプキー（位置の形）の位置が基本の形と成分で違う頂点だけに控え（`shi`・`shp`）を付ける。シェイプキーは下の「シェイプキーの引き方」で形に結び付け、当たらないシェイプキーは新しい形（番号は最大＋1、名前が重なれば「名前_n」、パネル 3）として一覧に足す（警告）。UV の形は `polyling_uv_shapes` を戻す（基本の形の UV と同じになった控えは落とす）。最後にモデルの今の形（`currentShapeId`）へ移して書く（今の形が 0 以外なら、頂点の位置・UV スロット 0 は今の形の値になり、全頂点が番号 0 の控えに基本の形の値を持つ。3.10）。今の形が一覧に無ければ基本の形として書く（警告） |
 | 名前 | オブジェクト・ボーンの名前（Blender が付けた「.001」などは元の名前とみなす） |
 | 表示 | `hide_viewport` → `isVisible` |
 | MeshFilter 系・空の姿勢 | ローカル = C·`matrix_basis`·C。変わっていれば `exportSettingsDTO` の position・rotation（度）・scale を書き換え、useLocalTransform を真にする（警告） |
 | ボーン | レストが取り込み時と違えば bindPose を作り直す（取り込みで向きを子へ向けた分を戻す）。ポーズから WorldMatrix（ポーズ行列 = C·(WorldMatrix·bindPose)·C·レスト）を戻し、ローカル = hierarchy[親]⁻¹·WorldMatrix |
 
-**シェイプキーの引き方**（`blender/meshread.py` の `morph_shape_keys`。モーフの書き出し `exporter.export_morphs` と、モーションの表情の割り当て・書き出し〔`motion.expression_targets`・`_expression_name_for`〕が使う）
+**シェイプキーの引き方**（`blender/meshread.py` の `shape_key_map`。形の書き出し `exporter.export_shapes` と、モーションの表情の割り当て・書き出し〔`motion.expression_targets`・`_expression_name_for`〕が使う）
 
-- シェイプキー（KeyBlock）はカスタムプロパティを持てないので、結び付けは名前と並び順だけで行う。
-- 名前（`polyling_morphs` の `shapeKey`）で引く。
-- 無ければ、今のシェイプキーの数が取り込み時（基準キー＋モーフの数）と同じときに限り、`keyOrder` の位置にあるシェイプキーを、その名前がどのモーフの `shapeKey` でもなければ名前を変えたものとして使う。書き出しは警告「「＜オブジェクト名＞」：シェイプキー ＜旧名＞ → ＜新名＞ を名前の変更として扱った」を出す。
-- それでも無ければ見つからないものとし、モーフは差分 0 で書いて警告、表情は当てない。
+- シェイプキー（KeyBlock）はカスタムプロパティを持てないので、結び付けは名前と並び順だけで行う。基準キーは形にしない。
+- 1. 名前がオブジェクトの `polyling_shape_keys` の `key` と同じ → その形。
+- 2. 名前がモデルの位置の形の名前と同じ → その形（取り込みに無かったオブジェクトに足したシェイプキーも当たる）。
+- 3. `keyOrder` の位置に取り込んだ形があり、その形の `key` の名前のシェイプキーが今は無く、このシェイプキーの名前が 1・2 のどれにも当たらない → 名前を変えたものとしてその形。書き出しは警告「「＜オブジェクト名＞」：シェイプキー ＜旧名＞ → ＜新名＞ を名前の変更として扱った」を出し、形の名前もシェイプキーの名前に変える（ほかの形と重なるときは変えずに警告）。後ろにシェイプキーを足しても位置は変わらないので引ける。途中のシェイプキーを消した後の名前の変更は引けない。
+- それでも無ければ、書き出しは新しい形として足し（上の表）、表情は当てない。
 
 **頂点数・面のつながりが変わったメッシュ**（`polyling_topology` と違うもの）
 
-- 外して警告するもの：選択（頂点・辺・面・線分）・選択セット・法線除外セット・線分群・制御点・作れなかった面・頂点と面の控え・モデルの T ポーズの頂点控えのうちそのメッシュの分。
-- モーフは要素を残し（番号がずれないように）、保持した基準（basePositions・baseNormals・baseUVs・頂点の控え）を外して、今の親の形とシェイプキーの差分で作り直す（警告）。
+- 外して警告するもの：選択（頂点・辺・面・線分）・選択セット・法線除外セット・線分群・制御点・作れなかった面・頂点と面の控え・UV の形の控え（`polyling_uv_shapes`）・モデルの T ポーズの頂点控えのうちそのメッシュの分。
+- 位置の形は外さない（シェイプキーは Blender が頂点の増減に合わせて持ち続けるので、今の頂点で作る）。
 
 **書き出さないもの**
 
 - PolyLing 由来でないオブジェクト・ボーン（警告）。
 - 親子の付け替え（`parentIndex` は保持した値）。
-- シェイプキーの名前の変更（モーフの名前は保持した値。名前を変えたシェイプキーは上の「シェイプキーの引き方」で引き、形は書く）。
+- 形の英語名・パネル・読み込み元、表情の定義（`polyling_model` の値のまま）。形の一覧から形は消さない（どのオブジェクトにもシェイプキーが無い形は、差分の無い形として残る）。
+- 今の形の切り替え（今の形の番号は `polyling_model` の値。シェイプキーの値は書かない）。
 - マテリアル自身の設定の変更（`materialReferences` は保持した値。面に当てるマテリアルの付け替えは書く）。
 - カスタム法線だけの編集。
 - 生成ミラー側だけの移動（PolyLing では実体側から決まる。`ModelContext.MeshList.cs` の `SyncDerivedMirrorTransforms`。警告）。
@@ -548,11 +556,17 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 正本は C#（`FolderSerializer/CsvModelSerializer*.cs`・`CsvMeshSerializer*.cs`）。Python（`format/csv_project.py`・`format/csv_mesh.py`）は同じ規則で読み書きする。決定の経緯は `PolyLing_Blender不具合修正計画.md`。
 
 - **欄の分け方**：行末が `,` の行は、最後に空の欄が 1 つある（C# の `Split`）。`materialprops.csv` のテクスチャのパスが空の行も 10 欄で読む。Python の `split_line` は行末の空欄を作らないので、9 欄以上を読む（結果は同じ）。
-- **中身が無いファイルは消す**：`humanoid.export.csv`・`morphgroups.csv`・`meshselsets.csv`・`modifierstacks.csv`・`mirrorpairs.csv`・`editorstate.csv`・`workplane.csv`・`tposebackup.csv`・`springbonegroups.csv` の 9 ファイルは、書く中身が無ければ古いファイルを消す（読込はファイルがあれば読むので、残すと同じフォルダへ保存し直したときに古い中身が戻る）。C# の `editorstate.csv`・`workplane.csv` は、呼び出し元が渡さないときも消す。
+- **中身が無いファイルは消す**：`humanoid.export.csv`・`morphgroups.csv`・`vrmexpressions.csv`・`shapes.csv`・`meshselsets.csv`・`modifierstacks.csv`・`mirrorpairs.csv`・`editorstate.csv`・`workplane.csv`・`tposebackup.csv`・`springbonegroups.csv` の 11 ファイルは、書く中身が無ければ古いファイルを消す（読込はファイルがあれば読むので、残すと同じフォルダへ保存し直したときに古い中身が戻る）。C# の `editorstate.csv`・`workplane.csv` は、呼び出し元が渡さないときも消す。
 - **`tposebackup.csv`**：「ファイルがある ⇔ T ポーズの控え（TPoseBackup）がある」（`.mfproj` の `tPoseBackup` と同じ）。書きは控えが無ければ消し、あれば中身が空でも書く（見出し行だけになる）。読みはファイルがあれば中身によらず控えにする（空でも null にしない）。
 - **`springbonegroups.csv`**：1 行に 1 つのコライダーグループ名。並びが番号（ボーンの `grp` はこの番号）。空の名前は `""`（引用した空文字）と書く（空行は読込で飛ばされ、後ろの番号がずれるため）。`""` は空の欄 1 つとして読む。
-- **`morphgroups.csv`**：行は `名前,英語名,panel,type,エントリの数,<メッシュ>:<重み>…`。グループの子（`MorphExpression.GroupChildren`）があれば、エントリの後ろに `,<子の数>,<名前>:<重み>…` を足す（子 1 つが 1 欄。`名前:重み` を 1 つの値として CSV の引用の決まりで書く。名前と重みは最後の `:` で分ける）。子が無ければ何も足さない（以前と同じ行）。子の欄の無い行は子 0 件として読む。
-- **グループの子の置き場所**：`.mfproj` は `MorphExpressionDTO.groupChildren`（`[{"name":…, "weight":…}]`。子が無ければ欄ごと省く）、転送（PLRM）は v10 で表情ごとに子の一覧、CSV は上の `morphgroups.csv`。`groupChildren` は PMX 書き出しがグループモーフを作るのに使う。表情の再生・パネルの試し当て・Blender の表情の割り当て（§5.1）は `meshEntries` を使う。
+- **`morphgroups.csv`**（表情。版 2.0）：行は `名前,英語名,panel,type,<子の数>,<名前>:<重み>…,作成日時`。子（`MorphExpression.GroupChildren`。形の名前 × 重み）は 1 つが 1 欄（`名前:重み` を 1 つの値として CSV の引用の決まりで書く。名前と重みは最後の `:` で分ける）。子が 0 件でも数（0）を書く（後ろに作成日時が続くため）。版 1.0 は type の後に旧モーフのエントリ（`エントリの数,<メッシュ>:<重み>…`）があり、読みはそれを飛ばす（警告。段 7）。
+- **表情の置き場所**：`.mfproj` は `MorphExpressionDTO`（`name`・`nameEnglish`・`panel`・`type`・`createdAt`・`vrm`・`groupChildren`〔`[{"name":…, "weight":…}]`。子が無ければ欄ごと省く〕）、CSV は上の `morphgroups.csv` と `vrmexpressions.csv`。旧モーフを指す欄（`meshEntries`・`meshIndices`）は段 7 で廃止し、読まない。表情の再生・パネルの試し当て・PMX の書き出し・Blender の表情の割り当て（§5.1）は子（形の名前）で形を引く。
+- **形**（正本は `CsvModelSerializer.StoreCsv.cs` の `WriteShapesCsv`、`CsvMeshSerializer.Write.cs` の `WriteVertexShapes`・`WriteVertexUVShapes`。計画書 3.10）：
+  - `shapes.csv`（版 1.2）：`current,今の形の番号`、`shape,番号,名前,英語名,パネル,種類（position / uv。無ければ position）`、`source,番号,MQOのパス,倍率,flipX,flipZ,組の数,モデル側の名前,MQO側の名前,…`（読み込み元。番号 0 は基本の形。shape 行より後）。形が無く、今の形が 0 で、基本の形の読み込み元も無ければ消す。
+  - メッシュ CSV の頂点行（`v`・`vn`）の直後（制御点の `vcp` の後）に `vsh,個数,形の番号,x,y,z,…`（位置の控え）、その後に `vsu,個数,形の番号,u,v,…`（UV スロット 0 の控え）。控えの無い頂点は行を書かない。
+  - 頂点の位置は今の形の位置。今の形が 0 以外なら、全頂点が番号 0（基本の形の位置）を持ち、UV を持つ頂点は UV の番号 0 も持つ。今の形以外の形は、基本の形と成分が違う頂点だけが持つ。
+  - `.mfproj` は `ModelDTO.shapes`（`ShapeDefDTO`：`id`・`name`・`nameEnglish`・`panel`・`kind`〔0 位置 / 1 UV〕・`source`）・`currentShapeId`・`baseShapeSource`、頂点は `VertexDTO.shi`（番号）・`shp`（x,y,z の並び）・`sui`・`suv`（u,v の並び）。転送（バイナリ）は PLRM 17・PLRS 12 で同じ欄（`MeshFieldFlags.Shapes` 0x100000・`UVShapes` 0x200000）。
+- **旧モーフ**：`*.morph.csv`・種類 Morph の行（model.csv の entry）・メッシュの `morphParentIndex`／`morphParentName`／`morphMirror`／`morphName`／`morphPanel`／`morphCreatedAt`／`mb`／`mbn`／`mbuv` 行・editorstate の `selectedVertexMorphIndex`／`Name` は段 7 で廃止。model.csv に種類 Morph の行があれば読まずにエラー、`*.morph.csv` は読まずに警告、旧の行は捨てる。保存では `*.morph.csv` を消す（C# と Python で同じ）。
 - **`mirrorGeometryDerived`**（メッシュの行）：索引モードでも名前モードでも書く（参照ではない値。読みは両方のモードで読む）。
 
 ---

@@ -31,9 +31,22 @@ namespace Poly_Ling.Tools
             if (!SimpleVertexEndpoints || ctx == null || mo == null) return -1;
             int v = ResolveVertex(ctx, pos);
             if (v < 0 || v >= mo.VertexCount) return -1;
-            pos = SimpleCutExecutor.VertexScreenPos(ctx, mo, v);
+            Vector2 vp = SimpleCutExecutor.VertexScreenPos(ctx, mo, v);
+            // 2 点目の吸着は、呼び出し側の条件（Player の縦横制限）を崩さない候補に限る。
+            if (_simpleStage == SimpleStage.HasP0 && SecondPointSnapFilter != null && !SecondPointSnapFilter(vp))
+                return -1;
+            pos = vp;
             return v;
         }
+
+        /// <summary>
+        /// 2 点目を頂点へ吸着してよいかの判定（画面座標 Y=0 下を受ける）。null なら常に吸着する。
+        /// Player が縦横制限（PointerAxisConstraint.AcceptsCandidate）を刺す。
+        /// </summary>
+        public System.Func<Vector2, bool> SecondPointSnapFilter;
+
+        /// <summary>確定済みの 1 点目（画面座標 Y=0 下）。SimpleCutHasFirstPoint のときだけ意味を持つ。</summary>
+        public Vector2 SimpleCutFirstPoint => _simpleP0;
 
         // 実行直前に Player ハンドラが注入する面カリングマスク（true=切らない）。null で全面対象。
         private bool[] _simpleFaceCulledMask;

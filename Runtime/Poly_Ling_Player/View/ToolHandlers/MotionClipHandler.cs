@@ -30,6 +30,10 @@ namespace Poly_Ling.Player
         public Action<MeshContext> SyncMeshPositions;
         /// <summary>フレームを当てた・姿勢を戻した後に呼ぶ（表示の更新）。</summary>
         public Action             OnFrameApplied;
+        /// <summary>コマンドの送り先（表情を再生する前に基本の形へ切り替える SetCurrentShapeCommand）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+        /// <summary>今のモデルの番号（SendCommand に渡す）。</summary>
+        public Func<int>          GetModelIndex;
         /// <summary>再生で time 秒のフレームを当てた後に呼ぶ（playFrame のときだけ。配信用）。</summary>
         public Action<float>      OnPlaybackFrame;
 
@@ -397,6 +401,14 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (_dto == null || model == null || _applier == null) return false;
             _applier.ApplyFrame(model, time);
+            // 表情の足し込みは基本の形への差分なので、表情が当たるクリップは基本の形で再生する
+            // （切り替えの記録が 1 件残る。PolyLing_モーフ整理計画.md 3.6・6 の 3）。
+            // 切り替えは足し込みを捨てるので、切り替えたらもう一度当てる。
+            if (_applier.HasExpressionBindings && model.CurrentShapeId != Poly_Ling.Ops.ShapeOps.BaseShapeId && SendCommand != null)
+            {
+                SendCommand(new Poly_Ling.Data.SetCurrentShapeCommand(GetModelIndex?.Invoke() ?? 0, ""));
+                if (model.CurrentShapeId == Poly_Ling.Ops.ShapeOps.BaseShapeId) _applier.ApplyFrame(model, time);
+            }
             OnFrameApplied?.Invoke();
             return true;
         }

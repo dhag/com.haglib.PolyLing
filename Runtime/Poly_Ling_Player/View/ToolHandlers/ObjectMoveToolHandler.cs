@@ -19,8 +19,28 @@ namespace Poly_Ling.Player
     /// </para>
     /// </summary>
     [Poly_Ling.Data.PLTool("objectMove", Description = "オブジェクト移動（確定は MoveObjectsCommand／RotateObjectsCommand）")]
-    public class ObjectMoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class ObjectMoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// ツールに渡したドラッグで中央の自由移動をしている間だけ「対象を動かす」。
+        /// X・Y・Z 軸（既存の軸制限を優先）、回転リング、矩形／投げ縄選択では制限しない。
+        /// ボーン編集の直接経路からも同じ OnLeftDragBegin を通るので、そちらでも同じ判定になる。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            return _dragState == ObjDragState.ToolDelegated && _tool.IsFreeMoveDragging
+                ? AxisConstraintUse.ObjectMove
+                : AxisConstraintUse.None;
+        }
+
         // ================================================================
         // 依存
         // ================================================================
@@ -130,6 +150,7 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods);
             if (ctx == null) { _dragState = ObjDragState.None; return; }
+            _dragOriginPos = screenPos;
 
             // 1. ツールに先にヒット判定させる (ギズモ・ピボット・オブジェクトのいずれか)
             //    OnMouseDown は bool を返し、true=何かに当たった/false=空振り。
@@ -209,7 +230,22 @@ namespace Poly_Ling.Player
                     //   回転中は総移動量が 0）ので、順に試してよい。
                     Poly_Ling.Data.PanelCommand pending = null;
 
-                    if (SendCommand != null && _tool.ObjectMoveDragPending &&
+                    // 原点だけ移動（設定のチェック）。ObjectMoveTool.OnMouseUp はこのとき確定を
+                    // 呼び出し側に任せる（ObjectMoveTool.cs の OnMouseUp の注記）ので、ここで取り出して
+                    // MovePivotCommand にする。取り出さないと、ドラッグの結果が Undo の記録も
+                    // コマンドも無いまま残る。PivotOffsetToolHandler.OnLeftDragEnd と同じ形。
+                    if (SendCommand != null && _tool.OriginOnlyDragPending &&
+                        _tool.TryTakeOriginOnlyDrag(ctx, out int[] originTargets, out Vector3 originWorldTotal))
+                    {
+                        pending = new Poly_Ling.Data.MovePivotCommand(
+                            _project?.CurrentModelIndex ?? 0,
+                            originTargets,
+                            originWorldTotal,
+                            Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World,
+                            null,
+                            _tool.GetSettings().MoveWithChildren);
+                    }
+                    else if (SendCommand != null && _tool.ObjectMoveDragPending &&
                         _tool.TryTakeObjectMoveDrag(ctx, out int[] mvTargets, out Vector3 mvWorldTotal))
                     {
                         pending = new Poly_Ling.Data.MoveObjectsCommand(

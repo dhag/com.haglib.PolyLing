@@ -46,6 +46,8 @@ namespace Poly_Ling.Player
             {
                 GetProject     = () => ActiveProject,
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                // 縦横制限で固定中は、制限方向上の候補にだけ吸着する。
+                SnapCandidateFilter = p => _axisConstraint.AcceptsCandidate(p),
                 GetHoverElement = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
                 GetSnapHoverElement = () => _viewportManager.GetSnapHoverElement(ActiveProject?.CurrentModel),
 

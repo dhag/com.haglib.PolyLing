@@ -632,7 +632,6 @@ namespace Poly_Ling.Ops
                 // ParentIndex は HierarchyParentIndex と同じ入れ物。1 回だけ足す。
                 if (ctx.HierarchyParentIndex >= 0) ctx.HierarchyParentIndex += boneCount;
                 // MeshContextList 索引を保持する属性も同じだけずらす。
-                if (ctx.MorphParentIndex        >= 0) ctx.MorphParentIndex        += boneCount;
                 if (ctx.BakedMirrorSourceIndex  >= 0) ctx.BakedMirrorSourceIndex  += boneCount;
                 // 左右対のボーン索引。ボーンは先頭へ並ぶのでここでずれるのは
                 // 非ボーン側だけだが、索引を持つ属性は漏れなく同じだけずらす。
@@ -651,13 +650,12 @@ namespace Poly_Ling.Ops
             }
 
             // Phase 2b: 選択インデックスの再マップ
-            // SelectedDrawableMeshIndices / SelectedBoneIndices / SelectedMorphIndices は
+            // SelectedDrawableMeshIndices / SelectedBoneIndices は
             // MeshContextList 索引を保持する。先頭に boneCount 個挿入した分だけずらさないと
             // 選択が先頭のボーンを指し、FirstDrawableMeshContext がボーンを返す。
             // その結果 SelectionState の束ね替え・選択フラグ更新・頂点移動対象が全て狂う。
             ShiftSelectionIndices(model.SelectedDrawableMeshIndices, boneCount);
             ShiftSelectionIndices(model.SelectedBoneIndices,         boneCount);
-            ShiftSelectionIndices(model.SelectedMorphIndices,        boneCount);
 
             // Phase 2c: メッシュ名の一意化
             // ボーンはメッシュと同名で作られるため、そのままだとヒエラルキー出力時に
@@ -703,8 +701,12 @@ namespace Poly_Ling.Ops
 
                 Matrix4x4 originalWorld = savedWorldMatrices[oldIndex];
                 if (meshObj.VertexCount > 0)
+                {
                     foreach (var vertex in meshObj.Vertices)
                         vertex.Position = originalWorld.MultiplyPoint3x4(vertex.Position);
+                    // 形ごとの位置も同じ行列でワールドへ焼く。
+                    ShapeOps.TransformShapes(meshObj, originalWorld);
+                }
 
                 // 焼いた行列を控える（段 10）。ローカルで読む入力（原型・断面）は、作り直しのときに
                 // この逆で元のローカルへ戻して読む（ModifierSpace.LocalView）。

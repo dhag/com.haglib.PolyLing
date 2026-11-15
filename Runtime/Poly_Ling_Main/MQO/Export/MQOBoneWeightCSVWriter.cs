@@ -275,7 +275,7 @@ namespace Poly_Ling.MQO
                 else if (!Poly_Ling.Ops.MirrorBranchOps.IsMirrorSideContext(mc) && mc.MeshObject != null &&
                          !string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
                     bakedMirrorContexts.Add(mc);  // タイプC: 型情報を持たない古いデータ向けの保険
-                else if (mc.MeshObject != null && mc.Type != MeshType.Morph)
+                else if (mc.MeshObject != null)
                     meshContexts.Add(mc);
             }
 

@@ -62,50 +62,6 @@ namespace Poly_Ling.UndoSystem
     }
 
     /// <summary>
-    /// モーフ選択の変更を記録するレコード（他カテゴリの選択を壊さない）
-    /// </summary>
-    [Serializable]
-    public class MorphSelectionChangeRecord : IUndoRecord<ModelContext>
-    {
-        public UndoOperationInfo Info { get; set; }
-        public int[] OldMorphIndices { get; set; }
-        public int[] NewMorphIndices { get; set; }
-
-        public MorphSelectionChangeRecord() { }
-
-        public MorphSelectionChangeRecord(int[] oldIndices, int[] newIndices)
-        {
-            OldMorphIndices = oldIndices ?? Array.Empty<int>();
-            NewMorphIndices = newIndices ?? Array.Empty<int>();
-        }
-
-        public void Undo(ModelContext context)
-        {
-            if (context == null) return;
-            context.ClearMorphSelection();
-            foreach (var idx in OldMorphIndices)
-                context.AddToMorphSelection(idx);
-            context.OnListChanged?.Invoke();
-            context.OnFocusMeshListRequested?.Invoke();
-        }
-
-        public void Redo(ModelContext context)
-        {
-            if (context == null) return;
-            context.ClearMorphSelection();
-            foreach (var idx in NewMorphIndices)
-                context.AddToMorphSelection(idx);
-            context.OnListChanged?.Invoke();
-            context.OnFocusMeshListRequested?.Invoke();
-        }
-
-        public override string ToString()
-        {
-            return $"MorphSelectionChange: [{string.Join(",", OldMorphIndices)}] → [{string.Join(",", NewMorphIndices)}]";
-        }
-    }
-
-    /// <summary>
     /// メッシュの順序・階層変更を記録するレコード（D&D用）
     /// </summary>
     [Serializable]
@@ -126,7 +82,7 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変更後の親マップ</summary>
         public Dictionary<MeshContext, MeshContext> NewParentMap { get; set; }
 
-        /// <summary>変更前の Depth（Drawable/Morph のツリーは Depth から組むため必須）</summary>
+        /// <summary>変更前の Depth（Drawable のツリーは Depth から組むため必須）</summary>
         public Dictionary<MeshContext, int> OldDepthMap { get; set; }
 
         /// <summary>変更後の Depth</summary>
@@ -202,13 +158,12 @@ namespace Poly_Ling.UndoSystem
             }
             var selectedDrawables = ContextsOf(context.SelectedDrawableMeshIndices);
             var selectedBones     = ContextsOf(context.SelectedBoneIndices);
-            var selectedMorphs    = ContextsOf(context.SelectedMorphIndices);
 
             context.ReplaceMeshContexts(orderedList);
 
             // 1b. 並べ替えで動いた索引参照を付け替える。
             //     ここで戻すのは親（下の 2. が上書きする）以外の索引参照
-            //     ―― ParentIndex / MorphParentIndex / BakedMirrorSourceIndex /
+            //     ―― ParentIndex / BakedMirrorSourceIndex /
             //     Humanoid 割当 / T ポーズ退避。
             context.RemapIndexReferencesAfterReorder(prevOrder);
 
@@ -228,7 +183,7 @@ namespace Poly_Ling.UndoSystem
             }
 
             // 2b. Depth を復元。
-            //     Drawable / Morph のツリーは Depth から組むため、これを戻さないと
+            //     Drawable のツリーは Depth から組むため、これを戻さないと
             //     リスト順だけ戻って階層が戻らない。
             if (depthMap != null)
             {
@@ -279,7 +234,6 @@ namespace Poly_Ling.UndoSystem
                 }
                 context.SelectedDrawableMeshIndices = IndicesOf(selectedDrawables);
                 context.SelectedBoneIndices         = IndicesOf(selectedBones);
-                context.SelectedMorphIndices        = IndicesOf(selectedMorphs);
             }
             context.ValidateSelection();
 

@@ -110,6 +110,8 @@ namespace Poly_Ling.Vrm
         public List<MeshContext>       MeshContexts       { get; } = new List<MeshContext>();
         public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
         public List<MorphExpression>   MorphExpressions   { get; } = new List<MorphExpression>();
+        /// <summary>形の一覧（モーフターゲットの名前 1 つ＝形 1 つ。頂点の控えは MeshContexts の頂点が持つ）。</summary>
+        public List<ShapeDef>          Shapes             { get; } = new List<ShapeDef>();
 
         /// <summary>スプリングボーンのコライダーグループ名（モデルレベル）。</summary>
         public List<string> SpringBoneColliderGroupNames { get; } = new List<string>();

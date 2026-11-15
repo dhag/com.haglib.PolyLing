@@ -303,7 +303,8 @@ namespace Poly_Ling.Player
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
         private PlayerBooleanSubPanel        _booleanSubPanel;
         private PlayerMorphSubPanel          _morphSubPanel;
-        private PlayerMorphCreateSubPanel    _morphCreateSubPanel;
+        /// <summary>形（名前付きの頂点位置）のパネル。PolyLing_モーフ整理計画.md 3.11。</summary>
+        private PlayerShapeSubPanel          _shapeSubPanel;
         private PlayerTPoseSubPanel          _tposeSubPanel;
         private PlayerHumanoidMappingSubPanel _humanoidMappingSubPanel;
 

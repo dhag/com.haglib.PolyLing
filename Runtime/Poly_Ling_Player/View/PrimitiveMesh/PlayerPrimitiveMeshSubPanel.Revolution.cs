@@ -275,6 +275,7 @@ namespace Poly_Ling.Player
             _revCanvas.RegisterCallback<PointerDownEvent>(OnRevCanvasPointerDown);
             _revCanvas.RegisterCallback<PointerMoveEvent>(OnRevCanvasPointerMove);
             _revCanvas.RegisterCallback<PointerUpEvent>(OnRevCanvasPointerUp);
+            AttachRevAxis();   // Shift の縦横制限（点のドラッグ）
             _revCanvas.RegisterCallback<WheelEvent>(e =>
             {
                 if (_revBgMode)

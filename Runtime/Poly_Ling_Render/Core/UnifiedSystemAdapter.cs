@@ -679,7 +679,7 @@ namespace Poly_Ling.Core
                 if (ctx?.MeshObject == null)
                     continue;
 
-                if (ctx.Type == MeshType.Bone || ctx.Type == MeshType.Morph)
+                if (ctx.Type == MeshType.Bone)
                     continue;
 
                 int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);

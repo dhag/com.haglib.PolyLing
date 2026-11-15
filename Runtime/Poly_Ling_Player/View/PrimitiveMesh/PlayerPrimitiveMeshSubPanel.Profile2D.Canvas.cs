@@ -408,6 +408,8 @@ namespace Poly_Ling.Player
                     _p2dDragStart[k] = _p2dLoops[li].Points[pi];
             }
             _p2dDragStartCursorWorld = P2dCanvasToWorld(cp, w, h);
+            // 縦横制限の基準点はドラッグを始めた位置（挿入してそのまま動かす場合も同じ）。
+            _p2dAxis?.Begin(cp, false);
 
             // マグネット影響点（非選択で半径内）を確定
             _p2dMagnetStart.Clear(); _p2dMagnetW.Clear();
@@ -753,30 +755,69 @@ namespace Poly_Ling.Player
 
             if (_p2dDrag && _p2dCanvas.HasPointerCapture(e.pointerId))
             {
-                if (_p2dDragStart.Count > 0)
-                {
-                    // 選択点を一括で delta 移動。
-                    var delta = P2dCanvasToWorld(cp, w, h) - _p2dDragStartCursorWorld;
-                    foreach (var kv in _p2dDragStart)
-                    {
-                        int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
-                        if (li < 0 || li >= _p2dLoops.Count) continue;
-                        if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
-                        _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta);
-                    }
-                    // マグネット: 非選択点を delta×weight で追従
-                    foreach (var kv in _p2dMagnetStart)
-                    {
-                        int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
-                        if (li < 0 || li >= _p2dLoops.Count) continue;
-                        if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
-                        _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta * _p2dMagnetW[kv.Key]);
-                    }
-                    D(); RefreshP2dCanvas(); RefreshP2dPointUI();
-                }
+                // Shift の縦横制限を通した操作座標で動かす。
+                P2dDragMoveTo(_p2dAxis.Apply(cp, e.shiftKey), w, h);
                 e.StopPropagation(); return;
             }
 
+            P2dUpdateHover(cp, w, h);
+        }
+
+        // ── 縦横制限（計画と規約/PolyLing_縦横制限計画.md）────────────────
+
+        /// <summary>選択点のドラッグ（挿入して動かす場合も）に使う縦横制限。</summary>
+        private CanvasPointerAxis _p2dAxis;
+
+        /// <summary>キャンバスへ縦横制限を組み込む（キャンバスを作った直後に呼ぶ）。</summary>
+        private void AttachP2dAxis()
+        {
+            _p2dAxis = new CanvasPointerAxis(_p2dCanvas, "p2d", op =>
+            {
+                if (!_p2dDrag) return;
+                P2dDragMoveTo(op, _p2dCanvas.resolvedStyle.width, _p2dCanvas.resolvedStyle.height);
+            })
+            {
+                Describe = () =>
+                {
+                    if (!P2dGetSelPt(out _, out var pt)) return $"selected={_p2dSel.Count}";
+                    float w = _p2dCanvas.resolvedStyle.width, h = _p2dCanvas.resolvedStyle.height;
+                    var c = P2dWorldToCanvas(pt, w, h);
+                    return System.FormattableString.Invariant(
+                        $"selected={_p2dSel.Count} primary=L{_p2dSelLoop}P{_p2dSelPt} canvas=({c.x:0.0},{c.y:0.0}) pos=({pt.x:0.0000},{pt.y:0.0000})");
+                },
+            };
+        }
+
+        /// <summary>
+        /// 選択点を、ドラッグ開始時のカーソル位置から操作座標までの差だけ動かす（開始位置から毎回計算）。
+        /// </summary>
+        private void P2dDragMoveTo(Vector2 cp, float w, float h)
+        {
+            if (_p2dDragStart.Count == 0) return;
+
+            // 選択点を一括で delta 移動。
+            var delta = P2dCanvasToWorld(cp, w, h) - _p2dDragStartCursorWorld;
+            foreach (var kv in _p2dDragStart)
+            {
+                int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
+                if (li < 0 || li >= _p2dLoops.Count) continue;
+                if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
+                _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta);
+            }
+            // マグネット: 非選択点を delta×weight で追従
+            foreach (var kv in _p2dMagnetStart)
+            {
+                int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
+                if (li < 0 || li >= _p2dLoops.Count) continue;
+                if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
+                _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta * _p2dMagnetW[kv.Key]);
+            }
+            D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+        }
+
+        /// <summary>非ドラッグ中のハンドル・辺のホバー更新。</summary>
+        private void P2dUpdateHover(Vector2 cp, float w, float h)
+        {
             // ハンドルホバー更新（非ドラッグ中。ギズモ表示OFF/アンカー設定中は無効）
             var p2dHovType = (_p2dAnchor.Mode || !_p2dShowGizmo)
                                              ? Canvas2DHandle.HandleType.None
@@ -826,7 +867,7 @@ namespace Poly_Ling.Player
             _p2dBgDrag = false;
             _p2dPanDrag = false;
             _p2dAnchorDrag = false;
-            if (wasP2dDrag) P2dCommit("プロファイル点編集");
+            if (wasP2dDrag) { _p2dAxis?.End(); P2dCommit("プロファイル点編集"); }
             e.StopPropagation();
         }
 

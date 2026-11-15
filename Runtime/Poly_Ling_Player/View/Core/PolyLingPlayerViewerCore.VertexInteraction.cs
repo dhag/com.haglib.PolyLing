@@ -414,12 +414,8 @@ namespace Poly_Ling.Player
                 panel.OnPointerMoved += (pos, mods) =>
                 {
                     _lastMouseScreenPos = pos;
-                    if (_layoutRoot?.BoneEditorSection != null &&
-                        _layoutRoot.BoneEditorSection.style.display == DisplayStyle.Flex)
-                    {
-                        var boneCtx = _viewportManager.GetCurrentToolContext(_activeViewport);
-                        _objectMoveHandler?.UpdateHover(pos, boneCtx);
-                    }
+                    // ボーンエディタ表示中の ObjectMoveToolHandler へのホバーの橋渡しは撤去した
+                    // （下の「橋渡しは撤去した」を参照。ObjectMove のホバーは RegisterActiveToolHandler が渡す）。
                 };
 
                 panel.OnPointerHover += localPos =>
@@ -446,70 +442,25 @@ namespace Poly_Ling.Player
                 panel.OnPointerLeft += () => panel.HideBrushCircle();
             }
 
+            // Shift による縦横制限（計画と規約/PolyLing_縦横制限計画.md）。
+            ConnectAxisConstraint(_layoutRoot?.PerspectivePanel);
+            ConnectAxisConstraint(_layoutRoot?.TopPanel);
+            ConnectAxisConstraint(_layoutRoot?.FrontPanel);
+            ConnectAxisConstraint(_layoutRoot?.SidePanel);
+
             ConnectPanelHover(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport);
             ConnectPanelHover(_layoutRoot?.TopPanel,         _viewportManager.TopViewport);
             ConnectPanelHover(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport);
             ConnectPanelHover(_layoutRoot?.SidePanel,        _viewportManager.SideViewport);
 
-            // BoneEditor サブパネル表示中に ObjectMoveToolHandler へマウスイベントを橋渡し。
-            // 旧 BoneInputHandler の後継 (統合)。従来通り InteractionMode が
-            // ObjectMove / PivotOffset のときは外す (それぞれ専用経路に任せる)。
-            // ObjectMoveToolHandler のピック対象フィルタ (PickBones /
-            // PickMeshesNoSkin / PickMeshesSkinned) と MoveWithChildren は
-            // PlayerBoneEditorSubPanel のチェックボックスから操作する。
-            void ConnectBoneEditorObjectMove(PlayerViewportPanel panel)
-            {
-                if (panel == null) return;
-                panel.OnClick += (btn, pos, mods) =>
-                {
-                    if (btn != 0) return;
-                    if (_layoutRoot?.BoneEditorSection == null) return;
-                    if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
-                    _objectMoveHandler?.OnLeftClick(PlayerHitResult.Miss, pos, mods);
-                    _boneEditorSubPanel?.Refresh();
-                };
-                panel.OnDragBegin += (btn, pos, mods) =>
-                {
-                    if (btn != 0) return;
-                    if (_layoutRoot?.BoneEditorSection == null) return;
-                    if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
-                    // ドラッグ前に選択の担当者判定とロック取得（操作経路統一計画.md H-2）。
-                    _boneDragAllowed = TryBeginHostPreviewOfSelection();
-                    _boneDragBegun   = true;
-                    if (!_boneDragAllowed) return;
-                    _objectMoveHandler?.OnLeftDragBegin(PlayerHitResult.Miss, pos, mods);
-                };
-                panel.OnDrag += (btn, pos, delta, mods) =>
-                {
-                    if (btn != 0 || !_boneDragAllowed) return;
-                    if (_layoutRoot?.BoneEditorSection == null) return;
-                    if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
-                    _objectMoveHandler?.OnLeftDrag(pos, delta, mods);
-                    // ObjectMoveTool.ApplyWorldDelta → ctx.SyncBoneTransforms →
-                    // ViewerCore 側配線で EnterVerticesMoved(Dragging) が発火するため
-                    // ここでの UpdateTransform は不要。
-                    _boneEditorSubPanel?.Refresh();
-                };
-                panel.OnDragEnd += (btn, pos, mods) =>
-                {
-                    if (btn != 0) return;
-                    if (_layoutRoot?.BoneEditorSection == null) return;
-                    if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
-                    if (_boneDragAllowed) _objectMoveHandler?.OnLeftDragEnd(pos, mods);
-                    if (_boneDragBegun) EndHostPreview();
-                    _boneDragBegun   = false;
-                    _boneDragAllowed = true;
-                    _boneEditorSubPanel?.Refresh();
-                };
-            }
-            ConnectBoneEditorObjectMove(_layoutRoot?.PerspectivePanel);
-            ConnectBoneEditorObjectMove(_layoutRoot?.TopPanel);
-            ConnectBoneEditorObjectMove(_layoutRoot?.FrontPanel);
-            ConnectBoneEditorObjectMove(_layoutRoot?.SidePanel);
+            // 【ボーンエディタ表示中の ObjectMoveToolHandler への橋渡しは撤去した】（縦横制限計画 段7）
+            //   旧 BoneInputHandler の後継として、ボーンエディタ表示中かつ操作モードが ObjectMove／
+            //   PivotOffset 以外のときにマウス入力を ObjectMoveToolHandler へも渡していた。
+            //   今はボーンエディタを開くと ObjectMove を強制し（ShowBoneEditorPanel）、ツールの区画が
+            //   あるあいだ常駐リストはモードを変えない（ApplyRightPaneViewportMode）。そのため橋渡しが
+            //   働くのは R・G の一時選択・D の面削除・処理列のハンドルの間だけで、矩形選択と
+            //   オブジェクト移動が同じドラッグで両方動いていた。ObjectMove の入力は通常の経路
+            //   （SetToolHandler(_objectMoveHandler) と RegisterActiveToolHandler）が受け持つ。
 
             void ConnectIndicatorInput(PlayerViewportPanel p)
             {

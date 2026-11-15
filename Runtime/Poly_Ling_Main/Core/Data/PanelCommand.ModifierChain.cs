@@ -296,7 +296,7 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "object.modifier", Writes = PLWriteScope.ModelWide,
         Effects = PLCommandEffect.DeletesObject | PLCommandEffect.Topology,
         Verification = PLCommandVerification.Visual,
-        Description = "モディファイアをすべて適用する（処理列とサブディビジョンのスタックに使える）。結果の形が元の名前のオブジェクトになり、結果の行は消え、オブジェクトは 1 つになる。元を出力に持つ生成の項目（履歴）も外す。頂点数が変わるのにモーフを持つオブジェクトは、何も変えずに失敗する。Undo 1 回で元とモディファイアが戻る。")]
+        Description = "モディファイアをすべて適用する（処理列とサブディビジョンのスタックに使える）。結果の形が元の名前のオブジェクトになり、結果の行は消え、オブジェクトは 1 つになる。元を出力に持つ生成の項目（履歴）も外す。形（シェイプ）を持つオブジェクトは、処理列を形ごとに掛け直して結果にも形を残す。形ごとの結果の面のつながりが食い違うとき、またはサブディビジョンで頂点数が変わるときは、何も変えずに失敗する。Undo 1 回で元とモディファイアが戻る。")]
     [PLResult("resultIndex", PLResultKind.Integer, Description = "適用後のオブジェクトの索引")]
     [PLUiRoute("モディファイアパネル（すべて適用）", "rightPaneTop.modifierChain", "modifierChain.apply",
         Run = "modifierChain.apply")]

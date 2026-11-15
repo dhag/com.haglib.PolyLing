@@ -204,6 +204,7 @@ namespace Poly_Ling.Ops
             var nv = (t < 0.5f ? vb : va).Clone();
             nv.Id = 0;
             nv.Position = Vector3.Lerp(vb.Position, va.Position, t);
+            ShapeOps.ClearShapes(nv);   // 新しい頂点は形の控えを持たない（複製元の位置へ飛ばないように）
 
             Vector2 uvB = slotB < vb.UVs.Count ? vb.UVs[slotB] : Vector2.zero;
             Vector2 uvA = slotA < va.UVs.Count ? va.UVs[slotA] : Vector2.zero;

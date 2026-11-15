@@ -63,17 +63,15 @@ namespace Poly_Ling.View
 
             var drawableList = BuildMeshList(model.DrawableMeshes, model);
             var boneList = BuildMeshList(model.Bones, model);
-            var morphList = BuildMeshList(model.Morphs, model);
 
             var summary = new ModelSummary(
                 model.Name, model.FilePath, model.IsDirty,
-                indices.DrawableCount, indices.BoneCount, model.Morphs?.Count ?? 0,
+                indices.DrawableCount, indices.BoneCount,
                 model.MeshContextCount,
                 model.MeshSelectionSetCount, model.ActiveCategory,
-                drawableList, boneList, morphList,
+                drawableList, boneList,
                 model.SelectedDrawableMeshIndices.ToArray(),
-                model.SelectedBoneIndices.ToArray(),
-                model.SelectedMorphIndices.ToArray());
+                model.SelectedBoneIndices.ToArray());
             summary.MeshSelectionSetNames = BuildSelectionSetNames(model);
             summary.ActiveMeshIndex = model.ActiveMeshIndex;
             return summary;
@@ -94,7 +92,7 @@ namespace Poly_Ling.View
             var indices = model.TypedIndices;
             return new ModelSummary(
                 model.Name, model.FilePath, model.IsDirty,
-                indices.DrawableCount, indices.BoneCount, model.Morphs?.Count ?? 0,
+                indices.DrawableCount, indices.BoneCount,
                 model.MeshContextCount,
                 model.MeshSelectionSetCount, model.ActiveCategory);
         }
@@ -103,7 +101,7 @@ namespace Poly_Ling.View
         {
             return new ModelSummary(
                 name, filePath, false,
-                0, 0, 0, 0, 0,
+                0, 0, 0, 0,
                 ModelContext.SelectionCategory.Mesh);
         }
 

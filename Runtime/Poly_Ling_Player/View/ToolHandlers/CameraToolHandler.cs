@@ -34,8 +34,27 @@ namespace Poly_Ling.Player
     /// カメラ調整ギズモ。調整対象（メイン / 3面）と操作種別（カメラ / 注視点）を切り替える。
     /// </summary>
     [Poly_Ling.Data.PLTool("camera", Description = "カメラ・注視点ギズモ")]
-    public class CameraToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class CameraToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// 中央ギズモで注視点（3 面は共有 Target）を自由に動かしている間だけ「対象を動かす」。
+        /// 軸の移動（既存の軸制限を優先）とリングの回転では制限しない。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            return !_dragIsRing && _dragAxis == AxisGizmo.AxisType.Center
+                ? AxisConstraintUse.ObjectMove
+                : AxisConstraintUse.None;
+        }
+
         /// <summary>調整対象のカメラ。</summary>
         public enum CameraTargetKind
         {
@@ -237,6 +256,7 @@ namespace Poly_Ling.Player
         {
             _dragAxis   = AxisGizmo.AxisType.None;
             _dragIsRing = false;
+            _dragOriginPos = screenPos;
 
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || !IsGizmoViewport() || !SyncGizmoFromCamera()) return;

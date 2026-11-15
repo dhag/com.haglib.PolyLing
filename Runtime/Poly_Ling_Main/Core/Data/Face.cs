@@ -85,6 +85,15 @@ namespace Poly_Ling.Data
         /// <summary>非表示か</summary>
         public bool IsHidden => HasFlag(FaceFlags.Hidden);
 
+        /// <summary>曲線で見せる弦か（FaceFlags.CurveChord）。</summary>
+        public bool IsCurveChord => HasFlag(FaceFlags.CurveChord);
+
+        /// <summary>
+        /// この面が登録する線分を描かない・当てないか。非表示の面と、曲線で見せる弦。
+        /// 面そのもの（端点の頂点のカリング・表示）は IsHidden だけで決まる。
+        /// </summary>
+        public bool IsLineHidden => IsHidden || IsCurveChord;
+
         // === コンストラクタ ===
 
         public Face() { }

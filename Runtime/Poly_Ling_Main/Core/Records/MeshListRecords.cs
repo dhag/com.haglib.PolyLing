@@ -41,7 +41,7 @@ namespace Poly_Ling.UndoSystem
     /// MeshContextの完全なスナップショット
     /// HideFlags.HideAndDontSave のオブジェクトを適切に処理
     /// Phase 1: 選択状態を追加
-    /// Phase Morph: モーフデータを追加
+    /// （旧モーフの欄は段 7 で撤去。形は頂点が持つので State の頂点と一緒に写る）
     /// </summary>
     public class MeshContextSnapshot
     {
@@ -660,10 +660,6 @@ namespace Poly_Ling.UndoSystem
         }
     }
 
-    // ============================================================
-    // モーフ変換記録（Phase MorphEditor追加）
-    // ============================================================
-
     /// <summary>
     /// 複数MeshContextのBoneTransform一括変更Undo記録（簡易モード用）
     /// </summary>
@@ -778,19 +774,24 @@ namespace Poly_Ling.UndoSystem
         public BoneTransformSnapshot OldBoneTransform;
         public BoneTransformSnapshot NewBoneTransform;
 
+        // 頂点が持つ形ごとの位置（位置と同じ変換が掛かるので一緒に戻す）。null なら戻さない。
+        public Poly_Ling.Ops.ShapeSnapshot OldShapes;
+        public Poly_Ling.Ops.ShapeSnapshot NewShapes;
+
         public override void Undo(ModelContext ctx)
         {
             if (ctx == null) return;
-            Apply(ctx, OldVertexPositions, OldBoneTransform);
+            Apply(ctx, OldVertexPositions, OldBoneTransform, OldShapes);
         }
 
         public override void Redo(ModelContext ctx)
         {
             if (ctx == null) return;
-            Apply(ctx, NewVertexPositions, NewBoneTransform);
+            Apply(ctx, NewVertexPositions, NewBoneTransform, NewShapes);
         }
 
-        private void Apply(ModelContext ctx, Vector3[] positions, BoneTransformSnapshot boneSnap)
+        private void Apply(ModelContext ctx, Vector3[] positions, BoneTransformSnapshot boneSnap,
+                           Poly_Ling.Ops.ShapeSnapshot shapes)
         {
             if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
             var mc = ctx.GetMeshContext(MasterIndex);
@@ -803,6 +804,7 @@ namespace Poly_Ling.UndoSystem
                 if (vi >= 0 && vi < mc.MeshObject.VertexCount)
                     mc.MeshObject.Vertices[vi].Position = positions[i];
             }
+            Poly_Ling.Ops.ShapeOps.RestoreShapes(mc.MeshObject, shapes);
             mc.MeshObject.InvalidatePositionCache();
             mc.OriginalPositions = (Vector3[])mc.MeshObject.Positions.Clone();
 
@@ -816,125 +818,6 @@ namespace Poly_Ling.UndoSystem
         }
 
         public override string ToString() => $"PivotMove: MasterIndex={MasterIndex}";
-    }
-
-    /// Type, MorphBaseData, MorphParentIndex, ExcludeFromExport を保存/復元
-    /// </summary>
-    public class MorphConversionRecord : MeshListUndoRecord
-    {
-        /// <summary>対象MeshContextのMasterIndex</summary>
-        public int MasterIndex;
-
-        /// <summary>変更前のType</summary>
-        public MeshType OldType;
-        /// <summary>変更後のType</summary>
-        public MeshType NewType;
-
-        /// <summary>変更前のMorphBaseData</summary>
-        public MorphBaseData OldMorphBaseData;
-        /// <summary>変更後のMorphBaseData</summary>
-        public MorphBaseData NewMorphBaseData;
-
-        /// <summary>変更前のMorphParentIndex</summary>
-        public int OldMorphParentIndex;
-        /// <summary>変更後のMorphParentIndex</summary>
-        public int NewMorphParentIndex;
-
-        /// <summary>変更前の名前</summary>
-        public string OldName;
-        /// <summary>変更後の名前</summary>
-        public string NewName;
-
-        /// <summary>変更前のExcludeFromExport</summary>
-        public bool OldExcludeFromExport;
-        /// <summary>変更後のExcludeFromExport</summary>
-        public bool NewExcludeFromExport;
-
-        // ================================================================
-        // 表示ミラー設定
-        //   モーフ化のとき親のミラー設定を継承する（規約は MorphMirrorPolicy.cs を正典とする）。
-        //   継承で書き換わる値なので、記録しないと Undo で元の設定に戻せない。
-        // ================================================================
-
-        /// <summary>変更前の表示ミラー設定 (MirrorType, MirrorAxis, MirrorDistance, MirrorMaterialOffset)</summary>
-        public (int Type, int Axis, float Distance, int MaterialOffset) OldMirror;
-        /// <summary>変更後の表示ミラー設定</summary>
-        public (int Type, int Axis, float Distance, int MaterialOffset) NewMirror;
-
-        /// <summary>ミラー設定を記録・復元の対象にするか（既定 false = 従来どおり触らない）</summary>
-        public bool HasMirrorChange;
-
-        // ================================================================
-        // MorphExpressions
-        //   モーフ化のとき Expression を自動生成するため、リスト全体が変わる。
-        //   Expression は名前とエントリ（index + weight）だけの軽い構造なので、
-        //   前後をまるごと控えて差し替える（MorphExpressionListReplaceRecord と同じ方式）。
-        // ================================================================
-
-        /// <summary>変更前の MorphExpressions</summary>
-        public List<MorphExpression> OldExpressions;
-        /// <summary>変更後の MorphExpressions</summary>
-        public List<MorphExpression> NewExpressions;
-
-        /// <summary>MorphExpressions を記録・復元の対象にするか（既定 false = 従来どおり触らない）</summary>
-        public bool HasExpressionChange;
-
-        public override void Undo(ModelContext ctx)
-        {
-            Apply(ctx, OldType, OldMorphBaseData, OldMorphParentIndex, OldName, OldExcludeFromExport,
-                  OldMirror, OldExpressions);
-        }
-
-        public override void Redo(ModelContext ctx)
-        {
-            Apply(ctx, NewType, NewMorphBaseData, NewMorphParentIndex, NewName, NewExcludeFromExport,
-                  NewMirror, NewExpressions);
-        }
-
-        private void Apply(ModelContext ctx, MeshType type, MorphBaseData morphData,
-            int morphParentIndex, string name, bool excludeFromExport,
-            (int Type, int Axis, float Distance, int MaterialOffset) mirror,
-            List<MorphExpression> expressions)
-        {
-            if (ctx == null) return;
-            if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
-
-            var mc = ctx.GetMeshContext(MasterIndex);
-            if (mc == null) return;
-
-            mc.Type = type;
-            if (mc.MeshObject != null) mc.MeshObject.Type = type;
-            mc.MorphBaseData = morphData?.Clone();
-            mc.MorphParentIndex = morphParentIndex;
-            mc.Name = name;
-            mc.ExcludeFromExport = excludeFromExport;
-
-            if (HasMirrorChange)
-            {
-                mc.MirrorType           = mirror.Type;
-                mc.MirrorAxis           = mirror.Axis;
-                mc.MirrorDistance       = mirror.Distance;
-                mc.MirrorMaterialOffset = mirror.MaterialOffset;
-                mc.InvalidateSymmetryCache();
-            }
-
-            if (HasExpressionChange && expressions != null)
-            {
-                var restored = new List<MorphExpression>(expressions.Count);
-                for (int i = 0; i < expressions.Count; i++)
-                    restored.Add(expressions[i]?.Clone());
-                ctx.MorphExpressions = restored;
-            }
-
-            ctx.TypedIndices?.Invalidate();
-            ctx.OnListChanged?.Invoke();
-            ctx.OnFocusMeshListRequested?.Invoke();
-        }
-
-        public override string ToString()
-        {
-            return $"MorphConversion: [{MasterIndex}] {OldType} → {NewType}";
-        }
     }
 
     // ============================================================
@@ -1451,7 +1334,7 @@ namespace Poly_Ling.UndoSystem
             {
                 var mc = model.GetMeshContext(i);
                 if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0) continue;
-                if (mc.Type == MeshType.Bone || mc.Type == MeshType.Morph) continue;
+                if (mc.Type == MeshType.Bone) continue;
                 var pos = new Vector3[mc.MeshObject.VertexCount];
                 for (int v = 0; v < pos.Length; v++)
                     pos[v] = mc.MeshObject.Vertices[v].Position;
@@ -1461,61 +1344,5 @@ namespace Poly_Ling.UndoSystem
         }
 
         public override string ToString() => "モデルブレンド適用";
-    }
-
-    // ================================================================
-    // モーフ作成 Undo レコード
-    // ================================================================
-
-    /// <summary>
-    /// モーフ作成操作の Undo/Redo レコード。
-    /// MeshContextList 全体 + MorphExpressions リストの両方を保持する。
-    /// </summary>
-    public class MorphCreateRecord : MeshListUndoRecord
-    {
-        public List<MeshContext>     BeforeList;
-        public List<MeshContext>     AfterList;
-        public List<MorphExpression> BeforeExpressions;
-        public List<MorphExpression> AfterExpressions;
-
-        public override void Undo(ModelContext ctx)
-        {
-            if (ctx == null) return;
-            RestoreState(ctx, BeforeList, BeforeExpressions);
-        }
-
-        public override void Redo(ModelContext ctx)
-        {
-            if (ctx == null) return;
-            RestoreState(ctx, AfterList, AfterExpressions);
-        }
-
-        private static void RestoreState(
-            ModelContext ctx,
-            List<MeshContext> meshList,
-            List<MorphExpression> expressions)
-        {
-            // MeshContextList を復元
-            if (meshList != null)
-            {
-                // 実体を替えずに戻す（段 A。MeshFilterToSkinnedRecord と同じ戻し方）。
-                MeshFilterToSkinnedRecord.RestoreListInPlace(ctx, meshList);
-                ctx.InvalidateTypedIndices();
-            }
-
-            // MorphExpressions を復元
-            if (expressions != null)
-            {
-                ctx.MorphExpressions.Clear();
-                foreach (var e in expressions)
-                    ctx.MorphExpressions.Add(e.Clone());
-            }
-
-            ctx.ClearMeshSelection();
-            ctx.OnListChanged?.Invoke();
-            ctx.OnFocusMeshListRequested?.Invoke();
-        }
-
-        public override string ToString() => "モーフ作成";
     }
 }

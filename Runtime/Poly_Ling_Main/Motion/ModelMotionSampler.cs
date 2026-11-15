@@ -18,8 +18,8 @@
 //      座標は Unity のまま（左手系）。書き出し側がそれぞれの座標へ直す。
 //
 // ■ 表情（SampleExpressions のときだけ）
-//   クリップの表情トラックを MotionClipApplier.FindExpression で引き、ExpandToVertexMorphs で
-//   頂点モーフへ展開して（グループは子を辿る）、モーフ MeshContext ごとに重みを足し合わせる。
+//   クリップの表情トラックを ShapeBlendOps.Resolve で「表情の名前 → 形の名前」の順に解き、
+//   相手（形。MorphTargetKey）ごとに重みを足し合わせる。
 //   再生（MotionClipApplier.ApplyExpressions）と同じ展開・同じ重み。
 // ============================================================
 
@@ -76,8 +76,11 @@ namespace Poly_Ling.Motion
         public int  MatchedTrackCount;
         public readonly List<string> SkippedIk = new List<string>();
 
-        /// <summary>モーフ MeshContext 索引 → フレームごとの重み（0〜1、表情を足し合わせたもの）。</summary>
-        public readonly Dictionary<int, float[]> MorphWeights = new Dictionary<int, float[]>();
+        /// <summary>
+        /// 相手（形の番号・旧モーフの MeshContext 索引）→ フレームごとの重み（0〜1、表情を足し合わせたもの）。
+        /// 鍵はブレンドシェイプの割り当て（MorphShapeSlot.Key）と同じ。
+        /// </summary>
+        public readonly Dictionary<Poly_Ling.Ops.MorphTargetKey, float[]> MorphWeights = new Dictionary<Poly_Ling.Ops.MorphTargetKey, float[]>();
         public int ExpressionTrackCount;
         public int ExpressionResolvedCount;
         public readonly List<string> UnresolvedExpressions = new List<string>();
@@ -194,7 +197,8 @@ namespace Poly_Ling.Motion
                 s.RootMotion = rootMotion;
 
                 // ── 表情の展開（モーフ索引 → [(トラック, 重み)]）──────────
-                var morphTerms = new Dictionary<int, List<(MotionExpressionTrackDTO track, float w)>>();
+                var morphTerms = new Dictionary<Poly_Ling.Ops.MorphTargetKey, List<(MotionExpressionTrackDTO track, float w)>>();
+                var terms = new List<Poly_Ling.Ops.MorphTargetTerm>();
                 if (options.SampleExpressions && clip.expressions != null)
                 {
                     // 同じ名前のトラック（パス＝レンダラー違い）は最初の 1 本だけを当てる（MotionClipApplier と同じ）。
@@ -204,17 +208,17 @@ namespace Poly_Ling.Motion
                         if (tr == null) continue;
                         s.ExpressionTrackCount++;
                         if (tr.name != null && !usedExprNames.Add(tr.name)) continue;
-                        var expr = MotionClipApplier.FindExpression(model, tr.name);
-                        int before = morphTerms.Count;
+                        // 名前は「表情の名前 → 形の名前」の順に解く（ShapeBlendOps。再生と同じ）。
+                        terms.Clear();
+                        Poly_Ling.Ops.ShapeBlendOps.Resolve(model, tr.name, 1f, terms);
                         bool any = false;
-                        if (expr != null)
-                            MotionClipApplier.ExpandToVertexMorphs(model, expr, 1f, (morphIndex, baseIndex, morphCtx, w) =>
-                            {
-                                if (!morphTerms.TryGetValue(morphIndex, out var list))
-                                    morphTerms[morphIndex] = list = new List<(MotionExpressionTrackDTO, float)>();
-                                list.Add((tr, w));
-                                any = true;
-                            });
+                        foreach (var t in terms)
+                        {
+                            if (!morphTerms.TryGetValue(t.Key, out var list))
+                                morphTerms[t.Key] = list = new List<(MotionExpressionTrackDTO, float)>();
+                            list.Add((tr, t.Weight));
+                            any = true;
+                        }
                         if (any) s.ExpressionResolvedCount++;
                         else     s.UnresolvedExpressions.Add(tr.name);
                     }

@@ -42,9 +42,7 @@ namespace Poly_Ling.Remote
             ["Depth"]       = (mc, jb) => jb.Value(mc.Depth),
             ["ParentIndex"] = (mc, jb) => jb.Value(mc.ParentIndex),
             ["HierarchyParentIndex"] = (mc, jb) => jb.Value(mc.HierarchyParentIndex),
-            ["IsMorph"]     = (mc, jb) => jb.Value(mc.IsMorph),
-            ["MorphName"]   = (mc, jb) => jb.Value(mc.MorphName),
-            ["MorphPanel"]  = (mc, jb) => jb.Value(mc.MorphPanel),
+            // IsMorph / MorphName / MorphPanel（旧モーフ）は段 7 で廃止。形は QueryShapes で返す。
             ["ExcludeFromExport"] = (mc, jb) => jb.Value(mc.ExcludeFromExport),
 
             // --- 統計 ---
@@ -184,7 +182,6 @@ namespace Poly_Ling.Remote
             jb.KeyValue("activeCategory", ctx.Model.ActiveCategory.ToString());
             jb.KeyValue("hasMeshSelection", ctx.Model.HasMeshSelection);
             jb.KeyValue("hasBoneSelection", ctx.Model.HasBoneSelection);
-            jb.KeyValue("hasMorphSelection", ctx.Model.HasMorphSelection);
 
             jb.Key("selectedMeshIndices").BeginArray();
             foreach (int idx in ctx.Model.SelectedDrawableMeshIndices)
@@ -197,6 +194,37 @@ namespace Poly_Ling.Remote
                 jb.KeyValue("currentModelIndex", ctx.Project.CurrentModelIndex);
             }
 
+            jb.EndObject();
+            return jb.ToString();
+        }
+
+        /// <summary>
+        /// 形の一覧と今の形（PolyLing_モーフ整理計画.md 7 章の 3・段 7）。
+        /// {"current":名前,"currentId":番号,"previous":名前,"shapes":[{"id","name","nameEnglish","panel","kind"}…]}。
+        /// 名前が空は基本の形。kind は "position" / "uv"。
+        /// </summary>
+        public static string QueryShapes(ModelContext model)
+        {
+            if (model == null) return "null";
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("current",   model.FindShapeById(model.CurrentShapeId)?.Name ?? "");
+            jb.KeyValue("currentId", model.CurrentShapeId);
+            jb.KeyValue("previous",  model.FindShapeById(model.PreviousShapeId)?.Name ?? "");
+            jb.Key("shapes").BeginArray();
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                {
+                    if (s == null) continue;
+                    jb.BeginObject();
+                    jb.KeyValue("id", s.Id);
+                    jb.KeyValue("name", s.Name ?? "");
+                    jb.KeyValue("nameEnglish", s.NameEnglish ?? "");
+                    jb.KeyValue("panel", s.Panel);
+                    jb.KeyValue("kind", s.IsUV ? "uv" : "position");
+                    jb.EndObject();
+                }
+            jb.EndArray();
             jb.EndObject();
             return jb.ToString();
         }
@@ -229,7 +257,6 @@ namespace Poly_Ling.Remote
             "VertexCount", "FaceCount",
             "MirrorType", "MirrorAxis",
             "Depth", "ParentIndex",
-            "IsMorph", "MorphName",
             "SelectMode"
         };
 

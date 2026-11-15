@@ -895,7 +895,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本にしか効かない（MergeVerticesTool.cs:119）ため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology | PLCommandEffect.VertexOrder, Hazards = PLCommandHazard.InvalidatesMorphs | PLCommandHazard.ChangesVertexOrder, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets, Description = "選択頂点を結合する。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology | PLCommandEffect.VertexOrder, Hazards = PLCommandHazard.ChangesVertexOrder, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets, Description = "選択頂点を結合する。")]
     public class MergeVerticesCommand : PanelCommand
     {
         /// <summary>結合の仕方。</summary>

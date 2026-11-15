@@ -112,7 +112,8 @@ namespace Poly_Ling.Data
     [PLResult("meshContexts", PLResultKind.Integer, Description = "モデルが持つ要素の総数")]
     [PLResult("drawables",    PLResultKind.Integer, Description = "描画オブジェクトの数")]
     [PLResult("bones",        PLResultKind.Integer, Description = "ボーンの数")]
-    [PLResult("morphs",       PLResultKind.Integer, Description = "モーフの数")]
+    [PLResult("shapes",       PLResultKind.Integer, Description = "形の数（基本の形を除く）")]
+    [PLResult("expressions",  PLResultKind.Integer, Description = "表情の数")]
     public class QueryModelStructureCommand : PanelCommand
     {
         [PLParam(TextKey = "QueryResultName",

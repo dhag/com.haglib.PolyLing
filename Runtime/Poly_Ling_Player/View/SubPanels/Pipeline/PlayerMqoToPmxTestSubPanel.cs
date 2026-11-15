@@ -464,12 +464,6 @@ namespace Poly_Ling.Player
                 return Ng("差し替えが 1 頂点も走らなかった", null,
                     "対応が付いていても、片側の MeshObject が null なら組は飛ばされる。");
 
-            // 位置を入れ替えたので、そのベースを持つモーフの基準データを追従させる。
-            // 頂点数も索引も動かないので old→new のマップは要らない。
-            // UV を書き込まなかった場合は UV の基準も動いていないので触らない。
-            PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                _pairModel, model, remapPosition: true, remapUV: _importUV.value);
-
             if (_recalcNormals.value)
             {
                 foreach (var e in _pairModel)

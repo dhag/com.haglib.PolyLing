@@ -169,10 +169,6 @@ namespace Poly_Ling.View
             }
         }
 
-        // モーフ
-        public bool IsMorph => _ctx.IsMorph;
-        public int MorphParentIndex => _ctx.MorphParentIndex;
-        public string MorphName => _ctx.MorphName;
         public bool ExcludeFromExport => _ctx.ExcludeFromExport;
         public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
         public bool IsMirrorBranchRoot => _ctx.IsMirrorBranchRoot;
@@ -354,7 +350,6 @@ namespace Poly_Ling.View
         // RebuildLists()でのみ再構築。Selection/Attributes変更では不要。
         private IMeshView[] _drawableList;
         private IMeshView[] _boneList;
-        private IMeshView[] _morphList;
         private IMeshView[] _rigidBodyList;
         private IMeshView[] _rigidBodyJointList;
         private bool _listsDirty = true;
@@ -372,7 +367,6 @@ namespace Poly_Ling.View
         // カウント
         public int DrawableCount => _model.TypedIndices.DrawableCount;
         public int BoneCount => _model.TypedIndices.BoneCount;
-        public int MorphCount => _model.Morphs?.Count ?? 0;
         public int TotalMeshCount => _model.MeshContextCount;
 
         // 選択（毎回ライブで返す）
@@ -410,6 +404,10 @@ namespace Poly_Ling.View
         public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
         public MaterialSlotView GetMaterialSlot(int slot) => LiveProjectView.BuildMaterialSlotView(_model, slot);
         public IReadOnlyList<MorphExpressionView> MorphExpressions => LiveProjectView.BuildMorphExpressionViews(_model);
+        public IReadOnlyList<ShapeView> Shapes => LiveProjectView.BuildShapeViews(_model);
+        public int CurrentShapeId  => _model.CurrentShapeId;
+        public int PreviousShapeId => _model.PreviousShapeId;
+        public ShapeView BaseShape => LiveProjectView.BuildBaseShapeView(_model);
 
         public int    HumanoidMappingCount => (_model.HumanoidMapping == null || _model.HumanoidMapping.IsEmpty) ? 0 : _model.HumanoidMapping.Count;
         public bool   HasAnySkinWeight     => Poly_Ling.Ops.TPoseConverter.HasAnySkinWeight(_model.MeshContextList);
@@ -425,7 +423,6 @@ namespace Poly_Ling.View
         public bool HasVrmLookAt => _model.VrmLookAt != null;
         public Poly_Ling.Data.VrmLookAtData VrmLookAtCopy => Poly_Ling.Ops.VrmSettingsOps.GetLookAtOrNew(_model);
         public int[] SelectedBoneIndices => _model.SelectedBoneIndices.ToArray();
-        public int[] SelectedMorphIndices => _model.SelectedMorphIndices.ToArray();
 
         // 選択辞書名（毎回ライブで返す。辞書は数個〜数十個で件数が小さいためキャッシュしない）
         public IReadOnlyList<string> MeshSelectionSetNames
@@ -443,7 +440,6 @@ namespace Poly_Ling.View
         // メッシュリスト（キャッシュ。ListStructure変更時のみ再構築）
         public IReadOnlyList<IMeshView> DrawableList { get { EnsureLists(); return _drawableList; } }
         public IReadOnlyList<IMeshView> BoneList { get { EnsureLists(); return _boneList; } }
-        public IReadOnlyList<IMeshView> MorphList { get { EnsureLists(); return _morphList; } }
         public IReadOnlyList<IMeshView> RigidBodyList { get { EnsureLists(); return _rigidBodyList; } }
         public IReadOnlyList<IMeshView> RigidBodyJointList { get { EnsureLists(); return _rigidBodyJointList; } }
 
@@ -455,7 +451,6 @@ namespace Poly_Ling.View
             if (!_listsDirty) return;
             _drawableList = BuildList(_model.DrawableMeshes);
             _boneList = BuildList(_model.Bones);
-            _morphList = BuildList(_model.Morphs);
             _rigidBodyList = BuildList(_model.RigidBodies);
             _rigidBodyJointList = BuildList(_model.RigidBodyJoints);
             _listsDirty = false;
@@ -538,6 +533,36 @@ namespace Poly_Ling.View
             };
         }
 
+        /// <summary>形の一覧の写しを作る（PlayerShapeSubPanel が読む項目）。基本の形は載せない。</summary>
+        public static IReadOnlyList<ShapeView> BuildShapeViews(ModelContext model)
+        {
+            var list = new List<ShapeView>();
+            if (model?.Shapes == null) return list;
+            foreach (var s in model.Shapes)
+            {
+                if (s == null) continue;
+                list.Add(new ShapeView
+                {
+                    Id = s.Id, Name = s.Name ?? "", NameEnglish = s.NameEnglish ?? "", Panel = s.Panel,
+                    IsUV = s.IsUV,
+                    SourcePath = s.Source?.Path ?? "", SourcePairCount = s.Source?.Pairs?.Count ?? 0,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>基本の形の写しを作る（Id 0。読み込み元の欄だけ意味がある）。</summary>
+        public static ShapeView BuildBaseShapeView(ModelContext model)
+        {
+            if (model == null) return null;
+            var src = model.BaseShapeSource;
+            return new ShapeView
+            {
+                Id = 0, Name = "", NameEnglish = "", Panel = 3,
+                SourcePath = src?.Path ?? "", SourcePairCount = src?.Pairs?.Count ?? 0,
+            };
+        }
+
         /// <summary>モーフエクスプレッションの写しを作る（PlayerMorphSubPanel が読んでいた項目）。</summary>
         public static IReadOnlyList<MorphExpressionView> BuildMorphExpressionViews(ModelContext model)
         {
@@ -552,13 +577,11 @@ namespace Poly_Ling.View
                     NameEnglish = s.NameEnglish ?? "",
                     TypeName    = s.Type.ToString(),
                     Panel       = s.Panel,
-                    MeshCount   = s.MeshCount,
+                    HasSameNameShape = s.Type == MorphType.Vertex && model.FindShapeByName(s.Name) != null,
                 };
-                foreach (var e in s.MeshEntries)
-                {
-                    var mc = e.MeshIndex >= 0 && e.MeshIndex < model.MeshContextCount ? model.GetMeshContext(e.MeshIndex) : null;
-                    v.Entries.Add(new MorphEntryView { MeshIndex = e.MeshIndex, MeshName = mc?.Name, Weight = e.Weight });
-                }
+                if (s.GroupChildren != null)
+                    foreach (var c in s.GroupChildren)
+                        v.Children.Add(new MorphChildView { Name = c.Name ?? "", Weight = c.Weight, IsShape = model.FindShapeByName(c.Name) != null });
                 list.Add(v);
             }
             return list;

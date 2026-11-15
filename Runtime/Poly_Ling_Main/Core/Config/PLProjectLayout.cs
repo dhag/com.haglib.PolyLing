@@ -33,6 +33,9 @@ namespace Poly_Ling.Core
             /// <summary>シナリオ・ランタイムの生成物の置き場（DataFolder の中の名前）。</summary>
             public string ScenarioSandboxFolder = "サンドボックス_シナリオ用";
 
+            /// <summary>シナリオ（手順の知識）の置き場（DataFolder の中の名前）。ScenarioLibrary が使う。</summary>
+            public string ScenarioFolder = "シナリオ";
+
             /// <summary>デバッグ作業の置き場（作業フォルダ直下の名前）。</summary>
             public string DebugSandboxFolder = "SandBox";
         }
@@ -58,6 +61,9 @@ namespace Poly_Ling.Core
         /// <summary>シナリオ・ランタイムの生成物の置き場（DataFolder の中の名前）。</summary>
         public static string ScenarioSandboxFolder => Get().ScenarioSandboxFolder;
 
+        /// <summary>シナリオ（手順の知識）の置き場（DataFolder の中の名前）。</summary>
+        public static string ScenarioFolder => Get().ScenarioFolder;
+
         /// <summary>デバッグ作業の置き場（作業フォルダ直下の名前）。</summary>
         public static string DebugSandboxFolder => Get().DebugSandboxFolder;
 
@@ -70,6 +76,7 @@ namespace Poly_Ling.Core
             return text
                 .Replace(MarkPrefix + nameof(Data.DataFolder) + "}", d.DataFolder)
                 .Replace(MarkPrefix + nameof(Data.ScenarioSandboxFolder) + "}", d.ScenarioSandboxFolder)
+                .Replace(MarkPrefix + nameof(Data.ScenarioFolder) + "}", d.ScenarioFolder)
                 .Replace(MarkPrefix + nameof(Data.DebugSandboxFolder) + "}", d.DebugSandboxFolder);
         }
 
@@ -128,7 +135,7 @@ namespace Poly_Ling.Core
                 return new Data();
             }
 
-            if (!IsFolderName(data.DataFolder) || !IsFolderName(data.ScenarioSandboxFolder) || !IsFolderName(data.DebugSandboxFolder))
+            if (!IsFolderName(data.DataFolder) || !IsFolderName(data.ScenarioSandboxFolder) || !IsFolderName(data.ScenarioFolder) || !IsFolderName(data.DebugSandboxFolder))
             {
                 Debug.LogWarning($"[PLProjectLayout] {path} の値はフォルダ名 1 つ（空でなく、区切り文字を含まない）で書いてください。既定値を使います");
                 return new Data();

@@ -47,8 +47,7 @@ namespace Poly_Ling.Ops
         BoneWeight       = 1 << 4,
         MirrorBoneWeight = 1 << 5,
         VertexId         = 1 << 6,
-        /// <summary>MorphBaseData（BasePositions / BaseNormals / BaseUVs）。</summary>
-        MorphBase        = 1 << 7,
+        // 1 << 7 はモーフの基準データ（段 7 で廃止。形の控えは頂点が持つので Position と一緒には写らない）の欠番。
         /// <summary>パーツ選択辞書（頂点インデックスを対応表で読み替える）。</summary>
         PartsSelectionSet = 1 << 8,
     }
@@ -273,9 +272,6 @@ namespace Poly_Ling.Ops
                       + $"({dupReport.DuplicatedVertexCount} 頂点) あります");
             }
 
-            if (kinds.HasFlag(VertexDataKind.MorphBase))
-                TransferMorphBase(src, dst, map, result);
-
             if (kinds.HasFlag(VertexDataKind.PartsSelectionSet))
                 TransferSelectionSets(src, dst, map, result);
 
@@ -395,67 +391,6 @@ namespace Poly_Ling.Ops
                 }
             }
             return clamped;
-        }
-
-        // ================================================================
-        // MorphBaseData
-        // ================================================================
-
-        /// <summary>
-        /// モーフ基準データを対応表で読み替えて転送する。
-        /// 転送先がモーフでない場合は MorphBaseData を新規に作る。
-        /// 対応の取れなかった頂点は転送先の現在値を保つ。
-        /// </summary>
-        private static void TransferMorphBase(
-            MeshContext src, MeshContext dst, Dictionary<int, int> map, VertexTransferResult result)
-        {
-            var sb = src.MorphBaseData;
-            if (sb == null)
-            {
-                result.Warnings.Add("転送元にモーフ基準データがありません");
-                return;
-            }
-
-            int dstCount = dst.MeshObject.VertexCount;
-            var db = dst.MorphBaseData;
-            if (db == null)
-            {
-                db = new MorphBaseData
-                {
-                    MorphName = sb.MorphName,
-                    Panel     = sb.Panel,
-                };
-                dst.MorphBaseData = db;
-            }
-
-            db.BasePositions = RemapArray(sb.BasePositions, db.BasePositions, dstCount, map,
-                                          fallback: i => dst.MeshObject.Vertices[i].Position);
-            db.BaseNormals   = RemapArray(sb.BaseNormals,   db.BaseNormals,   dstCount, map,
-                                          fallback: i => Vector3.zero);
-            db.BaseUVs       = RemapArray(sb.BaseUVs,       db.BaseUVs,       dstCount, map,
-                                          fallback: i => Vector2.zero);
-        }
-
-        /// <summary>
-        /// 頂点インデックス配列を対応表で読み替える。
-        /// src が null なら null を返す（その項目は転送元に無い）。
-        /// </summary>
-        private static T[] RemapArray<T>(
-            T[] srcArr, T[] dstArr, int dstCount, Dictionary<int, int> map, Func<int, T> fallback)
-        {
-            if (srcArr == null) return dstArr;
-
-            var result = new T[dstCount];
-            for (int i = 0; i < dstCount; i++)
-            {
-                if (map.TryGetValue(i, out int si) && si >= 0 && si < srcArr.Length)
-                    result[i] = srcArr[si];
-                else if (dstArr != null && i < dstArr.Length)
-                    result[i] = dstArr[i];          // 対応が無ければ既存値を保つ
-                else
-                    result[i] = fallback(i);
-            }
-            return result;
         }
 
         // ================================================================

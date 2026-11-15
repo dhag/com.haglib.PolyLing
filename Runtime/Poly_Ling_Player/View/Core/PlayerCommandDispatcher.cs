@@ -11,13 +11,14 @@
 //     Query.cs / Query.Build.cs   照会・生データ（DispatchQuery）と結果の組み立て
 //     MeshAttributes.cs           モデル操作（DispatchModel）・属性（DispatchMeshAttributes）・可視／ロックの適用
 //     EditTools.cs                選択・移動・位相編集・ツール確定・ギズモ・デフォーマ・作業軸
-//     BoneMorphUv.cs              BonePose・モーフ・BoneTransform・UV・マテリアル
+//     BoneMorphUv.cs              BonePose・表情（属性・削除・CSV）・BoneTransform・UV・マテリアル
+//     Shape.cs                    形・表情（追加・形の重み）・形のプレビュー・形をモデルとして取り出す
 //     Blend.cs                    モデル／メッシュブレンド
 //     ModifierStack.cs              モディファイアスタック
 //     DeformSkin.cs               特殊な変形・スキン関連
 //     MirrorHumanoidVrm.cs        Quad減面・ミラー・Humanoid・VRM 設定・Avatar リターゲット
 //     SpringBone.cs               揺れもの（VRM SpringBone）
-//     TPoseMergeMorph.cs          Tポーズ・メッシュマージ・ブーリアン・差分モーフ
+//     TPoseMergeMorph.cs          Tポーズ・メッシュマージ・ブーリアン（差分モーフは段 7 で撤去）
 //     SelectionSets.cs            パーツ選択辞書・除外辞書・面の表示／非表示・メッシュ選択辞書
 //     NormalEdit.cs               法線編集
 //     ObjectOrigin.cs             オブジェクト原点の一括設定・姿勢くさび
@@ -75,8 +76,8 @@ namespace Poly_Ling.Player
         private int  _dispatchEntrySignature;
         private int  _dispatchEntryNotifyCount;
 
-        // MeshListOps はモーフプレビューとスライダードラッグの途中経過を
-        // インスタンス内に持つ（MeshListOps.cs:29-35）。Start→Apply→End が
+        // MeshListOps は形の試し表示とスライダードラッグの途中経過を
+        // インスタンス内に持つ。開始→更新→終了が
         // 同一インスタンスで揃わないと成立しないため、ここで 1 個だけ保持する。
         private MeshListOps  _meshListOps;
         private ModelContext _meshListOpsModel;
@@ -123,6 +124,9 @@ namespace Poly_Ling.Player
             = new Dictionary<int, Vector3[]>();
         private readonly Dictionary<int, Matrix4x4> _boneOriginStartWorld
             = new Dictionary<int, Matrix4x4>();
+        // 同じく、開始時の「頂点が持つ形ごとの位置」。位置と同じ再局所化を毎回ここから掛け直す。
+        private readonly Dictionary<int, Poly_Ling.Ops.ShapeSnapshot> _boneOriginStartShapes
+            = new Dictionary<int, Poly_Ling.Ops.ShapeSnapshot>();
 
         // C(ポーズ一時)用: Begin～End 間の BonePoseData スナップショット
         private readonly Dictionary<int, BonePoseDataSnapshot> _bonePoseBeforeSnapshots
@@ -223,7 +227,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 保持している MeshListOps を返す。対象モデルが変わったときだけ差し替える。
-        /// SetContext は内部で EndMorphPreview() を呼ぶ（MeshListOps.cs:45）ので、
+        /// SetContext は内部でプレビューを終える（MeshListOps.SetContext）ので、
         /// 毎回呼ぶとプレビューの途中経過が消える。
         /// </summary>
         private MeshListOps GetMeshListOps(ModelContext model)
@@ -1439,8 +1443,10 @@ namespace Poly_Ling.Player
             if (DispatchNormalEdit(cmd, project, model))        return;
             if (DispatchMeshSelectionSets(cmd, project, model)) return;
             if (DispatchClipboard(cmd, project, model))         return;
+            if (DispatchShape(cmd, project, model))             return;
+            if (DispatchShapeMqo(cmd, project, model))          return;
 
-            // ── その他（モーフ変換・プレビュー等）は Player では未実装
+            // ── ここまでのどれにも当たらないコマンド
             Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");
             return;
         }

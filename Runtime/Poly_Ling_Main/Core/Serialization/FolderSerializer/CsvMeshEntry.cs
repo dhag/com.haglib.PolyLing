@@ -30,7 +30,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
         public string ParentName;
         public string HierarchyParentName;
         public string BakedMirrorSourceName;
-        public string MorphParentName;
         /// <summary>頂点ごとのBoneWeight参照ボーン名 [name0,name1,name2,name3]</summary>
         public List<string[]> VertexBoneNames;
         /// <summary>頂点ごとのMirrorBoneWeight参照ボーン名</summary>

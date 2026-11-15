@@ -124,6 +124,57 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // Read: 頂点の形ごとの位置（Vertex.Shapes）
+        //
+        // 直前に読んだ頂点（v / vn いずれでも可）へ付与する。
+        // ================================================================
+
+        private static void ReadVertexShapes(string[] cols, MeshObject meshObject)
+        {
+            // vsh,count,shapeId,x,y,z,...
+            if (meshObject == null || meshObject.Vertices.Count == 0) return;
+
+            int count = ParseInt(cols, 1);
+            if (count <= 0) return;
+
+            var vertex = meshObject.Vertices[meshObject.Vertices.Count - 1];
+
+            int idx = 2;
+            for (int i = 0; i < count; i++)
+            {
+                int shapeId = ParseInt(cols, idx++);
+                float x = ParseFloat(cols, idx++);
+                float y = ParseFloat(cols, idx++);
+                float z = ParseFloat(cols, idx++);
+                vertex.SetShape(shapeId, new Vector3(x, y, z));
+            }
+        }
+
+        // ================================================================
+        // Read: 頂点の形ごとの UV（Vertex.UVShapes。UV スロット 0）
+        // ================================================================
+
+        private static void ReadVertexUVShapes(string[] cols, MeshObject meshObject)
+        {
+            // vsu,count,shapeId,u,v,...
+            if (meshObject == null || meshObject.Vertices.Count == 0) return;
+
+            int count = ParseInt(cols, 1);
+            if (count <= 0) return;
+
+            var vertex = meshObject.Vertices[meshObject.Vertices.Count - 1];
+
+            int idx = 2;
+            for (int i = 0; i < count; i++)
+            {
+                int shapeId = ParseInt(cols, idx++);
+                float u = ParseFloat(cols, idx++);
+                float v = ParseFloat(cols, idx++);
+                vertex.SetUVShape(shapeId, new Vector2(u, v));
+            }
+        }
+
+        // ================================================================
         // Read: 頂点（名前ベース）
         // ================================================================
 
@@ -588,10 +639,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // BakedMirrorSourceIndex
                 if (!string.IsNullOrEmpty(entry.BakedMirrorSourceName))
                     mc.BakedMirrorSourceIndex = LookupIndex(entry.BakedMirrorSourceName, nameToIndex);
-
-                // MorphParentIndex
-                if (!string.IsNullOrEmpty(entry.MorphParentName))
-                    mc.MorphParentIndex = LookupIndex(entry.MorphParentName, nameToIndex);
 
                 // IK は per-bone 形式（ikRoot/ikLinkBone）で読み込み、
                 // 集約 Links / TargetIndex は CsvModelSerializer.Deserialize 末尾の

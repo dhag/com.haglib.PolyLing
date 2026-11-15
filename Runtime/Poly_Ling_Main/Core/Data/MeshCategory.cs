@@ -1,7 +1,10 @@
 using Poly_Ling.Data;
-// Assets/Editor/Poly_Ling_/Core/Data/MeshCategory.cs
+// MeshCategory.cs
 // メッシュオブジェクトのカテゴリ定義
 // MeshTypeをグループ化してアクセスするための列挙型
+//
+// 番号はリモートの要求（category）で数として渡るので、値を明示して固定する。
+// 4 はモーフ（段 7 で廃止。PolyLing_モーフ整理計画.md 3.12）の欠番。
 
 namespace Poly_Ling.Data
 {
@@ -12,36 +15,33 @@ namespace Poly_Ling.Data
     public enum MeshCategory
     {
         /// <summary>通常のメッシュのみ (MeshType.Mesh)</summary>
-        Mesh,
+        Mesh = 0,
 
         /// <summary>ベイクされたミラーメッシュのみ (MeshType.BakedMirror)</summary>
-        BakedMirror,
+        BakedMirror = 1,
 
         /// <summary>描画可能メッシュ (Mesh + BakedMirror)</summary>
-        Drawable,
+        Drawable = 2,
 
         /// <summary>ボーンのみ (MeshType.Bone)</summary>
-        Bone,
-
-        /// <summary>モーフのみ (MeshType.Morph)</summary>
-        Morph,
+        Bone = 3,
 
         /// <summary>剛体のみ (MeshType.RigidBody)</summary>
-        RigidBody,
+        RigidBody = 5,
 
         /// <summary>剛体ジョイントのみ (MeshType.RigidBodyJoint)</summary>
-        RigidBodyJoint,
+        RigidBodyJoint = 6,
 
         /// <summary>ヘルパーのみ (MeshType.Helper)</summary>
-        Helper,
+        Helper = 7,
 
         /// <summary>グループのみ (MeshType.Group)</summary>
-        Group,
+        Group = 8,
 
         /// <summary>作業軸のみ (MeshType.WorkAxis)</summary>
-        WorkAxis,
+        WorkAxis = 9,
 
         /// <summary>全てのオブジェクト</summary>
-        All
+        All = 10
     }
 }

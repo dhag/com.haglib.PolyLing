@@ -56,6 +56,12 @@ namespace Poly_Ling.Player
         /// <summary>ボタンの押下。</summary>
         public Func<UiClickCommand, CommandResult>         OnUiClick;
 
+        /// <summary>ビューポートへの入力の再現。</summary>
+        public Func<UiViewportPointerCommand, CommandResult> OnUiViewportPointer;
+
+        /// <summary>独立キャンバスへの入力の再現。</summary>
+        public Func<UiCanvasPointerCommand, CommandResult> OnUiCanvasPointer;
+
         /// <summary>登録状況の検査。</summary>
         public Func<QueryUiAutomationAuditCommand, CommandResult> OnQueryUiAutomationAudit;
 
@@ -87,6 +93,8 @@ namespace Poly_Ling.Player
                 case UiCaptureStatusCommand c: RunUiAutomation(OnUiCaptureStatus, c, "uiCaptureStatus"); return true;
                 case QueryCapturePositionCommand c: RunUiAutomation(OnQueryCapturePosition, c, "queryCapturePosition"); return true;
                 case UiClickCommand c:         RunUiAutomation(OnUiClick,         c, "uiClick");         return true;
+                case UiViewportPointerCommand c: RunUiAutomation(OnUiViewportPointer, c, "uiViewportPointer"); return true;
+                case UiCanvasPointerCommand c:   RunUiAutomation(OnUiCanvasPointer,   c, "uiCanvasPointer");   return true;
                 case QueryUiAutomationAuditCommand c:
                     RunUiAutomation(OnQueryUiAutomationAudit, c, "queryUiAutomationAudit");
                     return true;

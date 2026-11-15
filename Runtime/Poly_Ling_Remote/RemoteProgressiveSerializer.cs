@@ -29,6 +29,12 @@ namespace Poly_Ling.Remote
 {
     public static partial class RemoteProgressiveSerializer
     {
+        /// <summary>PLRM（モデル）の版。段 7 で 17 にした（表情の旧モーフのエントリを廃止。16 以前は読まない）。</summary>
+        public const int ModelMetaVersion = 17;
+
+        /// <summary>PLRS（メッシュの概要）の版。段 7 で 12 にした（旧モーフの欄を廃止。11 以前は読まない）。</summary>
+        public const int MeshSummaryVersion = 12;
+
         // ================================================================
         // PLRH — ProjectHeader
         // [4B] Magic  [1B] Version  [1B] CurrentModelIndex  [2B] ModelCount
@@ -94,8 +100,9 @@ namespace Poly_Ling.Remote
         //     RenderQueueOffset / ZWriteOverride / ZTest / DoubleSidedGI / GPUInstancing /
         //     ShaderProperties）。Version 1 の受信側とは非互換のため Editor/Player を同時更新すること。
         // [2B] ExpressionCount  [MorphExpression × ExpressionCount]
-        //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type  [1B] IsSymmetric
-        //                    [2B] EntryCount  ([2B] MeshIndex  [4B] Weight) × EntryCount
+        //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type
+        //   ※ Version 17（段 7）で表情の [1B] IsSymmetric と [2B] EntryCount ([2B] MeshIndex [4B] Weight)×N を廃止した。
+        //     表情は形の名前で指す（子は WriteMorphGroupChildren）。16 以前は読まずに断る。
         //   ※ Version 3 で末尾に ModifierStack ブロックを追加。
         //     [2B] GroupCount  [ModifierStack × GroupCount]
         //     ModifierStack: [string] Name  [string] Action
@@ -155,6 +162,16 @@ namespace Poly_Ling.Remote
         //     .mfproj の modifierStacks[].isChain / steps[].disabled と揃える。WriteModifierChainFlags）を追加。
         //     Version 12 以前の受信側は末尾のこの欄を読まずに終わる。Version 12 以前を読むときは
         //     処理列でない・有効のまま。
+        //   ※ Version 14 で末尾に形の一覧と今の形（ModelContext.Shapes / CurrentShapeId。shapes.csv と揃える。
+        //     WriteShapes）を追加。[4B] CurrentShapeId  [4B] ShapeCount
+        //     ([4B] Id [string] Name [string] NameEnglish [4B] Panel) × ShapeCount。
+        //     頂点の控え（Vertex.Shapes）は PLRD の MeshFieldFlags.Shapes が運ぶ。
+        //     Version 13 以前の受信側は末尾のこの欄を読まずに終わる。
+        //   ※ Version 15 で末尾に形の読み込み元（ShapeDef.Source・ModelContext.BaseShapeSource。
+        //     shapes.csv の source 行と揃える。WriteShapeSources）を追加。
+        //     Version 14 以前の受信側は末尾のこの欄を読まずに終わる。
+        //   ※ Version 16 で末尾に形の種類（ShapeDef.Kind。WriteShapeKinds）を追加。
+        //     頂点の UV の控え（Vertex.UVShapes）は PLRD の MeshFieldFlags.UVShapes が運ぶ。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -172,7 +189,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)13);  // version 13: 処理列の印と項目の有効。version 12: 表情の作成日時。version 11: シナリオの引数（ModifierStack.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ModifierStack ブロック
+                w.Write((byte)ModelMetaVersion);  // version 17: 表情の旧モーフのエントリ・IsSymmetric を廃止（16 以前は読まない）。version 16: 形の種類（位置 / UV）。version 15: 形の読み込み元。version 14: 形の一覧と今の形。version 13: 処理列の印と項目の有効。version 12: 表情の作成日時。version 11: シナリオの引数（ModifierStack.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ModifierStack ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -199,13 +216,7 @@ namespace Poly_Ling.Remote
                     WriteString(w, expr.NameEnglish ?? "");
                     w.Write((byte)expr.Panel);
                     w.Write((byte)expr.Type);
-                    w.Write(expr.IsSymmetric);
-                    w.Write((ushort)expr.MeshEntries.Count);
-                    for (int j = 0; j < expr.MeshEntries.Count; j++)
-                    {
-                        w.Write((short)expr.MeshEntries[j].MeshIndex);
-                        w.Write(expr.MeshEntries[j].Weight);
-                    }
+                    // version 17：IsSymmetric と旧モーフのエントリ（MeshIndex・Weight）を廃止（段 7）。
                 }
 
                 // ── ModifierStacks（version 3 で追加 / version 4 で項目列へ）
@@ -330,6 +341,15 @@ namespace Poly_Ling.Remote
                 // ── version 13：処理列の印と項目の有効
                 WriteModifierChainFlags(w, model);
 
+                // ── version 14：形の一覧と今の形（shapes.csv と揃える）
+                WriteShapes(w, model);
+
+                // ── version 15：形の読み込み元（shapes.csv の source 行と揃える）
+                WriteShapeSources(w, model);
+
+                // ── version 16：形の種類（shapes.csv の shape 行の 6 列目と揃える）
+                WriteShapeKinds(w, model);
+
                 return ms.ToArray();
             }
         }
@@ -342,6 +362,13 @@ namespace Poly_Ling.Remote
             {
                 if (r.ReadUInt32() != RemoteMagic.ModelMeta) return null;
                 int metaVersion = r.ReadByte(); // version
+                // 段 7 で表情の欄を変えた（旧モーフのエントリを廃止）。16 以前は読まずに断る
+                // （送り手と受け手は同じビルドで動かす。旧形式の読み込みは作らない）。
+                if (metaVersion < ModelMetaVersion)
+                {
+                    UnityEngine.Debug.LogError($"[RemoteProgressiveSerializer] PLRM の版 {metaVersion} は読めません（{ModelMetaVersion} 以上が要る。送り手を同じビルドにしてください）。");
+                    return null;
+                }
                 r.ReadByte(); // padding
                 int modelIndex = r.ReadInt16();
 
@@ -399,15 +426,7 @@ namespace Poly_Ling.Remote
                         NameEnglish = ReadString(r),
                         Panel       = r.ReadByte(),
                         Type        = (MorphType)r.ReadByte(),
-                        IsSymmetric = r.ReadBoolean()
                     };
-                    ushort entryCount = r.ReadUInt16();
-                    for (int j = 0; j < entryCount; j++)
-                    {
-                        int   meshIndex = r.ReadInt16();
-                        float weight    = r.ReadSingle();
-                        expr.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
-                    }
                     model.MorphExpressions.Add(expr);
                 }
 
@@ -585,6 +604,18 @@ namespace Poly_Ling.Remote
                 if (metaVersion >= 13)
                     ReadModifierChainFlags(r, model);
 
+                // ── version 14：形の一覧と今の形。v13 以前は一覧が空・今の形は基本のまま。
+                if (metaVersion >= 14)
+                    ReadShapes(r, model);
+
+                // ── version 15：形の読み込み元。v14 以前は無し。
+                if (metaVersion >= 15)
+                    ReadShapeSources(r, model);
+
+                // ── version 16：形の種類。v15 以前は全部が位置の形。
+                if (metaVersion >= 16)
+                    ReadShapeKinds(r, model);
+
                 return (modelIndex, model);
             }
         }
@@ -597,17 +628,10 @@ namespace Poly_Ling.Remote
         // [2B] Depth  [2B] ParentIndex  [2B] HierarchyParentIndex(v2+)  [1B] MirrorType  [1B] MirrorAxis
         // [4B] MirrorDistance  [1B] ExcludeFromExport
         // [2B] BakedMirrorSourceIndex  [1B] HasBakedMirrorChild
-        // [1B] IsMorph  (if) [string] MorphName  [4B] MorphPanel  [2B] MorphParentIndex
-        //               (if) [4B] BasePositionCount  [12B × N] BasePositions
-        //                    [1B] HasNormals  (if) [12B × N] BaseNormals
-        //                    [1B] HasUVs      (if) [8B × N]  BaseUVs
         // [1B] HasBoneTransform  (if) Position[12B] Rotation[12B] Scale[12B]
         // [64B] WorldMatrix  [64B] BindPose  [16B] BoneModelRotation
         // [1B] IsIK  [2B] IKTargetIndex  [2B] IKLoopCount  [4B] IKLimitAngle
         // [4B] VertexCount  [4B] FaceCount
-        // [1B] MorphMirrorPolicy(v4+)  [2B] MirrorOfMorphIndex(v4+)
-        //   ※ v4 追加分は末尾に置く。既存レイアウトは動かさない。
-        //     規約は MorphMirrorPolicy.cs を正典とする。
         // [1B] HasWorkAxis(v5+)  (if) Origin[12B] Rotation[16B] Length[4B] IsVisible[1B]
         //   ※ v5 で末尾に追加。値を持つのは作業軸オブジェクト（MeshType.WorkAxis）だけ。
         //     v4 以前の受信側は末尾のこの欄を読まずに終わる（読み終わりを検査しない）。
@@ -618,11 +642,11 @@ namespace Poly_Ling.Remote
         // [Joint]    [1B] Has (if) *.pmx_physics.csv の joint 行と同じ項目                                (v6+)
         //   ※ v6 で末尾に追加。v5 以前の受信側は読まずに終わる。
         // [MeshExtras] (v7+)  RemoteProgressiveSerializer.Extras.cs の WriteMeshExtras
-        // [1B] HasMorphBaseData (v8+)  (if) [8B] CreatedAt（DateTime.ToBinary。.mfproj の morphBaseData.createdAt）
-        //   ※ v8 で末尾に追加。v7 以前の受信側は読まずに終わる。
         // [1B] MirrorBranchSameSense (v9+)
         // [1B] HasSkinBakeMatrix (v10+)  (if) [4B × 16] SkinBakeMatrix
         // [1B] ModifierOutputEdited (v11+)  項目の出力の未確定（段 F）。v10 以前の受信側は読まずに終わる。
+        //   ※ v12（段 7）で旧モーフの欄（HasBakedMirrorChild の後の IsMorph 以下・v4 の MorphMirrorPolicy /
+        //     MirrorOfMorphIndex・v8 の HasMorphBaseData）を廃止した。11 以前は読まずに断る。
         // ================================================================
 
         public static byte[] SerializeMeshSummary(MeshContext mc, int modelIndex, int meshIndex)
@@ -632,7 +656,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)11);  // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値 / v6: ポーズ層・IK リンク・剛体・ジョイント / v7: メッシュ単位の付帯 / v8: モーフ基準データの作成日時 / v9: ミラー分岐の同じ向き / v10: スキンド化のときに焼いた行列 / v11: 項目の出力の未確定
+                w.Write((byte)MeshSummaryVersion);  // v12: 旧モーフの欄（IsMorph 以下・v4 のミラー適用・v8 の作成日時）を廃止（11 以前は読まない）/ v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値 / v6: ポーズ層・IK リンク・剛体・ジョイント / v7: メッシュ単位の付帯 / v8: モーフ基準データの作成日時 / v9: ミラー分岐の同じ向き / v10: スキンド化のときに焼いた行列 / v11: 項目の出力の未確定
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -654,33 +678,6 @@ namespace Poly_Ling.Remote
                 w.Write(mc.ExcludeFromExport);
                 w.Write((short)mc.BakedMirrorSourceIndex);
                 w.Write(mc.HasBakedMirrorChild);
-
-                bool isMorph = mc.IsMorph;
-                w.Write(isMorph);
-                if (isMorph)
-                {
-                    WriteString(w, mc.MorphName);
-                    w.Write(mc.MorphPanel);
-                    w.Write((short)mc.MorphParentIndex);
-
-                    var mbd = mc.MorphBaseData;
-                    int bpCount = mbd?.BasePositions?.Length ?? 0;
-                    w.Write(bpCount);
-                    for (int i = 0; i < bpCount; i++)
-                        WriteVector3(w, mbd.BasePositions[i]);
-
-                    bool hasNormals = mbd?.HasNormals ?? false;
-                    w.Write(hasNormals);
-                    if (hasNormals)
-                        for (int i = 0; i < mbd.BaseNormals.Length; i++)
-                            WriteVector3(w, mbd.BaseNormals[i]);
-
-                    bool hasUVs = mbd?.HasUVs ?? false;
-                    w.Write(hasUVs);
-                    if (hasUVs)
-                        for (int i = 0; i < mbd.BaseUVs.Length; i++)
-                        { w.Write(mbd.BaseUVs[i].x); w.Write(mbd.BaseUVs[i].y); }
-                }
 
                 bool hasBone = mc.BoneTransform != null;
                 w.Write(hasBone);
@@ -704,11 +701,7 @@ namespace Poly_Ling.Remote
                 w.Write((uint)(mc.MeshObject?.VertexCount ?? 0));
                 w.Write((uint)(mc.MeshObject?.FaceCount ?? 0));
 
-                // ---- v4: モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）----
                 // 追加は必ずこのブロックの末尾に行うこと。
-                w.Write((byte)mc.MorphMirrorPolicy);
-                w.Write((short)mc.MirrorOfMorphIndex);
-
                 // ---- v5: 作業軸の値（作業軸オブジェクトだけが持つ）----
                 var wa = mc.WorkAxis;
                 w.Write(wa != null);
@@ -777,11 +770,6 @@ namespace Poly_Ling.Remote
                 // ---- v7: メッシュ単位の付帯（CSV の mesh 行と揃える。RemoteProgressiveSerializer.Extras.cs）----
                 WriteMeshExtras(w, mc);
 
-                // ---- v8: モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt と揃える）----
-                var mbdAt = mc.MorphBaseData;
-                w.Write(mbdAt != null);
-                if (mbdAt != null) w.Write(mbdAt.CreatedAt.ToBinary());
-
                 // ---- v9: ミラー分岐のミラー側も同じ向きに動かすか（CSV の mirrorBranchSameSense と揃える）----
                 w.Write(mc.MirrorBranchSameSense);
 
@@ -841,6 +829,12 @@ namespace Poly_Ling.Remote
             {
                 if (r.ReadUInt32() != RemoteMagic.MeshSummary) return null;
                 int summaryVersion = r.ReadByte(); // version
+                // 段 7 で旧モーフの欄を廃止した。11 以前は読まずに断る（送り手と受け手は同じビルドで動かす）。
+                if (summaryVersion < MeshSummaryVersion)
+                {
+                    UnityEngine.Debug.LogError($"[RemoteProgressiveSerializer] PLRS の版 {summaryVersion} は読めません（{MeshSummaryVersion} 以上が要る。送り手を同じビルドにしてください）。");
+                    return null;
+                }
                 r.ReadByte(); // padding
                 int modelIndex = r.ReadInt16();
                 int meshIndex = r.ReadInt16();
@@ -868,53 +862,6 @@ namespace Poly_Ling.Remote
                 mc.BakedMirrorSourceIndex = r.ReadInt16();
                 mc.HasBakedMirrorChild = r.ReadBoolean();
 
-                bool isMorph = r.ReadBoolean();
-                if (isMorph)
-                {
-                    string morphName      = ReadString(r);
-                    int    morphPanel     = r.ReadInt32();
-                    short  morphParentIdx = r.ReadInt16();
-                    mc.SetAsMorph(morphName);
-                    mc.MorphPanel       = morphPanel;
-                    mc.MorphParentIndex = morphParentIdx;
-
-                    int bpCount = r.ReadInt32();
-                    if (bpCount > 0)
-                    {
-                        var mbd = mc.MorphBaseData ?? new MorphBaseData(morphName);
-                        // SetAsMorph は頂点の無い MeshObject では何もしない（サマリの時点では頂点が無い）。
-                        // その場合 MorphPanel の代入も捨てられるので、ここで入れ直す。
-                        mbd.Panel = morphPanel;
-                        mbd.BasePositions = new Vector3[bpCount];
-                        for (int i = 0; i < bpCount; i++)
-                            mbd.BasePositions[i] = ReadVector3(r);
-
-                        bool hasNormals = r.ReadBoolean();
-                        if (hasNormals)
-                        {
-                            mbd.BaseNormals = new Vector3[bpCount];
-                            for (int i = 0; i < bpCount; i++)
-                                mbd.BaseNormals[i] = ReadVector3(r);
-                        }
-
-                        bool hasUVs = r.ReadBoolean();
-                        if (hasUVs)
-                        {
-                            mbd.BaseUVs = new Vector2[bpCount];
-                            for (int i = 0; i < bpCount; i++)
-                                mbd.BaseUVs[i] = new Vector2(r.ReadSingle(), r.ReadSingle());
-                        }
-
-                        mc.MorphBaseData = mbd;
-                    }
-                    else
-                    {
-                        // BasePositions なし: フラグだけ読み捨て
-                        r.ReadBoolean(); // hasNormals
-                        r.ReadBoolean(); // hasUVs
-                    }
-                }
-
                 bool hasBone = r.ReadBoolean();
                 Vector3 btPos = Vector3.zero, btRot = Vector3.zero, btScale = Vector3.one;
                 if (hasBone)
@@ -935,14 +882,6 @@ namespace Poly_Ling.Remote
 
                 int vertexCount = (int)r.ReadUInt32();
                 int faceCount   = (int)r.ReadUInt32();
-
-                // ---- v4: モーフのミラー適用 ----
-                // v3 以前の送信元からは届かないので、既定（FollowParent / -1）のままにする。
-                if (summaryVersion >= 4)
-                {
-                    mc.MorphMirrorPolicy  = (MorphMirrorPolicy)r.ReadByte();
-                    mc.MirrorOfMorphIndex = r.ReadInt16();
-                }
 
                 // ---- v5: 作業軸の値 ----
                 // v4 以前の送信元からは届かないので、作業軸オブジェクトでも値は空のまま。
@@ -1021,14 +960,6 @@ namespace Poly_Ling.Remote
                 // ---- v7: メッシュ単位の付帯 ----
                 if (summaryVersion >= 7)
                     ReadMeshExtras(r, mc);
-
-                // ---- v8: モーフ基準データの作成日時 ----
-                // 送信元にあって受け側に無い（基準位置 0 件）ときは読み捨てる。
-                if (summaryVersion >= 8 && r.ReadBoolean())
-                {
-                    var createdAt = DateTime.FromBinary(r.ReadInt64());
-                    if (mc.MorphBaseData != null) mc.MorphBaseData.CreatedAt = createdAt;
-                }
 
                 // ---- v9: ミラー分岐のミラー側も同じ向きに動かすか ----
                 if (summaryVersion >= 9)

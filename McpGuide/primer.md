@@ -60,6 +60,9 @@
 - MCP操作手順書.md … MCP の道具の細かい使い方で迷ったとき。チュートリアルを作るとき（5-7）。
 - 作業ログ.md … 過去の経緯を知りたいとき。
 
+## Blender で確かめるとき
+- Blender のスクリプト（書ける場所の .py）は blender_run で流す（バックグラウンド。ログは SandBox/_blender）。60 秒で終わらなければ返った pid で blender_status を呼んで待つ。操作者に Blender を動かしてもらわない。詳しくは MCP操作手順書.md の 1-8。
+
 ## 書ける場所と消し方
 - 書き込み：起動引数 --editable の範囲（控えの データとツール/ツール/PolyLingMcpServer/コピペ用.txt では Packages/com.haglib.polyling、Packages/com.haglib.net_duplexchannel、SandBox、データとツール、Assets、@settings、@mocopi）。
 - 置き場所の名前（データとツール・サンドボックス_シナリオ用・SandBox など）は設定ファイルで決まる。MCP サーバは exe のフォルダから親へたどった ProjectLayout.json、PolyLing 本体は persistentDataPath/PolyLing/ProjectLayout.json（無ければ既定値）。2 つは別の設定。

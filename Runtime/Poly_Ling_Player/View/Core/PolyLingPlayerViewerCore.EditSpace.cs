@@ -242,6 +242,7 @@ namespace Poly_Ling.Player
                 case SaveProjectBinaryCommand _:
                 case ExportPmxFileCommand _:
                 case ExportMqoFileCommand _:
+                case ExportShapeMqoCommand _:
                 case ExportObjFileCommand _:
                 case ExportStlFileCommand _:
                 case ExportVrmFileCommand _:
@@ -261,6 +262,8 @@ namespace Poly_Ling.Player
                 case ImportGltfFileCommand _:
                 case ImportFbxFileCommand _:
                 case ImportMqoVertexPositionsCommand _:
+                case ImportShapeMqoCommand _:
+                case ReloadShapeMqoCommand _:
                 case ImportPmxVertexAttributesCommand _:
                 case ResetProjectCommand _:
                 case CreateEmptyModelCommand _:

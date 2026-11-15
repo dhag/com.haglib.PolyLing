@@ -121,14 +121,9 @@ namespace Poly_Ling.Player
                                 // ボーンを選んでも視点を動かすまで表示が変わらなかった。
                                 _viewportManager.EnterSelectionChanged(project);
                                 break;
-                            case MeshCategory.Morph:
-                                model.ClearMorphSelection();
-                                foreach (int idx in sel.Indices) model.AddToMorphSelection(idx);
-                                _viewportManager.EnterSelectionChanged(project);
-                                break;
                         }
 
-                        // Undo 記録: 3 カテゴリ全部 CaptureAllSelectedIndices で一元管理。
+                        // Undo 記録: 全カテゴリを CaptureAllSelectedIndices で一元管理。
                         // SequenceEqual で差分なしなら記録されない (RecordMeshSelectionChange 内部で判定)。
                         var __newSelected = model.CaptureAllSelectedIndices();
                         PLDiag.Cmd($"SelectMesh {sel.Category} old={PLDiag.Ids(__oldSelected)} " +

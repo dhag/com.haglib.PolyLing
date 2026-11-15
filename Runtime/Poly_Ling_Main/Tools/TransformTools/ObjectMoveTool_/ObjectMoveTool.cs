@@ -99,6 +99,9 @@ namespace Poly_Ling.Tools
             = new Dictionary<int, UnityEngine.Vector3[]>();
         private readonly Dictionary<int, Matrix4x4> _originStartWorld
             = new Dictionary<int, Matrix4x4>();
+        // 同じく、開始時の「頂点が持つ形ごとの位置」。位置と同じ再局所化を毎回ここから掛け直す。
+        private readonly Dictionary<int, Poly_Ling.Ops.ShapeSnapshot> _originStartShapes
+            = new Dictionary<int, Poly_Ling.Ops.ShapeSnapshot>();
 
         // 原点だけ移動のドラッグ 1 ストロークのワールド総移動量。
         // SaveSnapshots で 0、ApplyWorldDelta で加算する。
@@ -313,6 +316,13 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
+        /// 中央の自由移動のドラッグ中か（ピック後のしきい値待ちを含む）。
+        /// X・Y・Z 軸と回転リングのドラッグでは false。Player の縦横制限の問い合わせに使う。
+        /// </summary>
+        public bool IsFreeMoveDragging
+            => _state == DragState.PendingDrag || _state == DragState.CenterDragging;
+
+        /// <summary>
         /// 取り出せる「原点だけ移動」のドラッグ結果があるか。
         /// TryTakeOriginOnlyDrag が true を返す条件と同じ。
         /// </summary>
@@ -364,6 +374,8 @@ namespace Poly_Ling.Tools
                 if (mo == null) continue;
                 int n = Mathf.Min(mo.VertexCount, kv.Value.Length);
                 for (int i = 0; i < n; i++) mo.Vertices[i].Position = kv.Value[i];
+                if (_originStartShapes.TryGetValue(kv.Key, out var startShapes))
+                    Poly_Ling.Ops.ShapeOps.RestoreShapes(mo, startShapes);
             }
 
             // 対象と補償した子の BoneTransform を開始状態へ戻す。
@@ -381,7 +393,7 @@ namespace Poly_Ling.Tools
             _rebindStartSkinning.Clear();
             _rebindStartBindPose.Clear();
             _originStartPositions.Clear();
-            _originStartWorld.Clear();
+            _originStartWorld.Clear(); _originStartShapes.Clear();
             _originWorldTotal = Vector3.zero;
             ctx.ExitTransformDragging?.Invoke();
 

@@ -139,6 +139,48 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>ビューポートへの押下・移動・解除・Shift・Esc を再現する（縦横制限などの操作確認用）。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.ModelWide, Description = "ビューポートへのマウスとキーの入力を、実際の入力と同じ処理（ホバー・ヒット判定・ツール）に通して再現する。steps は「;」区切りで、down x y / move x y / up x y / shiftDown / shiftUp / escape。x・y はパネル左上原点（下向き +）のピクセル。shiftDown から shiftUp までの down・move・up は Shift を押した入力になる。結果は各段の操作座標（Y=0 下、Shift の縦横制限を通した後）と制限の状態。ツールが動くのでモデルが変わることがある。")]
+    [PLResult("width",  PLResultKind.Number, Description = "パネルの幅（ピクセル）")]
+    [PLResult("height", PLResultKind.Number, Description = "パネルの高さ（ピクセル）")]
+    [PLResult("report", PLResultKind.Text,   Description = "各段の入力と操作座標・縦横制限の状態。1 段 1 行")]
+    public sealed class UiViewportPointerCommand : PanelCommand
+    {
+        [PLParam(Description = "入力するビュー。Perspective（メイン画面）/ Top / Front / Side。省くと Perspective")]
+        public ViewportKind View { get; }
+
+        [PLParam(Description = "入力の列。「;」区切りで down x y / move x y / up x y / shiftDown / shiftUp / escape。空ならパネルの大きさだけ返す")]
+        public string Steps { get; }
+
+        public UiViewportPointerCommand(int modelIndex, ViewportKind view = ViewportKind.Perspective, string steps = "")
+            : base(modelIndex)
+        {
+            View  = view;
+            Steps = steps ?? "";
+        }
+    }
+
+    /// <summary>独立キャンバス（UV・2D押し出し・回転体・ベルト断面）への押下・移動・解除・Shift・Esc を再現する（縦横制限などの操作確認用）。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.ModelWide, Description = "独立キャンバス（UV エディタ・2D押し出し・回転体・ベルト断面）へのマウスとキーの入力を、実際の入力と同じイベントとして送って再現する。steps は「;」区切りで、down x y / move x y / up x y / shiftDown / shiftUp / escape。x・y はキャンバス左上原点（下向き +）のピクセル。shiftDown から shiftUp までの down・move・up は Shift を押した入力になる。キャンバスが画面に出ていないと使えない（先にそのパネルを開く）。結果は各段の操作座標（Shift の縦横制限を通した後、キャンバスローカル）・制限の状態・選択点の位置。点が動くので図形の設定が変わることがある。")]
+    [PLResult("width",  PLResultKind.Number, Description = "キャンバスの幅（ピクセル）")]
+    [PLResult("height", PLResultKind.Number, Description = "キャンバスの高さ（ピクセル）")]
+    [PLResult("report", PLResultKind.Text,   Description = "各段の入力と操作座標・縦横制限の状態・選択点の位置。1 段 1 行")]
+    public sealed class UiCanvasPointerCommand : PanelCommand
+    {
+        [PLParam(Description = "入力するキャンバス。uv（UV エディタ）/ p2d（2D押し出し）/ rev（回転体）/ belt（ベルト断面）", Required = true)]
+        public string Canvas { get; }
+
+        [PLParam(Description = "入力の列。「;」区切りで down x y / move x y / up x y / shiftDown / shiftUp / escape。空ならキャンバスの大きさだけ返す")]
+        public string Steps { get; }
+
+        public UiCanvasPointerCommand(int modelIndex, string canvas, string steps = "")
+            : base(modelIndex)
+        {
+            Canvas = canvas ?? "";
+            Steps  = steps ?? "";
+        }
+    }
+
     /// <summary>UI 自動操作の登録状況を検査する。</summary>
     [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "UI 自動操作の登録状況を検査する。未登録のセクション・属性の付け忘れ・登録失敗・安全度が未指定のボタン・未対応の型・登録済みパネル内の未登録のボタンや入力欄の数を返す。すべて 0 なら右ペインのすべてのボタンや入力欄が登録されている。")]
     [PLResult("report",               PLResultKind.Text,    Description = "検査結果の全文。複数行")]

@@ -53,12 +53,6 @@ namespace Poly_Ling.Context
             return MorphExpressions.Find(s => s.Name == name);
         }
 
-        /// <summary>メッシュインデックスでモーフエクスプレッションを検索</summary>
-        public MorphExpression FindMorphExpressionByMesh(int meshIndex)
-        {
-            return MorphExpressions.Find(s => s.ContainsMesh(meshIndex));
-        }
-
         /// <summary>一意なモーフエクスプレッション名を生成</summary>
         public string GenerateUniqueMorphExpressionName(string baseName = "Morph")
         {
@@ -126,8 +120,7 @@ namespace Poly_Ling.Context
         // 【索引の付け替えが要らない理由】
         //   ModifierStack は参照を MeshContext.ObjectId で持つ。挿入・削除・並べ替えで
         //   値が変わらないので RemapIndexReferences の対象に入れない。
-        //   MorphExpressions が索引参照ゆえに AdjustIndicesOnInsert/OnRemove という
-        //   別経路を持っているのに対し、こちらはその経路自体が不要になる。
+        //   （表情も形の名前で指すので、索引の付け替えは無い。）
         //
         // 【削除時に勝手に消さない】
         //   参照先の描画オブジェクトが消えてもスタックはここへ残す。

@@ -23,9 +23,11 @@ namespace Poly_Ling.PMX
         // モーフ エクスポート
         //
         // 【方針】
-        //   PolyLing が持つのは頂点モーフ・UVモーフ・グループモーフの 3 種類。
+        //   PolyLing が持つのは頂点モーフ・UVモーフ（形）・グループモーフ（表情）の 3 種類。
         //   ボーンモーフ・材質モーフ・フリップ・インパルスは取り込んでいないので、
         //   元の PMX（SourceDocument）からそのまま写す。
+        //   追加 UV1〜4 のモーフ（種類 4〜7）は写さない。PolyLing は追加 UV を持たず、
+        //   頂点の追加 UV の数は 0 で書く（PolyLing_モーフ整理計画.md 段 7）。
         //
         // 【並び順】
         //   表示枠はモーフを番号で指す。元の PMX があるときは元の並び順を守り、
@@ -36,11 +38,21 @@ namespace Poly_Ling.PMX
         private static void ConvertMorphs(
             ModelContext model,
             PMXDocument document,
-            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
+            Dictionary<MeshContext, Dictionary<(int vIdx, int uvIdx), int>> contextMaps,
             PMXExportSettings settings)
         {
             var rebuilt = new Dictionary<string, PMXMorph>();
             var order   = new List<string>();
+
+            // 形（PolyLing_モーフ整理計画.md 3.9）：形 1 つ＝頂点モーフ 1 本。
+            // 全描画オブジェクトの差分を 1 本にまとめる。同じ名前の頂点の表情は形を書く。
+            var shapeMorphs = new Dictionary<string, PMXMorph>();
+            if (model.Shapes != null)
+                foreach (var shape in model.Shapes)
+                {
+                    if (shape == null || string.IsNullOrEmpty(shape.Name) || shapeMorphs.ContainsKey(shape.Name)) continue;
+                    shapeMorphs[shape.Name] = BuildMorphFromShape(shape, model, contextMaps, settings);
+                }
 
             var expressions = model.MorphExpressions;
             if (expressions != null)
@@ -50,9 +62,32 @@ namespace Poly_Ling.PMX
                     if (expr == null || string.IsNullOrEmpty(expr.Name)) continue;
                     if (rebuilt.ContainsKey(expr.Name)) continue;
 
-                    PMXMorph morph = expr.Type == MorphType.Group
-                        ? BuildGroupMorph(expr)
-                        : BuildShapeMorph(expr, model, vertexMaps, settings);
+                    PMXMorph morph;
+                    if (shapeMorphs.TryGetValue(expr.Name, out var fromShape))
+                    {
+                        // 形と同じ名前の表情は形を書く（段 5 の決定）。
+                        // グループが形と同じ名前なのは名前がぶつかるので、形を優先して警告する。
+                        if (expr.Type == MorphType.Group)
+                            Debug.LogWarning($"[PMXExporter] グループの表情 '{expr.Name}' は形と同じ名前なので、形を書きます。");
+                        morph = fromShape;
+                    }
+                    else if (expr.Type == MorphType.Group)
+                    {
+                        morph = BuildGroupMorph(expr);
+                    }
+                    else if (expr.Type == MorphType.Vertex || expr.Type == MorphType.UV)
+                    {
+                        // 形を指さない頂点・UV の表情は差分 0 件のモーフにする（予約枠として置かれている場合がある。
+                        // 消すと、これを子に持つグループの参照が名前から番号へ直せない）。
+                        morph = new PMXMorph
+                        {
+                            Name        = expr.Name,
+                            NameEnglish = expr.NameEnglish ?? "",
+                            Panel       = expr.Panel,
+                            MorphType   = expr.Type == MorphType.UV ? 3 : 1,
+                        };
+                    }
+                    else continue;
 
                     if (morph == null) continue;
                     rebuilt[expr.Name] = morph;
@@ -60,7 +95,17 @@ namespace Poly_Ling.PMX
                 }
             }
 
+            // 表情に無い形は形の並びで足す。
+            if (model.Shapes != null)
+                foreach (var shape in model.Shapes)
+                {
+                    if (shape == null || string.IsNullOrEmpty(shape.Name) || rebuilt.ContainsKey(shape.Name)) continue;
+                    rebuilt[shape.Name] = shapeMorphs[shape.Name];
+                    order.Add(shape.Name);
+                }
+
             var emitted = new HashSet<string>();
+            int droppedAdditionalUV = 0;
 
             if (model.SourceDocument is PMXDocument sourcePmx)
             {
@@ -70,6 +115,11 @@ namespace Poly_Ling.PMX
 
                     // 書き出し側が作るメタモーフは元のものを使わない
                     if (srcMorph.Name != null && srcMorph.Name.StartsWith("__PLM_")) continue;
+
+                    // 追加 UV1〜4 のモーフは写さない（冒頭の方針）
+                    if (srcMorph.MorphType >= 4 && srcMorph.MorphType <= 7
+                        && (srcMorph.Name == null || !rebuilt.ContainsKey(srcMorph.Name)))
+                    { droppedAdditionalUV++; continue; }
 
                     if (srcMorph.Name != null && rebuilt.TryGetValue(srcMorph.Name, out var made))
                     {
@@ -93,8 +143,8 @@ namespace Poly_Ling.PMX
                 emitted.Add(name);
             }
 
-            // 表情から作り直したグループの子で、PMX に入っていないものを補う
-            AddMissingGroupChildren(model, document, rebuilt, emitted, vertexMaps, settings);
+            if (droppedAdditionalUV > 0)
+                Debug.LogWarning($"[PMXExporter] 元の PMX の追加 UV のモーフ {droppedAdditionalUV} 本は書きません（PolyLing は追加 UV を持たない）。");
 
             ResolveMorphReferences(document);
 
@@ -165,139 +215,6 @@ namespace Poly_Ling.PMX
             }
         }
 
-        /// <summary>
-        /// 表情から作り直したグループの子で、PMX に入っていないものを補う。
-        ///
-        /// 【なぜ要るか】
-        ///   グループの子として吸収された頂点表情は MorphExpressions に単独では残らない
-        ///   （PMXImporter.Morph.cs の Phase 3、VRM インポータも同じ規則）。
-        ///   子の中身はモーフ MeshContext として残っており、名前は
-        ///   MorphBaseData.MorphName にある。元の PMX（SourceDocument）が無いモデルでは
-        ///   子が PMX に入らず、グループの参照が -1 になって読み戻しでグループごと消える。
-        ///
-        /// 【規則】
-        ///   対象は rebuilt のグループ（元の PMX から写したものは触らない）。
-        ///   子の名前 N について：
-        ///   ・MorphBaseData.MorphName == N のモーフが無い → 何もしない（Resolve で警告）
-        ///   ・同名の頂点／UV モーフが PMX に既にある → それを参照する
-        ///   ・同名が無い → N で作って後ろに足す
-        ///   ・同名がグループ（自分自身を含む）に使われている → 名前をずらして作り、
-        ///     このグループの参照先を付け替える
-        ///   同じ子を複数のグループが参照していても 1 本だけ作る。
-        ///   グループの子がグループである書き方は、同名のモーフを持たないので対象外になる。
-        /// </summary>
-        private static void AddMissingGroupChildren(
-            ModelContext model,
-            PMXDocument document,
-            Dictionary<string, PMXMorph> rebuilt,
-            HashSet<string> emitted,
-            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
-            PMXExportSettings settings)
-        {
-            // MorphBaseData.MorphName → モーフ MeshContext 索引
-            var ctxByMorphName = new Dictionary<string, List<int>>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || !mc.IsMorph) continue;
-                string n = mc.MorphBaseData?.MorphName;
-                if (string.IsNullOrEmpty(n)) continue;
-                if (!ctxByMorphName.TryGetValue(n, out var list))
-                {
-                    list = new List<int>();
-                    ctxByMorphName[n] = list;
-                }
-                list.Add(i);
-            }
-            if (ctxByMorphName.Count == 0) return;
-
-            // 現在 PMX にある名前 → そのモーフ（先勝ち）
-            var byName = new Dictionary<string, PMXMorph>();
-            foreach (var m in document.Morphs)
-                if (m?.Name != null && !byName.ContainsKey(m.Name)) byName[m.Name] = m;
-
-            var used     = new HashSet<string>(byName.Keys);
-            var supplied = new Dictionary<string, string>();   // 子の名前 → 補ったモーフの名前
-            int added    = 0;
-
-            // 補ったモーフを後ろに足していくので、並びの写しで回す
-            var snapshot = new List<PMXMorph>(document.Morphs);
-            foreach (var group in snapshot)
-            {
-                if (group == null || group.MorphType != 0 || group.Offsets == null) continue;
-                if (group.Name == null || !rebuilt.TryGetValue(group.Name, out var r) || !ReferenceEquals(r, group))
-                    continue;
-
-                foreach (var off in group.Offsets)
-                {
-                    if (!(off is PMXGroupMorphOffset g) || string.IsNullOrEmpty(g.MorphName)) continue;
-                    string child = g.MorphName;
-
-                    if (!ctxByMorphName.TryGetValue(child, out var ctxIndices)) continue;
-
-                    if (byName.TryGetValue(child, out var existing) && existing.MorphType != 0) continue;
-
-                    if (supplied.TryGetValue(child, out var suppliedName))
-                    {
-                        g.MorphName = suppliedName;
-                        continue;
-                    }
-
-                    string name = child;
-                    if (used.Contains(name))
-                    {
-                        for (int k = 1; ; k++)
-                        {
-                            string c = $"{child}_{k}";
-                            if (!used.Contains(c)) { name = c; break; }
-                        }
-                    }
-
-                    var morph = BuildChildShapeMorph(name, ctxIndices, model, vertexMaps, settings);
-                    if (morph == null) continue;
-
-                    document.Morphs.Add(morph);
-                    used.Add(name);
-                    byName[name] = morph;
-                    emitted.Add(name);
-                    supplied[child] = name;
-                    g.MorphName = name;
-                    added++;
-                }
-            }
-
-            if (added > 0)
-                Debug.Log($"[PMXExporter] グループモーフの子を {added} 本補いました。");
-        }
-
-        /// <summary>
-        /// 補う子のモーフを作る。作り方は BuildShapeMorph と同じ。
-        /// 位置の差分が無く UV の差分だけがあるときは UV モーフにする。
-        /// どちらも無ければ差分 0 件の頂点モーフになる。
-        /// </summary>
-        private static PMXMorph BuildChildShapeMorph(
-            string name, List<int> ctxIndices, ModelContext model,
-            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
-            PMXExportSettings settings)
-        {
-            if (ctxIndices == null || ctxIndices.Count == 0) return null;
-
-            var temp = new MorphExpression(name, MorphType.Vertex)
-            {
-                Panel = model.GetMeshContext(ctxIndices[0])?.MorphPanel ?? 3,
-            };
-            foreach (int ci in ctxIndices) temp.AddMesh(ci, 1f);
-
-            var morph = BuildShapeMorph(temp, model, vertexMaps, settings);
-            if (morph != null && morph.Offsets.Count == 0)
-            {
-                temp.Type = MorphType.UV;
-                var uv = BuildShapeMorph(temp, model, vertexMaps, settings);
-                if (uv != null && uv.Offsets.Count > 0) morph = uv;
-            }
-            return morph;
-        }
-
         /// <summary>グループモーフを作る。子は名前で参照する。</summary>
         private static PMXMorph BuildGroupMorph(MorphExpression expr)
         {
@@ -326,47 +243,41 @@ namespace Poly_Ling.PMX
             return morph.Offsets.Count > 0 ? morph : null;
         }
 
-        /// <summary>頂点モーフ / UVモーフを作る。</summary>
-        private static PMXMorph BuildShapeMorph(
-            MorphExpression expr,
-            ModelContext model,
-            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
+        /// <summary>
+        /// 形 1 つから頂点モーフを作る。描画オブジェクトごとに基本の形との差分（ShapeOps.GetSparseOffsets）を取り、
+        /// 展開の写し（contextMaps。MeshExpansion の規則で作ったもの）で PMX の頂点番号へ写して 1 本にまとめる。
+        /// 位置は UV スロット数ぶん複製されているので、同じ差分を全スロットへ配る。
+        /// 差分 0 件でもモーフは出す。予約枠として置かれている場合があり、消すと、これを子に持つ
+        /// グループモーフの参照が名前から番号へ直せず -1 のまま書かれる（ResolveMorphReferences）。
+        /// PMXWriter は件数 0 のモーフをそのまま書ける。
+        /// </summary>
+        private static PMXMorph BuildMorphFromShape(
+            ShapeDef shape, ModelContext model,
+            Dictionary<MeshContext, Dictionary<(int vIdx, int uvIdx), int>> contextMaps,
             PMXExportSettings settings)
         {
-            bool isUV = expr.IsUVMorph;
-
             var morph = new PMXMorph
             {
-                Name        = expr.Name,
-                NameEnglish = expr.NameEnglish ?? "",
-                Panel       = expr.Panel,
-                MorphType   = isUV ? 3 : 1
+                Name        = shape.Name,
+                NameEnglish = shape.NameEnglish ?? "",
+                Panel       = shape.Panel,
+                MorphType   = shape.IsUV ? 3 : 1
             };
 
-            foreach (var entry in expr.MeshEntries)
+            int current = model.CurrentShapeId;
+
+            // UV の形 → UV モーフ。UV スロット 0 の展開頂点（(頂点, 0)）にだけ載せる。
+            if (shape.IsUV)
             {
-                if (entry.MeshIndex < 0 || entry.MeshIndex >= model.MeshContextCount) continue;
-
-                var morphCtx = model.GetMeshContext(entry.MeshIndex);
-                var baseData = morphCtx?.MorphBaseData;
-                if (morphCtx?.MeshObject == null || baseData == null || !baseData.IsValid) continue;
-
-                // どの描画オブジェクトの展開範囲に載せるかを名前で引く
-                string baseName = !string.IsNullOrEmpty(baseData.BaseMeshName)
-                    ? baseData.BaseMeshName
-                    : FindBaseMeshName(morphCtx.Name, vertexMaps);
-
-                if (baseName == null || !vertexMaps.TryGetValue(baseName, out var map)) continue;
-
-                if (isUV)
+                foreach (var kv in contextMaps)
                 {
-                    foreach (var (localIndex, offset) in baseData.GetSparseUVOffsets(morphCtx.MeshObject))
+                    var ctx = kv.Key;
+                    if (ctx?.MeshObject == null) continue;
+                    foreach (var (localIndex, offset) in ShapeOps.GetSparseUVOffsets(ctx.MeshObject, current, shape.Id))
                     {
-                        if (!map.TryGetValue((localIndex, 0), out int pmxIndex)) continue;
-
+                        if (!kv.Value.TryGetValue((localIndex, 0), out int pmxIndex)) continue;
                         Vector2 uv = offset;
                         if (settings.FlipUV_V) uv.y = -uv.y;
-
                         morph.Offsets.Add(new PMXUVMorphOffset
                         {
                             Type        = 3,
@@ -375,53 +286,31 @@ namespace Poly_Ling.PMX
                         });
                     }
                 }
-                else
-                {
-                    foreach (var (localIndex, offset) in baseData.GetSparseOffsets(morphCtx.MeshObject))
-                    {
-                        // 位置は UV スロット数ぶん複製されるので、同じ差分を全スロットへ配る。
-                        // 差分はスケールと軸反転をかけて PMX 座標へ戻す。
-                        Vector3 pmxOffset = AxisFlipOps.Position(settings.Flip, offset, settings.Scale);
+                return morph;
+            }
 
-                        int uvIdx = 0;
-                        while (map.TryGetValue((localIndex, uvIdx), out int pmxIndex))
+            foreach (var kv in contextMaps)
+            {
+                var ctx = kv.Key;
+                if (ctx?.MeshObject == null) continue;
+                var map = kv.Value;
+                foreach (var (localIndex, offset) in ShapeOps.GetSparseOffsets(ctx.MeshObject, current, shape.Id))
+                {
+                    Vector3 pmxOffset = AxisFlipOps.Position(settings.Flip, offset, settings.Scale);
+                    int uvIdx = 0;
+                    while (map.TryGetValue((localIndex, uvIdx), out int pmxIndex))
+                    {
+                        morph.Offsets.Add(new PMXVertexMorphOffset
                         {
-                            morph.Offsets.Add(new PMXVertexMorphOffset
-                            {
-                                Type        = 1,
-                                VertexIndex = pmxIndex,
-                                Offset      = pmxOffset
-                            });
-                            uvIdx++;
-                        }
+                            Type        = 1,
+                            VertexIndex = pmxIndex,
+                            Offset      = pmxOffset
+                        });
+                        uvIdx++;
                     }
                 }
             }
-
-            // 差分が 0 件でもモーフは出す。予約枠として置かれている場合があり、
-            // 消すと利用者が混乱するうえ、これを子に持つグループモーフの参照が
-            // 名前から番号へ直せず -1 のまま書かれる（ResolveMorphReferences）。
-            // PMXWriter は件数 0 のモーフをそのまま書ける（PMXWriter.cs:512-514）。
             return morph;
-        }
-
-        /// <summary>
-        /// BaseMeshName が入っていない古いデータ向けの保険。
-        /// モーフメッシュ名は「元の名前_モーフ名」で作られるため前方一致で探す。
-        /// </summary>
-        private static string FindBaseMeshName(
-            string morphMeshName,
-            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps)
-        {
-            if (string.IsNullOrEmpty(morphMeshName)) return null;
-
-            string best = null;
-            foreach (var name in vertexMaps.Keys)
-            {
-                if (!morphMeshName.StartsWith(name)) continue;
-                if (best == null || name.Length > best.Length) best = name;
-            }
-            return best;
         }
 
         // ================================================================

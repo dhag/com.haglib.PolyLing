@@ -77,6 +77,112 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // shapes.csv（形の一覧と今の形。頂点の控えはメッシュ CSV の vsh 行）
+        //
+        // 【行の形】
+        //   current,今の形の番号
+        //   shape,番号,名前,英語名,パネル,種類（position / uv。版 1.2 で足した。無ければ position）
+        //   source,番号,MQOのパス,倍率,flipX,flipZ,組の数,モデル側の名前,MQO側の名前,...
+        //     … 読み込み元（ShapeDef.Source。番号 0 は ModelContext.BaseShapeSource）。
+        //       shape 行より後に置く（番号で shape 行の形へ付ける）。
+        // ================================================================
+
+        private static void WriteShapesCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_Shapes,version,1.2");
+            sb.AppendLine($"current,{model.CurrentShapeId}");
+
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                {
+                    if (s == null) continue;
+                    sb.AppendLine($"shape,{s.Id},{Esc(s.Name ?? "")},{Esc(s.NameEnglish ?? "")},{s.Panel},{(s.IsUV ? "uv" : "position")}");
+                }
+
+            WriteShapeSourceLine(sb, 0, model.BaseShapeSource);
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                    if (s != null) WriteShapeSourceLine(sb, s.Id, s.Source);
+
+            File.WriteAllText(Path.Combine(folderPath, "shapes.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void WriteShapeSourceLine(StringBuilder sb, int id, ShapeSource src)
+        {
+            if (src == null) return;
+            int n = src.Pairs?.Count ?? 0;
+            sb.Append($"source,{id},{Esc(src.Path ?? "")},{Fl(src.Scale)},{(src.FlipX ? "true" : "false")},{(src.FlipZ ? "true" : "false")},{n}");
+            for (int i = 0; i < n; i++)
+                sb.Append($",{Esc(src.Pairs[i].Model ?? "")},{Esc(src.Pairs[i].Mqo ?? "")}");
+            sb.AppendLine();
+        }
+
+        private static ShapeSource ReadShapeSourceLine(string[] cols)
+        {
+            var src = new ShapeSource
+            {
+                Path  = cols.Length > 2 ? Unesc(cols[2]) : "",
+                Scale = PFl(cols, 3, 0.01f),
+                FlipX = PBool(cols, 4, true),
+                FlipZ = PBool(cols, 5, false),
+            };
+            int n = PInt(cols, 6);
+            for (int i = 0; i < n; i++)
+            {
+                int c = 7 + i * 2;
+                if (c + 1 >= cols.Length) break;
+                src.Pairs.Add(new ShapeSourcePair(Unesc(cols[c]), Unesc(cols[c + 1])));
+            }
+            return src;
+        }
+
+        private static void ReadShapesCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "shapes.csv");
+            if (!File.Exists(path)) return;
+
+            model.Shapes = new List<ShapeDef>();
+            model.CurrentShapeId = 0;
+            model.PreviousShapeId = 0;
+            model.BaseShapeSource = null;
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                if (cols[0] == "current")
+                {
+                    model.CurrentShapeId = PInt(cols, 1);
+                }
+                else if (cols[0] == "shape" && cols.Length >= 5)
+                {
+                    model.Shapes.Add(new ShapeDef
+                    {
+                        Id = PInt(cols, 1),
+                        Name = Unesc(cols[2]),
+                        NameEnglish = Unesc(cols[3]),
+                        Panel = PInt(cols, 4),
+                        Kind = cols.Length > 5 && cols[5] == "uv" ? ShapeKind.UV : ShapeKind.Position,
+                    });
+                }
+                else if (cols[0] == "source" && cols.Length >= 7)
+                {
+                    int id = PInt(cols, 1);
+                    var src = ReadShapeSourceLine(cols);
+                    if (id == 0) model.BaseShapeSource = src;
+                    else
+                    {
+                        var def = model.FindShapeById(id);
+                        if (def != null) def.Source = src;
+                    }
+                }
+            }
+        }
+
+        // ================================================================
         // datastore.csv（コマンドが返した実データの辞書）
         //
         // 【行の形】

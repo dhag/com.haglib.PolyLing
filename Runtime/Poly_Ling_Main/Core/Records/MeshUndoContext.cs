@@ -48,7 +48,7 @@ namespace Poly_Ling.UndoSystem
         ///
         /// なお本プロパティは FirstSelectedMeshContext であり、ツール側の
         /// ActiveMeshContext（= FirstDrawableMeshContext ?? FirstSelectedMeshContext）
-        /// とは ActiveCategory が Bone / Morph のとき指す先が異なる。
+        /// とは ActiveCategory が Bone のとき指す先が異なる。
         /// これは複数選択とは独立した既存の差異。
         /// </remarks>
         public MeshContext ResolvedMeshContext

@@ -323,9 +323,79 @@ namespace Poly_Ling.Player
             if (model == null || GetHoverElement == null) return -1;
             var e = GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex);
             if (e.Kind != PlayerHoverKind.Vertex || e.MeshIndex < 0 || e.MeshIndex != model.ActiveMeshIndex) return -1;
-            var mo = model.GetMeshContext(e.MeshIndex)?.MeshObject;
+            var mc = model.GetMeshContext(e.MeshIndex);
+            var mo = mc?.MeshObject;
             if (mo == null || e.VertexIndex < 0 || e.VertexIndex >= mo.VertexCount) return -1;
+            if (!AcceptsSnapVertex(model, mc, e.VertexIndex)) return -1;
             return e.VertexIndex;
+        }
+
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>
+        /// 吸着候補の判定（Viewer が縦横制限の AcceptsCandidate を刺す）。引数は候補の画面位置（Y=0 下）。
+        /// false の候補には吸着しない（制限方向を崩さない）。null なら判定しない。
+        /// </summary>
+        public Func<Vector2, bool> SnapCandidateFilter;
+
+        /// <summary>
+        /// 縦横制限で固定中、頂点が制限方向から外れていれば吸着しない（面追加の DropIfOffAxis と同じ）。
+        /// 画面位置は GPU のワールド座標から求める。取れないときは判定せず残す。
+        /// </summary>
+        private bool AcceptsSnapVertex(ModelContext model, MeshContext mc, int vertex)
+        {
+            if (SnapCandidateFilter == null) return true;
+            var ctx = GetToolContext?.Invoke();
+            var w = GetVertexWorld?.Invoke(model, mc, vertex);
+            if (ctx == null || !w.HasValue) return true;
+            return SnapCandidateFilter(ToHandlerScreen(ctx, w.Value));
+        }
+
+        /// <summary>
+        /// Line／Freeform の点指定の基準点：直前に置いた点を今のカメラで画面へ写した位置（Y=0 下）。
+        /// 置いた点が頂点になっていれば GPU の値、まだ頂点でなければ（1 点目・確定前の自由曲線）
+        /// ローカル座標を DisplayWorldMatrix で移す（自由曲線の表示と同じ）。点が無ければ false。
+        /// </summary>
+        private bool TryLinePointAnchor(out Vector2 anchor)
+        {
+            anchor = Vector2.zero;
+            var ctx = GetToolContext?.Invoke();
+            var model = GetProject?.Invoke()?.CurrentModel;
+            var mc = model?.GetMeshContext(_targetMaster);
+            var mo = mc?.MeshObject;
+            if (ctx == null || mo == null) return false;
+
+            if (Mode == SubMode.Freeform)
+            {
+                // 手描きの最中は点を指定していない（軌跡は画面の動きのまま）。
+                if (_ffPoints.Count == 0 || _ffStroke.Count > 0) return false;
+                anchor = ToHandlerScreen(ctx, mc.DisplayWorldMatrix.MultiplyPoint3x4(_ffPoints[_ffPoints.Count - 1]));
+                return true;
+            }
+
+            if (Mode != SubMode.Line || _chainPoints.Count == 0) return false;
+
+            int lastVertex = -1;
+            if (_chainGroup >= 0 && mo.LineGroups != null && _chainGroup < mo.LineGroups.Count)
+            {
+                var order = mo.LineGroups[_chainGroup]?.Order;
+                if (order != null && order.Count > 0) lastVertex = order[order.Count - 1];
+            }
+            else if (_chainPoints.Count == 1) lastVertex = _pendingStartVertex;
+
+            Vector3? w = lastVertex >= 0 && lastVertex < mo.VertexCount ? GetVertexWorld?.Invoke(model, mc, lastVertex) : null;
+            Vector3 world = w ?? mc.DisplayWorldMatrix.MultiplyPoint3x4(_chainPoints[_chainPoints.Count - 1]);
+            anchor = ToHandlerScreen(ctx, world);
+            return true;
+        }
+
+        /// <summary>ワールド → 画面（Y=0 下）。</summary>
+        private static Vector2 ToHandlerScreen(ToolContext ctx, Vector3 world)
+        {
+            Vector2 s = ctx.WorldToScreen(world);
+            return new Vector2(s.x, ctx.PreviewRect.height - s.y);
         }
 
         /// <summary>描いている折れ線の最初の点をクリックしたか。</summary>

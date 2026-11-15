@@ -208,6 +208,9 @@ namespace Poly_Ling.Player
 
             _interactionMode = mode;
 
+            // ツール切替で縦横制限を解除する（計画と規約/PolyLing_縦横制限計画.md）。
+            ResetAxisConstraint();
+
             ReportPerfToolState();
 
             // ── 選択モードのツール固有 override をここで一括決定する ──────────

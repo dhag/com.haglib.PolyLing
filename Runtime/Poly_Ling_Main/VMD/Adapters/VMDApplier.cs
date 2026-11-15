@@ -71,9 +71,9 @@ namespace Poly_Ling.VMD
         private Dictionary<string, int> _boneNameToIndex = new Dictionary<string, int>();
 
         /// <summary>
-        /// モーフ名マッピング（VMDモーフ名 → ModelContext内インデックス）
+        /// モデルにあるモーフ名（表情と形の名前。照合の報告に使う）
         /// </summary>
-        private Dictionary<string, int> _morphNameToIndex = new Dictionary<string, int>();
+        private readonly HashSet<string> _morphNames = new HashSet<string>();
 
         /// <summary>
         /// マッピング済みのModelContext
@@ -170,7 +170,7 @@ namespace Poly_Ling.VMD
 
             _mappedModel = model;
             _boneNameToIndex.Clear();
-            _morphNameToIndex.Clear();
+            _morphNames.Clear();
 
             // ボーンをスキャン
             foreach (var entry in model.Bones)
@@ -186,21 +186,14 @@ namespace Poly_Ling.VMD
                 }
             }
 
-            // モーフをスキャン
-            foreach (var entry in model.Morphs)
-            {
-                var ctx = model.MeshContextList[entry.MasterIndex];
-                if (!string.IsNullOrEmpty(ctx.Name))
-                {
-                    if (!_morphNameToIndex.ContainsKey(ctx.Name))
-                    {
-                        _morphNameToIndex[ctx.Name] = entry.MasterIndex;
-                    }
-                }
-            }
+            // モーフ：表情か形の名前（ShapeBlendOps.Resolve と同じ規則）
+            foreach (var e in model.MorphExpressions)
+                if (!string.IsNullOrEmpty(e?.Name)) _morphNames.Add(e.Name);
+            foreach (var s in model.Shapes)
+                if (!string.IsNullOrEmpty(s?.Name) && !s.IsUV) _morphNames.Add(s.Name);
 
             if (DebugLog)
-                Debug.Log($"[VMDApplier] Mapped {_boneNameToIndex.Count} bones, {_morphNameToIndex.Count} morphs");
+                Debug.Log($"[VMDApplier] Mapped {_boneNameToIndex.Count} bones, {_morphNames.Count} morphs");
         }
 
         /// <summary>
@@ -245,7 +238,7 @@ namespace Poly_Ling.VMD
             // モーフマッチング
             foreach (var morphName in vmd.MorphNames)
             {
-                if (_morphNameToIndex.ContainsKey(morphName))
+                if (_morphNames.Contains(morphName))
                 {
                     report.MatchedMorphs.Add(morphName);
                 }
@@ -402,42 +395,12 @@ namespace Poly_Ling.VMD
         }
 
         /// <summary>
-        /// 指定フレームのモーフウェイトをModelContextに適用
-        /// </summary>
-        public void ApplyMorphWeights(ModelContext model, VMDData vmd, float frameNumber)
-        {
-            if (model == null || vmd == null) return;
-
-            if (_mappedModel != model)
-            {
-                BuildMapping(model);
-            }
-
-            foreach (var morphName in vmd.MorphNames)
-            {
-                if (!_morphNameToIndex.TryGetValue(morphName, out int morphIndex))
-                    continue;
-
-                var ctx = model.MeshContextList[morphIndex];
-                if (ctx == null)
-                    continue;
-
-                float weight = vmd.GetMorphWeightAtFrame(morphName, frameNumber);
-
-                // モーフウェイトを適用（MeshContext.MorphWeightプロパティがある場合）
-                // 現在のPolyLing構造では頂点モーフの適用方法を確認する必要がある
-                // TODO: 実際のモーフ適用ロジックを実装
-                ApplyMorphWeight(ctx, weight);
-            }
-        }
-
-        /// <summary>
-        /// ボーンとモーフの両方を適用
+        /// ボーンを適用し、IK を解く。
+        /// モーフの重みはここでは当てない（段 7 まで旧モーフの隠しオブジェクトを引いて、何もしない処理を呼んでいた）。
         /// </summary>
         public void ApplyFrame(ModelContext model, VMDData vmd, float frameNumber)
         {
             ApplyBonePose(model, vmd, frameNumber);
-            ApplyMorphWeights(model, vmd, frameNumber);
 
             // IK解決
             // ApplyBonePose内でComputeWorldMatrices()が呼ばれた後、
@@ -540,18 +503,6 @@ namespace Poly_Ling.VMD
             if (ctx == null) return Vector3.zero;
             return ctx.WorldMatrix.GetColumn(3);
         }
-       // ================================================================
-        // モーフ適用
-        // ================================================================
-
-        /// <summary>
-        /// モーフウェイトを適用（内部実装）
-        /// </summary>
-        private void ApplyMorphWeight(Data.MeshContext ctx, float weight)
-        {
-            // TODO: PolyLingのモーフシステムに合わせて実装
-        }
-
         // ================================================================
         // ユーティリティ
         // ================================================================
@@ -565,14 +516,6 @@ namespace Poly_Ling.VMD
         }
 
         /// <summary>
-        /// モーフインデックスを取得
-        /// </summary>
-        public int GetMorphIndex(string morphName)
-        {
-            return _morphNameToIndex.TryGetValue(morphName, out int index) ? index : -1;
-        }
-
-        /// <summary>
         /// マッピング済みボーン数
         /// </summary>
         public int MappedBoneCount => _boneNameToIndex.Count;
@@ -580,7 +523,7 @@ namespace Poly_Ling.VMD
         /// <summary>
         /// マッピング済みモーフ数
         /// </summary>
-        public int MappedMorphCount => _morphNameToIndex.Count;
+        public int MappedMorphCount => _morphNames.Count;
 
         /// <summary>
         /// すべてのボーンをリセット（VMD レイヤーと IK レイヤーをクリア）。

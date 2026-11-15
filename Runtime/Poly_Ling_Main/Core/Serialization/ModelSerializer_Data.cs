@@ -339,92 +339,42 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
-        // MorphBaseData シリアライズ（Phase: Morph対応）
+        // 書き出し・姿勢・法線のフラグ（MeshDTO）
+        //   段 7 まではここで旧モーフの欄（morphBaseData・morphParentIndex・morphMirrorPolicy・
+        //   mirrorOfMorphIndex）も読み書きしていた。欄ごと廃止した（PolyLing_モーフ整理計画.md 3.10）。
         // ================================================================
 
-        /// <summary>
-        /// MorphBaseData → MorphBaseDataDTO
-        /// </summary>
-        public static MorphBaseDataDTO ToMorphBaseDataDTO(MorphBaseData data)
+        // ================================================================
+        // 旧モーフの行（段 7。PolyLing_モーフ整理計画.md 3.10）
+        //   種類 Morph（番号 2）の行は旧モーフの隠しオブジェクト。旧形式の読み込みは作らない（計画書の冒頭）ので、
+        //   含む保存データ（.mfproj・CSV のプロジェクトフォルダ）は読まずに断る。
+        //   行を抜いて読むと、後ろの行を番号で指す参照（親・ミラー元・ミラーの対・ウェイト）がずれる。
+        //   旧モーフ以外の旧い欄（morph.csv・morphBaseData・morphParentIndex 等）は読まずに捨てる。
+        // ================================================================
+
+        /// <summary>保存データの種類の欄が旧モーフか（"Morph"、または番号 "2"）。</summary>
+        public static bool IsRetiredMorphType(string type)
+            => string.Equals(type, "Morph", StringComparison.OrdinalIgnoreCase) || type == "2";
+
+        /// <summary>種類の欄の並びのうち旧モーフの数。</summary>
+        public static int CountRetiredMorphRows(IEnumerable<string> types)
         {
-            if (data == null || !data.IsValid)
-                return null;
-
-            var dto = new MorphBaseDataDTO
-            {
-                morphName = data.MorphName ?? "",
-                panel = data.Panel,
-                createdAt = data.CreatedAt.ToString("o")
-            };
-
-            // 基準位置
-            dto.SetBasePositions(data.BasePositions);
-
-            // 基準法線（存在する場合）
-            if (data.HasNormals)
-            {
-                dto.SetBaseNormals(data.BaseNormals);
-            }
-
-            // 基準UV（存在する場合）
-            if (data.HasUVs)
-            {
-                dto.SetBaseUVs(data.BaseUVs);
-            }
-
-            return dto;
+            int n = 0;
+            if (types != null) foreach (var t in types) if (IsRetiredMorphType(t)) n++;
+            return n;
         }
 
-        /// <summary>
-        /// MorphBaseDataDTO → MorphBaseData
-        /// </summary>
-        public static MorphBaseData ToMorphBaseData(MorphBaseDataDTO dto)
-        {
-            if (dto == null || dto.basePositions == null || dto.basePositions.Length == 0)
-                return null;
-
-            var data = new MorphBaseData
-            {
-                MorphName = dto.morphName ?? "",
-                Panel = dto.panel,
-                BasePositions = dto.GetBasePositions(),
-                BaseNormals = dto.GetBaseNormals(),
-                BaseUVs = dto.GetBaseUVs()
-            };
-
-            // 作成日時を復元
-            if (!string.IsNullOrEmpty(dto.createdAt) && 
-                DateTime.TryParse(dto.createdAt, out var createdAt))
-            {
-                data.CreatedAt = createdAt;
-            }
-
-            return data;
-        }
+        /// <summary>旧モーフを含む保存データを断るときの文言。</summary>
+        public static string RetiredMorphMessage(int count)
+            => $"旧モーフ（種類 Morph のオブジェクト）を {count} 個含む保存データは読めません（段 7 で旧モーフを廃止）。"
+             + "元の PMX・VRM などから読み直してください。";
 
         /// <summary>
-        /// MeshContextのモーフデータをMeshDTOに保存
+        /// MeshContext のフラグを MeshDTO に保存
         /// </summary>
-        public static void SaveMorphDataToDTO(MeshContext meshContext, MeshDTO meshDTO)
+        public static void SaveMeshFlagsToDTO(MeshContext meshContext, MeshDTO meshDTO)
         {
             if (meshContext == null || meshDTO == null) return;
-
-            // モーフ基準データ
-            if (meshContext.IsMorph)
-            {
-                meshDTO.morphBaseData = ToMorphBaseDataDTO(meshContext.MorphBaseData);
-            }
-            else
-            {
-                meshDTO.morphBaseData = null;
-            }
-
-            // モーフ親インデックス
-            meshDTO.morphParentIndex = meshContext.MorphParentIndex;
-
-            // モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）
-            meshDTO.morphMirrorPolicy  = (int)meshContext.MorphMirrorPolicy;
-            meshDTO.mirrorOfMorphIndex = meshContext.MirrorOfMorphIndex;
 
             // エクスポート除外フラグ
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
@@ -435,28 +385,11 @@ namespace Poly_Ling.Serialization
         }
 
         /// <summary>
-        /// MeshDTOのモーフデータをMeshContextに復元
+        /// MeshDTO のフラグを MeshContext に復元
         /// </summary>
-        public static void LoadMorphDataFromDTO(MeshDTO meshDTO, MeshContext meshContext)
+        public static void LoadMeshFlagsFromDTO(MeshDTO meshDTO, MeshContext meshContext)
         {
             if (meshDTO == null || meshContext == null) return;
-
-            // モーフ基準データ
-            if (meshDTO.morphBaseData != null)
-            {
-                meshContext.MorphBaseData = ToMorphBaseData(meshDTO.morphBaseData);
-            }
-            else
-            {
-                meshContext.MorphBaseData = null;
-            }
-
-            // モーフ親インデックス
-            meshContext.MorphParentIndex = meshDTO.morphParentIndex;
-
-            // モーフのミラー適用（旧データは既定 FollowParent / -1 になる）
-            meshContext.MorphMirrorPolicy  = (MorphMirrorPolicy)meshDTO.morphMirrorPolicy;
-            meshContext.MirrorOfMorphIndex = meshDTO.mirrorOfMorphIndex;
 
             // エクスポート除外フラグ
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;

@@ -209,6 +209,9 @@ namespace Poly_Ling.Player
             public VisualElement ViewLayer;
             public VisualElement BgEl;
 
+            /// <summary>選択点のドラッグに使う縦横制限（計画と規約/PolyLing_縦横制限計画.md）。</summary>
+            public CanvasPointerAxis Axis;
+
             // ── 選択点UI ──
             public VisualElement PtRow;
             public Label         PtLabel;

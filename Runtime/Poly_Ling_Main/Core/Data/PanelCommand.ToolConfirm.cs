@@ -83,7 +83,7 @@ namespace Poly_Ling.Data
     ///
     /// 押し出し量は対象メッシュのローカル空間のベクトル。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した辺・線分（複数可）を押し出す。つながった対象は帯になる。線分は残し、四角形の面だけを足す。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した辺・線分（複数可）を押し出す。つながった対象は帯になる。線分は残し、四角形の面だけを足す。")]
     public class EdgeExtrudeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -151,7 +151,7 @@ namespace Poly_Ling.Data
     /// 指定した面（複数可）を押し出す。実処理は FaceExtrudeTool。
     /// 対象は FaceIndices。空なら FaceIndex の 1 枚。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した面（複数可）を押し出す。段数を指定すると側面がはしご状になる。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した面（複数可）を押し出す。段数を指定すると側面がはしご状になる。")]
     public class FaceExtrudeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,

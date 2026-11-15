@@ -204,7 +204,6 @@ namespace Poly_Ling.UndoSystem
         // カテゴリ別選択インデックス (v1.1追加)
         public int SelectedMeshIndex;      // 選択中のメッシュインデックス (Mesh/BakedMirror)
         public int SelectedBoneIndex;      // 選択中のボーンインデックス
-        public int SelectedMorphIndex;     // 選択中の頂点モーフインデックス
         
         public int CurrentMaterialIndex;  // 選択中のマテリアルインデックス
         public WorkPlaneDTO WorkPlane;
@@ -263,7 +262,6 @@ namespace Poly_Ling.UndoSystem
                 // カテゴリ別選択 (v1.1)
                 SelectedMeshIndex = modelContext.FirstMeshIndex,
                 SelectedBoneIndex = modelContext.FirstBoneIndex,
-                SelectedMorphIndex = modelContext.FirstMorphIndex,
                 CurrentMaterialIndex = modelContext.CurrentMaterialIndex,
                 EditorState = editorState != null ? CloneEditorState(editorState) : null
             };
@@ -349,7 +347,6 @@ namespace Poly_Ling.UndoSystem
             // カテゴリ別選択状態を復元 (v1.1)
             if (SelectedMeshIndex >= 0) model.SelectMesh(SelectedMeshIndex);
             if (SelectedBoneIndex >= 0) model.SelectBone(SelectedBoneIndex);
-            if (SelectedMorphIndex >= 0) model.SelectMorph(SelectedMorphIndex);
             model.CurrentMaterialIndex = CurrentMaterialIndex;
 
             return model;
@@ -385,7 +382,6 @@ namespace Poly_Ling.UndoSystem
                 // カテゴリ別選択 (v1.1)
                 selectedMeshIndex = source.selectedMeshIndex,
                 selectedBoneIndex = source.selectedBoneIndex,
-                selectedVertexMorphIndex = source.selectedVertexMorphIndex,
                 // 座標系設定
                 pmxUnityRatio = source.pmxUnityRatio,
                 pmxFlipX = source.pmxFlipX,

@@ -3,7 +3,7 @@
 // model.csv, materials.csv, materialprops.csv, humanoid.export.csv, morphgroups.csv,
 // editorstate.csv, workplane.csv, springbonegroups.csv, previewsettings.csv
 // vrmmeta.csv, vrmlookat.csv, avatarsettings.csv, coordinate.csv
-// + mesh/bone/morph/pmx_physics CSVの振り分け
+// + mesh/bone/pmx_physics CSVの振り分け（*.morph.csv は段 7 で廃止）
 //
 // 【分割先】このファイルから次へ分けてある。
 //   CsvModelSerializer.EditorCsv.cs  CSV モデル入出力：editorstate・workplane・workaxis・メッシュエントリの読み込み・TPoseBackup。
@@ -76,7 +76,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // メッシュをタイプ別に分類
             var meshEntries = new List<CsvMeshEntry>();
             var boneEntries = new List<CsvMeshEntry>();
-            var morphEntries = new List<CsvMeshEntry>();
 
             // 剛体 / JOINT は PMX 物理のメタデータ（頂点ゼロ）。
             // 形状ファイルに混ぜず専用ファイルへ振る。
@@ -93,9 +92,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 {
                     case MeshType.Bone:
                         boneEntries.Add(entry);
-                        break;
-                    case MeshType.Morph:
-                        morphEntries.Add(entry);
                         break;
                     case MeshType.RigidBody:
                     case MeshType.RigidBodyJoint:
@@ -116,21 +112,21 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // Humanoid: 集中 Dict → per-bone を同期（humanBodyBone を bone.csv へ）
             HumanoidMappingResolver.SyncPerBoneFromMapping(model);
 
-            // mesh/bone/morph CSV
+            // mesh/bone CSV
             string meshFile = $"{modelName}.mesh.csv";
             string boneFile = $"{modelName}.bone.csv";
-            string morphFile = $"{modelName}.morph.csv";
             string pmxPhysicsFile = $"{modelName}.pmx_physics.csv";
 
             // 空の種別は書き出さないが、以前の保存で作られたファイルが残っていると
             // 読込時に index 空間が重なって上書きが起きる。書かない種別は削除する。
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, meshFile),  meshEntries,  "mesh",  useNameBased, indexToName);
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, boneFile),  boneEntries,  "bone",  useNameBased, indexToName);
-            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph", useNameBased, indexToName);
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, pmxPhysicsFile), pmxPhysicsEntries, "pmx_physics", useNameBased, indexToName);
+            // 旧モーフのファイル（*.morph.csv。段 7 で廃止）は書かない。以前の保存で作られたものは消す。
+            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, $"{modelName}.morph.csv"), null, "morph", useNameBased, indexToName);
 
             // model.csv (順序マスター)
-            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries,
+            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries,
                 pmxPhysicsEntries, useNameBased);
 
             // materials.csv
@@ -158,6 +154,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // vrmexpressions.csv（VRM 表情の付帯データ。無ければ古いファイルを消す）
             WriteVrmExpressionsCsv(modelFolderPath, model);
+
+            // shapes.csv（形の一覧と今の形）
+            if ((model.Shapes != null && model.Shapes.Count > 0) || model.CurrentShapeId != 0 || model.BaseShapeSource != null)
+                WriteShapesCsv(modelFolderPath, model);
+            else
+                DeleteIfExists(modelFolderPath, "shapes.csv");
 
             // meshselsets.csv
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
@@ -268,6 +270,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var (modelName, entries) = ReadModelCsv(modelCsvPath);
             if (entries == null) entries = new List<ModelEntry>();
 
+            // 旧モーフ（種類 Morph の行）を含むフォルダは読まない（段 7。ModelSerializer.IsRetiredMorphType）。
+            int retired = ModelSerializer.CountRetiredMorphRows(entries.Select(e => e.Type));
+            if (retired > 0)
+            {
+                Debug.LogError($"[CsvModelSerializer] {modelFolderPath}: {ModelSerializer.RetiredMorphMessage(retired)}");
+                return null;
+            }
+
             var model = new ModelContext(modelName);
             string modelPrefix = SanitizeFileName(modelName).ToLowerInvariant() + ".";
 
@@ -277,7 +287,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // glob は "*.<type>.csv"。pmx_physics は mesh とは別の綴りなので衝突しない。
             // mesh の走査はそのまま残すため、旧フォルダの mesh.csv に入っている
             // 剛体 / JOINT もこれまでどおり読める。
-            foreach (var type in new[] { "mesh", "bone", "morph", "pmx_physics" })
+            // *.morph.csv（旧モーフ。段 7 で廃止）は読まない。
+            foreach (var stale in Directory.GetFiles(modelFolderPath, "*.morph.csv"))
+                Debug.LogWarning($"[CsvModelSerializer] 旧モーフのファイル {Path.GetFileName(stale)} は読みません（段 7 で廃止）。");
+            foreach (var type in new[] { "mesh", "bone", "pmx_physics" })
             {
                 var csvFiles = Directory.GetFiles(modelFolderPath, $"*.{type}.csv");
                 var ownList = new List<CsvMeshEntry>();
@@ -344,13 +357,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 foreach (var me in allOwnEntries)
                 {
                     // 同じ index が複数ファイルに現れると後勝ちで上書きされる。
-                    // 古い *.bone.csv / *.morph.csv の残留が典型なので警告を出す。
+                    // 古い *.bone.csv の残留が典型なので警告を出す。
                     if (lookup.TryGetValue(me.GlobalIndex, out var prev))
                     {
                         Debug.LogWarning(
                             $"[CsvModelSerializer] index={me.GlobalIndex} が重複している: " +
                             $"'{prev?.Name}'({prev?.Type}) → '{me.MeshContext?.Name}'({me.MeshContext?.Type}) で上書き。" +
-                            "モデルフォルダに古い *.bone.csv / *.morph.csv が残っていないか確認すること。");
+                            "モデルフォルダに古い *.bone.csv が残っていないか確認すること。");
                     }
                     lookup[me.GlobalIndex] = me.MeshContext;
                 }
@@ -401,6 +414,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // vrmexpressions.csv（morphgroups.csv の並びを索引に使うので、その後に読む）
             ReadVrmExpressionsCsv(modelFolderPath, model);
+
+            // shapes.csv
+            ReadShapesCsv(modelFolderPath, model);
 
             // meshselsets.csv
             ReadMeshSelSetsCsv(modelFolderPath, model);

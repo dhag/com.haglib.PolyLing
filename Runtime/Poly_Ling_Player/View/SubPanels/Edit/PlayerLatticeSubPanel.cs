@@ -360,9 +360,12 @@ namespace Poly_Ling.Player
             {
                 string imp = "";
                 if (Surface == null || !Surface.TryGet(Tool, "chainImportMessage", out imp) || imp == null) imp = "";
+                // 最後に実行されなかった操作の理由（作業軸が無い・選択が無いなど）。
+                string fail = "";
+                if (Surface == null || !Surface.TryGet(Tool, "lastActionFailure", out fail) || fail == null) fail = "";
                 if (Surface == null || idle)
                 {
-                    _infoLabel.text = "頂点を選択してから開始してください。"
+                    _infoLabel.text = (string.IsNullOrEmpty(fail) ? "頂点を選択してから開始してください。" : fail)
                         + (string.IsNullOrEmpty(imp) ? "" : "\n" + imp);
                 }
                 else
@@ -371,7 +374,8 @@ namespace Poly_Ling.Player
                         $"対象 {Surface.GetInt(Tool, "affectedCount")} 頂点 / 格子点 {Surface.GetInt(Tool, "controlPointCount")} 個"
                         + (deform
                             ? $" / 選択 {Surface.GetInt(Tool, "selectedPointCount")} 個"
-                            : "（対象頂点は「選択フィット」か「変形開始」で取り直します）");
+                            : "（対象頂点は「選択フィット」か「変形開始」で取り直します）")
+                        + (string.IsNullOrEmpty(fail) ? "" : "\n" + fail);
                 }
             }
         }

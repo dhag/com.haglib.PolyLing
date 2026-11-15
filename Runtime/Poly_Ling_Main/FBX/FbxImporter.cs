@@ -50,11 +50,12 @@
 // モーフと表情
 // ============================================================
 //
-//   ブレンドシェイプのチャンネルごとに、重み 1 の形（target_shape）の差分をモーフにする
-//   （基底メッシュの複製へ差分を足す。PMX・glTF と同じ形）。
-//   表情名はチャンネル名。チャンネル名が「メッシュのノード名_」で始まるときはそれを外す
-//   （FBX 書き出しはブレンドシェイプ名をモーフの MeshContext 名「基底名_モーフ名」にしている：HierarchyMorphBuilder）。
-//   同じ表情名のモーフを 1 つの Vertex 表情にまとめる。モーフの MeshContext 名は「基底名_表情名」。
+//   ブレンドシェイプのチャンネルごとに、重み 1 の形（target_shape）の差分を形にする
+//   （PolyLing_モーフ整理計画.md 3.9・段 6。隠しオブジェクトは作らない）。
+//   形の名前はチャンネル名。チャンネル名が「メッシュのノード名_」で始まるときはそれを外す
+//   （段 5 より前の FBX 書き出しはブレンドシェイプ名を「基底名_モーフ名」にしていた）。
+//   同じ名前のチャンネルは、ノードをまたいで 1 つの形にまとめる。表情は作らない（形そのものが頂点の表情）。
+//   形の位置は頂点の位置と同じ計算で出す：bakeU · ToUnity(p + d)（差分にだけ行列を掛けて足すと丸めの差が出る。段 2 の規則）。
 //
 // ============================================================
 // 材質
@@ -146,7 +147,11 @@ namespace Poly_Ling.Fbx
             {
                 public MeshContext BaseCtx;
                 public string      ExpressionName;
+                /// <summary>差分（ファイル座標）。</summary>
                 public Vector3[]   Deltas;
+                /// <summary>制御点の位置（ファイル座標）。</summary>
+                public float[]     RawPositions;
+                public Matrix4x4   BakeU;
             }
             private readonly List<PendingMorph> _pendingMorphs = new List<PendingMorph>();
 
@@ -171,7 +176,7 @@ namespace Poly_Ling.Fbx
                 BuildBones();
                 BuildMeshes();
                 if (_result.MaterialReferences.Count == 0) DefaultMaterialIndex();
-                BuildMorphs();
+                BuildShapes();
                 FinalizeUnityMeshes();
 
                 SkinKindOps.RecomputeAll(_result.MeshContexts);
@@ -627,7 +632,7 @@ namespace Poly_Ling.Fbx
                     _result.FaceCount   += mo.FaceCount;
 
                     if (_settings.ImportMorphs && info.BlendChannelCount > 0)
-                        CollectMorphs(mi, info, nd.Name, mc, bakeU);
+                        CollectMorphs(mi, info, nd.Name, mc, bakeU, pos);
                 }
             }
 
@@ -733,7 +738,7 @@ namespace Poly_Ling.Fbx
             // モーフと表情
             // ------------------------------------------------------------
 
-            private void CollectMorphs(int mi, FbxScene.MeshInfo info, string nodeName, MeshContext baseCtx, Matrix4x4 bakeU)
+            private void CollectMorphs(int mi, FbxScene.MeshInfo info, string nodeName, MeshContext baseCtx, Matrix4x4 bakeU, float[] rawPositions)
             {
                 string prefix = string.IsNullOrEmpty(nodeName) ? null : nodeName + "_";
                 for (int k = 0; k < info.BlendChannelCount; k++)
@@ -749,56 +754,43 @@ namespace Poly_Ling.Fbx
                     {
                         int v = vidx[i];
                         if (v < 0 || v >= deltas.Length) continue;
-                        deltas[v] = bakeU.MultiplyVector(ToUnity(new Vector3(d3[i * 3], d3[i * 3 + 1], d3[i * 3 + 2])));
+                        deltas[v] += new Vector3(d3[i * 3], d3[i * 3 + 1], d3[i * 3 + 2]);
                     }
-                    _pendingMorphs.Add(new PendingMorph { BaseCtx = baseCtx, ExpressionName = expr, Deltas = deltas });
+                    _pendingMorphs.Add(new PendingMorph
+                    {
+                        BaseCtx = baseCtx, ExpressionName = expr, Deltas = deltas, RawPositions = rawPositions, BakeU = bakeU,
+                    });
                 }
             }
 
-            private void BuildMorphs()
+            private void BuildShapes()
             {
-                var usedNames = new HashSet<string>();
-                foreach (var mc in _result.MeshContexts)
-                    if (!string.IsNullOrEmpty(mc?.Name)) usedNames.Add(mc.Name);
-
-                var exprByName = new Dictionary<string, MorphExpression>();
+                var idByName = new Dictionary<string, int>();
+                var seen = new HashSet<(MeshContext, string)>();
                 foreach (var pm in _pendingMorphs)
                 {
-                    var baseMc = pm.BaseCtx;
-                    var morphMc = new MeshContext
+                    if (!idByName.TryGetValue(pm.ExpressionName, out int id))
                     {
-                        MeshObject        = baseMc.MeshObject.Clone(),
-                        Type              = MeshType.Morph,
-                        IsVisible         = false,
-                        ExcludeFromExport = true,
-                    };
-                    morphMc.MeshObject.Type = MeshType.Morph;
-
-                    string name = MakeUnique($"{baseMc.Name}_{pm.ExpressionName}", usedNames);
-                    morphMc.MeshObject.Name = name;
-                    morphMc.Name = name;
-
-                    // 基準位置は差分を足す前に取る（PMX・glTF の読み込みと同じ順）。
-                    morphMc.SetAsMorph(pm.ExpressionName);
-                    if (morphMc.MorphBaseData != null) morphMc.MorphBaseData.BaseMeshName = baseMc.Name;
-
-                    var verts = morphMc.MeshObject.Vertices;
-                    for (int i = 0; i < verts.Count && i < pm.Deltas.Length; i++)
-                        verts[i].Position += pm.Deltas[i];
-
-                    int index = _result.MeshContexts.Count;
-                    _result.MeshContexts.Add(morphMc);
-                    _result.MorphCount++;
-
-                    if (!exprByName.TryGetValue(pm.ExpressionName, out var me))
-                    {
-                        me = new MorphExpression(pm.ExpressionName, MorphType.Vertex);
-                        exprByName[pm.ExpressionName] = me;
-                        _result.MorphExpressions.Add(me);
+                        id = _result.Shapes.Count + 1;
+                        idByName[pm.ExpressionName] = id;
+                        _result.Shapes.Add(new ShapeDef { Id = id, Name = pm.ExpressionName, NameEnglish = "", Panel = 3 });
                     }
-                    me.AddMesh(index, 1f);
+                    if (!seen.Add((pm.BaseCtx, pm.ExpressionName)))
+                        _result.Warnings.Add($"\"{pm.BaseCtx.Name}\" に同じ名前のブレンドシェイプ \"{pm.ExpressionName}\" が複数あります。後のものを使います。");
+
+                    var verts = pm.BaseCtx.MeshObject.Vertices;
+                    int n = Mathf.Min(verts.Count, Mathf.Min(pm.Deltas.Length, pm.RawPositions.Length / 3));
+                    for (int v = 0; v < n; v++)
+                    {
+                        Vector3 d = pm.Deltas[v];
+                        if (d.x == 0f && d.y == 0f && d.z == 0f) continue;
+                        var raw = new Vector3(pm.RawPositions[v * 3], pm.RawPositions[v * 3 + 1], pm.RawPositions[v * 3 + 2]) + d;
+                        Vector3 p = pm.BakeU.MultiplyPoint3x4(ToUnity(raw));
+                        if (!Poly_Ling.Ops.ShapeOps.Same(p, verts[v].Position)) verts[v].SetShape(id, p);
+                    }
                 }
-                _result.ExpressionCount = _result.MorphExpressions.Count;
+                _result.MorphCount = _result.Shapes.Count;
+                _result.ExpressionCount = 0;
             }
 
             private void FinalizeUnityMeshes()
@@ -807,17 +799,8 @@ namespace Poly_Ling.Fbx
                 foreach (var mc in _result.MeshContexts)
                 {
                     if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
-                    if (mc.Type == MeshType.Morph)
-                    {
-                        mc.UnityMesh = mc.MeshObject.ToUnityMeshShared(matCount);
-                        mc.UnityMesh.name = mc.MeshObject.Name;
-                        mc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                    }
-                    else
-                    {
-                        mc.UnityMesh = mc.MeshObject.ToUnityMesh(matCount);
-                        mc.UnityMesh.name = mc.Name;
-                    }
+                    mc.UnityMesh = mc.MeshObject.ToUnityMesh(matCount);
+                    mc.UnityMesh.name = mc.Name;
                 }
             }
         }

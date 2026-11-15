@@ -378,26 +378,64 @@ namespace Poly_Ling.Player
 
             if (ed.Drag && ed.Canvas.HasPointerCapture(e.pointerId))
             {
-                if (ed.Points != null && ed.DragStart.Count > 0)
-                {
-                    var delta = BeltC2P(ed, cp, w, h) - ed.DragStartCursorProf;
-                    foreach (var kv in ed.DragStart)
-                    {
-                        int idx = kv.Key;
-                        if (idx < 0 || idx >= ed.Points.Count) continue;
-                        ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta);
-                    }
-                    foreach (var kv in ed.MagnetStart)
-                    {
-                        int idx = kv.Key;
-                        if (idx < 0 || idx >= ed.Points.Count) continue;
-                        ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta * ed.MagnetW[idx]);
-                    }
-                    D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
-                }
+                // Shift の縦横制限を通した操作座標で動かす。
+                var op = ed.Axis != null ? ed.Axis.Apply(cp, e.shiftKey) : cp;
+                BeltDragMoveTo(ed, op, w, h);
                 e.StopPropagation(); return;
             }
 
+            BeltUpdateHover(ed, cp, w, h);
+        }
+
+        // ── 縦横制限（計画と規約/PolyLing_縦横制限計画.md）────────────────
+
+        /// <summary>キャンバスへ縦横制限を組み込む（キャンバスを作った直後に呼ぶ）。</summary>
+        private void AttachBeltAxis(BeltProfileEdit ed)
+        {
+            ed.Axis = new CanvasPointerAxis(ed.Canvas, "belt", op =>
+            {
+                if (!ed.Drag || ed.Canvas == null) return;
+                BeltDragMoveTo(ed, op, ed.Canvas.resolvedStyle.width, ed.Canvas.resolvedStyle.height);
+            })
+            {
+                Describe = () =>
+                {
+                    int i = ed.SelectedIndex;
+                    if (ed.Points == null || i < 0 || i >= ed.Points.Count) return $"selected={ed.Sel.Count}";
+                    float w = ed.Canvas.resolvedStyle.width, h = ed.Canvas.resolvedStyle.height;
+                    var pt = ed.Points[i];
+                    var c  = BeltP2C(ed, pt, w, h);
+                    return System.FormattableString.Invariant(
+                        $"selected={ed.Sel.Count} primary={i} canvas=({c.x:0.0},{c.y:0.0}) pos=({pt.x:0.0000},{pt.y:0.0000})");
+                },
+            };
+        }
+
+        /// <summary>
+        /// 選択点を、ドラッグ開始時のカーソル位置から操作座標までの差だけ動かす（開始位置から毎回計算）。
+        /// </summary>
+        private void BeltDragMoveTo(BeltProfileEdit ed, Vector2 cp, float w, float h)
+        {
+            if (ed.Points == null || ed.DragStart.Count == 0) return;
+            var delta = BeltC2P(ed, cp, w, h) - ed.DragStartCursorProf;
+            foreach (var kv in ed.DragStart)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= ed.Points.Count) continue;
+                ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta);
+            }
+            foreach (var kv in ed.MagnetStart)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= ed.Points.Count) continue;
+                ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta * ed.MagnetW[idx]);
+            }
+            D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
+        }
+
+        /// <summary>非ドラッグ中のハンドル・線分のホバー更新。</summary>
+        private void BeltUpdateHover(BeltProfileEdit ed, Vector2 cp, float w, float h)
+        {
             // ハンドルホバー（ギズモ表示OFF/アンカー設定中は無効）
             var hovType = (ed.Anchor.Mode || !ed.ShowGizmo)
                                          ? Canvas2DHandle.HandleType.None
@@ -438,7 +476,7 @@ namespace Poly_Ling.Player
             ed.BgDrag     = false;
             ed.PanDrag    = false;
             ed.AnchorDrag = false;
-            if (wasDrag) BeltCommit(ed, "断面点編集");
+            if (wasDrag) { ed.Axis?.End(); BeltCommit(ed, "断面点編集"); }
             e.StopPropagation();
         }
 
@@ -458,6 +496,8 @@ namespace Poly_Ling.Player
                 foreach (var i in ed.Sel)
                     if (i >= 0 && i < ed.Points.Count) ed.DragStart[i] = ed.Points[i];
             ed.DragStartCursorProf = BeltC2P(ed, cp, w, h);
+            // 縦横制限の基準点はドラッグを始めた位置（挿入してそのまま動かす場合も同じ）。
+            ed.Axis?.Begin(cp, false);
 
             ed.MagnetStart.Clear(); ed.MagnetW.Clear();
             if (ed.Magnet.Enabled && ed.Points != null && ed.Sel.Count > 0)

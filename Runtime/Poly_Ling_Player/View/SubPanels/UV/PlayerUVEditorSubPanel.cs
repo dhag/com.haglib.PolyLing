@@ -268,6 +268,14 @@ namespace Poly_Ling.Player
             _canvas.RegisterCallback<MouseDownEvent>(OnCanvasMouseDown);
             _canvas.RegisterCallback<MouseMoveEvent>(OnCanvasMouseMove);
             _canvas.RegisterCallback<MouseUpEvent>(OnCanvasMouseUp);
+            // Shift の縦横制限（計画と規約/PolyLing_縦横制限計画.md）。頂点の移動だけに使う。
+            _uvAxis = new CanvasPointerAxis(_canvas, "uv", op =>
+            {
+                if (_interaction == Interaction.MovingVertex) ApplyUVMove(op);
+            }, usesMouseEvents: true)
+            {
+                Describe = DescribeUVAxisState,
+            };
             _canvas.RegisterCallback<MouseLeaveEvent>(_ =>
             {
                 if (_hovered.HasValue) { _hovered = null; _canvas.MarkDirtyRepaint(); }

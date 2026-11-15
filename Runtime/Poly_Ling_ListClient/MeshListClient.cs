@@ -1,6 +1,6 @@
 // MeshListClient.cs
 // オブジェクトリスト表示クライアント。現行メインパネルの MeshListSubPanel(MeshList V2)を
-// そのまま再利用する(スキンドメッシュ詳細トグル・Mesh/Bone/Morph/剛体タブ・TreeView)。
+// そのまま再利用する(スキンドメッシュ詳細トグル・Mesh/Bone/剛体タブ・TreeView)。
 // 空 GameObject にアタッチして使う。描画メッシュ本体は取得しない。
 
 using UnityEngine.UIElements;

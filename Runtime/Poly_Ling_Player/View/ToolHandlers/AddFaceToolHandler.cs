@@ -11,8 +11,40 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     [Poly_Ling.Data.PLTool("addFace", Description = "AddFaceTool（確定は AddFaceCommand）")]
-    public class AddFaceToolHandler : IPlayerToolHandler
+    public class AddFaceToolHandler : IPlayerToolHandler, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>
+        /// 吸着候補の判定（Viewer が縦横制限の AcceptsCandidate を刺す）。引数は候補の画面位置（Y=0 下）。
+        /// false の候補には吸着しない（制限方向を崩さない）。null なら判定しない。
+        /// </summary>
+        public Func<Vector2, bool> SnapCandidateFilter;
+
+        /// <summary>
+        /// 点が 1 つ以上置かれていれば「点を指定」とし、直前の点を基準にする。
+        /// 基準点は直前の点のワールド位置（ResolveDepthOrigin と同じ）を今のカメラで画面へ写したもの。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = Vector2.zero;
+            if (!_tool.GetLastPoint().HasValue) return AxisConstraintUse.None;
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return AxisConstraintUse.None;
+            ctx.Model = _project?.CurrentModel;
+            anchor = ToHandlerScreen(ctx, ResolveDepthOrigin(ctx));
+            return AxisConstraintUse.PointSpec;
+        }
+
+        /// <summary>ワールド → 画面（Y=0 下）。</summary>
+        private static Vector2 ToHandlerScreen(ToolContext ctx, Vector3 world)
+        {
+            Vector2 s = ctx.WorldToScreen(world);
+            return new Vector2(s.x, ctx.PreviewRect.height - s.y);
+        }
+
         // ================================================================
         // 依存
         // ================================================================
@@ -236,7 +268,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
+            ResolveGpuHoverVertex(ctx, ToImgui(screenPos, ctx));
 
             if (HandlePressViaCommand(ctx, screenPos)) return;
 
@@ -397,7 +429,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
+            ResolveGpuHoverVertex(ctx, ToImgui(screenPos, ctx));
 
             if (HandlePressViaCommand(ctx, screenPos)) return;
 
@@ -417,7 +449,7 @@ namespace Poly_Ling.Player
         {
             if (ctx == null) return;
             EnrichCtxForHover(ctx);
-            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
+            ResolveGpuHoverVertex(ctx, ToImgui(screenPos, ctx));
             // UpdateHover に渡される screenPos は GPU Y（Y=0下）。
             // PlayerViewportManager.NotifyPointerHover が ToHandlerHoverPos で
             // パネルローカル（Y=0上）から反転してから渡してくるため、
@@ -485,8 +517,9 @@ namespace Poly_Ling.Player
         /// ツール本体が使う ctx.ActiveMeshObject の取得元が ActiveMeshContext であり、
         /// ActiveCategory が Bone のとき FirstSelectedIndex はボーンを指してしまうため。
         /// </summary>
+        /// <param name="ctx">候補を画面へ写すのに使う（縦横制限の吸着判定）。</param>
         /// <param name="imguiPos">ポインタ位置（IMGUI Y、Y=0 上）。</param>
-        private void ResolveGpuHoverVertex(Vector2 imguiPos)
+        private void ResolveGpuHoverVertex(ToolContext ctx, Vector2 imguiPos)
         {
             int gpuVertex = -1;
             UnityEngine.Vector3? snapWorld = null;
@@ -502,6 +535,7 @@ namespace Poly_Ling.Player
                     ApplyHoverElement(
                         GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex),
                         activeIdx, ref gpuVertex, ref snapWorld);
+                    DropIfOffAxis(ctx, ref gpuVertex, ref snapWorld);
                 }
 
                 // 通常ホバーが空振りのときだけ非選択オブジェクトを見る。
@@ -512,6 +546,7 @@ namespace Poly_Ling.Player
                     ApplyHoverElement(
                         GetSnapHoverElement(),
                         activeIdx, ref gpuVertex, ref snapWorld);
+                    DropIfOffAxis(ctx, ref gpuVertex, ref snapWorld);
                     // この経路で取れた吸着座標だけが非選択オブジェクト由来。
                     fromUnselected = snapWorld.HasValue;
                 }
@@ -521,6 +556,7 @@ namespace Poly_Ling.Player
                     && GetSnapPointWorld != null)
                 {
                     snapWorld = GetSnapPointWorld(imguiPos, SnapToBones, SnapToObjectOrigins);
+                    DropIfOffAxis(ctx, ref gpuVertex, ref snapWorld);
                     fromUnselected = snapWorld.HasValue;
                 }
             }
@@ -530,6 +566,21 @@ namespace Poly_Ling.Player
             _tool.SetGpuHoverSnapWorld(
                 gpuVertex >= 0 ? (UnityEngine.Vector3?)null : snapWorld,
                 fromUnselected);
+        }
+
+        /// <summary>
+        /// 縦横制限で固定中、候補（頂点番号か吸着ワールド座標）が制限方向から外れていれば捨てる。
+        /// 捨てると次の候補（非選択オブジェクト → ボーン・原点 → WorkPlane 交点）へ進む。
+        /// 頂点の画面位置は GPU のワールド座標から求める。取れないときは判定せず残す。
+        /// </summary>
+        private void DropIfOffAxis(ToolContext ctx, ref int gpuVertex, ref UnityEngine.Vector3? snapWorld)
+        {
+            if (SnapCandidateFilter == null || ctx == null) return;
+            if (gpuVertex < 0 && !snapWorld.HasValue) return;
+            Vector3? w = gpuVertex >= 0 ? GetVertexWorldPosition?.Invoke(gpuVertex) : snapWorld;
+            if (!w.HasValue || SnapCandidateFilter(ToHandlerScreen(ctx, w.Value))) return;
+            gpuVertex = -1;
+            snapWorld = null;
         }
 
         /// <summary>

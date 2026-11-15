@@ -214,6 +214,9 @@ namespace Poly_Ling.Ops
                     Id = srcVertex.Id,
                     Position = MirrorPoint(mirrorAxis, mirrorDistance, srcVertex.Position)
                 };
+                // 形ごとの位置も鏡映して持たせる（切り替えは実体側と同時に行われる）。
+                ShapeOps.MirrorShapesFrom(srcVertex, mirrorVertex,
+                    p => MirrorPoint(mirrorAxis, mirrorDistance, p));
 
                 // UVをコピー
                 foreach (var uv in srcVertex.UVs)
@@ -249,6 +252,8 @@ namespace Poly_Ling.Ops
                 };
                 if (srcFace.IsHidden)
                     mirrorFace.SetFlag(FaceFlags.Hidden);
+                if (srcFace.IsCurveChord)
+                    mirrorFace.SetFlag(FaceFlags.CurveChord);
 
                 // 頂点順序を反転（法線方向維持のため）
                 //
@@ -358,6 +363,8 @@ namespace Poly_Ling.Ops
                     if (mv == null || rv == null) continue;
                     mv.Position = MirrorPoint(axis, dist, rv.Position);
                 }
+                // 形ごとの位置も実体側から取り直す。
+                ShapeOps.SyncMirrorShapes(realMo, mirrorMo, null, p => MirrorPoint(axis, dist, p));
                 mirrorMo.InvalidatePositionCache();
 
                 mc.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
@@ -556,6 +563,7 @@ namespace Poly_Ling.Ops
 
                     var mf = new Face { MaterialIndex = rf.MaterialIndex + matOffset };
                     if (rf.IsHidden) mf.SetFlag(FaceFlags.Hidden);
+                    if (rf.IsCurveChord) mf.SetFlag(FaceFlags.CurveChord);
 
                     int n = rf.VertexIndices.Count;
                     for (int j = n - 1; j >= 0; j--)

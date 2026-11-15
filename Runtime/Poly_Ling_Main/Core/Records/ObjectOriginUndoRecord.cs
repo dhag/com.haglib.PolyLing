@@ -23,6 +23,8 @@ namespace Poly_Ling.UndoSystem
         public Vector3   Position;
         public bool      UseLocalTransform;
         public Vector3[] VertexPositions;
+        /// <summary>頂点が持つ形ごとの位置の控え（位置と同じ変換が掛かるので一緒に戻す）。null なら戻さない。</summary>
+        public Poly_Ling.Ops.ShapeSnapshot Shapes;
     }
 
     /// <summary>オブジェクト原点の一括変更を Undo/Redo する。</summary>
@@ -73,6 +75,7 @@ namespace Poly_Ling.UndoSystem
                         v.Position = snap.VertexPositions[i];
                         mo.Vertices[i] = v;
                     }
+                    Poly_Ling.Ops.ShapeOps.RestoreShapes(mo, snap.Shapes);
                     mo.InvalidatePositionCache();
                 }
             }

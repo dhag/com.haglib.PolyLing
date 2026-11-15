@@ -103,16 +103,14 @@ namespace Poly_Ling.Context
         {
             SelectedDrawableMeshIndices.RemoveAll(i => i < 0 || i >= Count);
             SelectedBoneIndices.RemoveAll(i => i < 0 || i >= Count);
-            SelectedMorphIndices.RemoveAll(i => i < 0 || i >= Count);
         }
 
         /// <summary>全カテゴリの選択インデックスをフラットリストとして取得（Undo記録用）</summary>
         public List<int> CaptureAllSelectedIndices()
         {
-            var indices = new List<int>(SelectedDrawableMeshIndices.Count + SelectedBoneIndices.Count + SelectedMorphIndices.Count);
+            var indices = new List<int>(SelectedDrawableMeshIndices.Count + SelectedBoneIndices.Count);
             indices.AddRange(SelectedDrawableMeshIndices);
             indices.AddRange(SelectedBoneIndices);
-            indices.AddRange(SelectedMorphIndices);
             return indices;
         }
 
@@ -122,7 +120,6 @@ namespace Poly_Ling.Context
         // 【なぜ要るか】
         //   MeshContext は他要素を「MeshContextList の索引」で指す。
         //     ParentIndex / HierarchyParentIndex … 階層
-        //     MorphParentIndex                   … モーフの所属
         //     BakedMirrorSourceIndex             … ミラーの実体側
         //   さらに ModelContext 側にも索引参照がある。
         //     HumanoidMapping (name→index)       … Avatar 割当
@@ -283,10 +280,6 @@ namespace Poly_Ling.Context
                 // ParentIndex は HierarchyParentIndex と同じ入れ物なので 1 回だけ写す。
                 // 2 回書くと +1 が 2 度掛かり、親が 1 つ先の要素（多くは自分自身）を指す。
                 if (mc.HierarchyParentIndex >= 0) mc.HierarchyParentIndex = MapParent(mc.HierarchyParentIndex);
-                if (mc.MorphParentIndex     >= 0) mc.MorphParentIndex     = MapParent(mc.MorphParentIndex);
-
-                // MirrorOf モーフの参照先。切れると鏡像モーフが導出できなくなるので付け替える。
-                if (mc.MirrorOfMorphIndex   >= 0) mc.MirrorOfMorphIndex   = Map(mc.MirrorOfMorphIndex);
 
                 // 左右対のボーン索引。スキンド変換が確定させた値なので、
                 // 索引が動いたら必ず付け替える（切らない）。

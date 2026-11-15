@@ -54,12 +54,10 @@ namespace Poly_Ling.Player
         // 遅延構築
         private IReadOnlyList<IMeshView> _drawableList;
         private IReadOnlyList<IMeshView> _boneList;
-        private IReadOnlyList<IMeshView> _morphList;
         private IReadOnlyList<IMeshView> _rigidBodyList;
         private IReadOnlyList<IMeshView> _rigidBodyJointList;
         private int[] _selectedDrawableIndices;
         private int[] _selectedBoneIndices;
-        private int[] _selectedMorphIndices;
         private IReadOnlyList<string> _meshSelectionSetNames;
 
         public PlayerModelView(ModelContext model, int modelIndex, ProjectContext project = null)
@@ -99,6 +97,11 @@ namespace Poly_Ling.Player
             => Poly_Ling.View.LiveProjectView.BuildMaterialSlotView(_model, slot);
         public IReadOnlyList<MorphExpressionView> MorphExpressions
             => Poly_Ling.View.LiveProjectView.BuildMorphExpressionViews(_model);
+        public IReadOnlyList<ShapeView> Shapes
+            => Poly_Ling.View.LiveProjectView.BuildShapeViews(_model);
+        public int CurrentShapeId  => _model.CurrentShapeId;
+        public int PreviousShapeId => _model.PreviousShapeId;
+        public ShapeView BaseShape => Poly_Ling.View.LiveProjectView.BuildBaseShapeView(_model);
 
         public int    HumanoidMappingCount => (_model.HumanoidMapping == null || _model.HumanoidMapping.IsEmpty) ? 0 : _model.HumanoidMapping.Count;
         public bool   HasAnySkinWeight     => Poly_Ling.Ops.TPoseConverter.HasAnySkinWeight(_model.MeshContextList);
@@ -120,15 +123,12 @@ namespace Poly_Ling.Player
 
         public int DrawableCount  => _model.DrawableCount;
         public int BoneCount      => _model.BoneCount;
-        public int MorphCount     => _model.TypedIndices.GetCount(MeshCategory.Morph);
         public int TotalMeshCount => _model.MeshContextCount;
 
         public IReadOnlyList<IMeshView> DrawableList
             => _drawableList ??= BuildList(MeshCategory.Drawable);
         public IReadOnlyList<IMeshView> BoneList
             => _boneList     ??= BuildList(MeshCategory.Bone);
-        public IReadOnlyList<IMeshView> MorphList
-            => _morphList    ??= BuildList(MeshCategory.Morph);
         public IReadOnlyList<IMeshView> RigidBodyList
             => _rigidBodyList ??= BuildList(MeshCategory.RigidBody);
         public IReadOnlyList<IMeshView> RigidBodyJointList
@@ -138,8 +138,6 @@ namespace Poly_Ling.Player
             => _selectedDrawableIndices ??= _model.SelectedDrawableMeshIndices.ToArray();
         public int[] SelectedBoneIndices
             => _selectedBoneIndices     ??= _model.SelectedBoneIndices.ToArray();
-        public int[] SelectedMorphIndices
-            => _selectedMorphIndices    ??= _model.SelectedMorphIndices.ToArray();
 
         /// <summary>選択辞書の名前一覧。並びは MeshSelectionSets と同じ。</summary>
         public IReadOnlyList<string> MeshSelectionSetNames

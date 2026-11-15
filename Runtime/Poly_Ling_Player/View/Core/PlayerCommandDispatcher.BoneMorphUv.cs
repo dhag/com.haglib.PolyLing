@@ -1,5 +1,5 @@
 // PlayerCommandDispatcher.BoneMorphUv.cs
-// コマンドディスパッチャ：BonePose・モーフ・BoneTransform・UV 展開・マテリアル。
+// コマンドディスパッチャ：BonePose・表情（属性・削除・CSV）・BoneTransform・UV 展開・マテリアル。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 
 using System;
@@ -30,7 +30,7 @@ namespace Poly_Ling.Player
         public Func<ApplyUvUnwrapCommand, ModelContext, Dictionary<int, Vector2[]>, string> OnComputeViewUvs;
 
         /// <summary>
-        /// DispatchCore の分担：BonePose・モーフ・BoneTransform・UV 展開・マテリアル。
+        /// DispatchCore の分担：BonePose・表情（属性・削除・CSV）・BoneTransform・UV 展開・マテリアル。
         /// 該当するコマンドなら処理して true を返す。区画の本文は元の switch のままで、
         /// DispatchCore を抜けていた return; だけを return true; にしてある。
         /// </summary>
@@ -217,122 +217,32 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 
-                // ── モーフ全選択 / 全解除
-                case SelectAllMorphsCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    model.ClearMorphSelection();
-                    foreach (int idx in c.AllMorphIndices) model.AddToMorphSelection(idx);
-                    _notifyPanels(ChangeKind.Selection);
-                    return true;
-
-                case DeselectAllMorphsCommand _:
-                    model?.ClearMorphSelection();
-                    _notifyPanels(ChangeKind.Selection);
-                    return true;
-
-                // ── モーフ変換（構造変更）
-                case ConvertMeshToMorphCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).ConvertMeshToMorph(
-                        c.SourceIndex, c.ParentIndex, c.MorphName, c.Panel);
-                    _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
-                    return true;
-
-                case ConvertMorphToMeshCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).ConvertMorphToMesh(c.MasterIndices);
-                    _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
-                    return true;
-
-                case CreateMorphSetCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).CreateMorphSet(
-                        c.SetName, c.MorphType, c.MorphIndices);
-                    _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
-                    return true;
-
-                // ── モーフプレビュー
-                // 開始と重み変更では通知しない。頂点位置の GPU 反映は
-                // MeshListOps.SyncPositionsOnly（GetMeshListOps で配線）が担う。
-                // ── モーフエクスプレッションの編集（パネルが直接書き換えていたものを移した。Undo も同じ記録）
-                case SetMorphExpressionAttributesCommand c:
+                // ── 表情の名前・パネル・削除（Undo は表情の記録）
+                case SetExpressionAttributesCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
-                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"表情 {c.SetIndex} がありません"); return true; }
                     var set = model.MorphExpressions[c.SetIndex];
-                    int panel = System.Math.Clamp(c.Panel, 0, 3);
+                    int panel = System.Math.Clamp(c.Panel, 0, MorphPanels.Count - 1);
                     if (c.Name == set.Name && c.NameEnglish == set.NameEnglish && panel == set.Panel) return true;
                     var rec = new MorphExpressionEditRecord { SetIndex = c.SetIndex, OldSnapshot = set.Clone() };
                     set.Name = c.Name; set.NameEnglish = c.NameEnglish; set.Panel = panel;
                     rec.NewSnapshot = set.Clone();
-                    RecordMeshListUndo(rec, $"モーフエクスプレッション属性変更: {set.Name}");
+                    RecordMeshListUndo(rec, $"表情の属性変更: {set.Name}");
                     model.IsDirty = true;
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
                 }
-                case DeleteMorphExpressionCommand c:
+                case DeleteExpressionCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
-                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"表情 {c.SetIndex} がありません"); return true; }
                     var set = model.MorphExpressions[c.SetIndex];
                     RecordMeshListUndo(new MorphExpressionChangeRecord { RemovedExpression = set.Clone(), RemovedIndex = c.SetIndex },
-                        $"モーフエクスプレッション削除: {set.Name}");
+                        $"表情の削除: {set.Name}");
                     model.MorphExpressions.RemoveAt(c.SetIndex);
                     model.IsDirty = true;
                     _notifyPanels(ChangeKind.Attributes);
-                    return true;
-                }
-                case SetMorphEntryWeightsCommand c:
-                {
-                    if (model == null) { Fail("no current model"); return true; }
-                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
-                    if (c.EntryIndices.Length != c.Weights.Length) { Fail("エントリ番号とウェイトの数が違います"); return true; }
-                    var set = model.MorphExpressions[c.SetIndex];
-                    var before = set.Clone();
-                    bool changed = false;
-                    for (int k = 0; k < c.EntryIndices.Length; k++)
-                    {
-                        int ei = c.EntryIndices[k];
-                        if (ei < 0 || ei >= set.MeshEntries.Count) { Fail($"エントリ {ei} がありません"); return true; }
-                        var e = set.MeshEntries[ei];
-                        if (Mathf.Abs(e.Weight - c.Weights[k]) <= 0.0001f) continue;
-                        e.Weight = c.Weights[k];
-                        set.MeshEntries[ei] = e;
-                        changed = true;
-                    }
-                    if (!changed) return true;
-                    RecordMeshListUndo(new MorphExpressionEditRecord { SetIndex = c.SetIndex, OldSnapshot = before, NewSnapshot = set.Clone() },
-                        $"モーフウェイト変更: {set.Name}");
-                    model.IsDirty = true;
-                    _notifyPanels(ChangeKind.Attributes);
-                    return true;
-                }
-                case ExpandMorphExpressionToModelCommand c:
-                {
-                    // 従来 PlayerMorphCreateSubPanel が直接行っていた処理を受け口へ移した。
-                    if (model == null) { Fail("no current model"); return true; }
-                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressions.Count) { Fail("MorphExpression を選択してください"); return true; }
-                    var expr = model.MorphExpressions[c.SetIndex];
-                    var newModel = new ModelContext { Name = expr.Name + "_expanded" };
-                    int expandedCount = 0;
-                    foreach (var entry in expr.MeshEntries)
-                    {
-                        int meshIdx = entry.MeshIndex;
-                        if (meshIdx < 0 || meshIdx >= model.Count) continue;
-                        var morphCtx = model.GetMeshContext(meshIdx);
-                        if (morphCtx == null || !morphCtx.IsMorph) continue;
-                        var expandedObj = morphCtx.MeshObject.Clone();
-                        expandedObj.Type = MeshType.Mesh;
-                        newModel.Add(new MeshContext { Name = morphCtx.Name, MeshObject = expandedObj, IsVisible = true });
-                        expandedCount++;
-                    }
-                    if (expandedCount == 0) { Fail("展開できるモーフメッシュがありませんでした"); return true; }
-                    project.AddModel(newModel);
-                    _rebuildModelList?.Invoke();
-                    ReportData(CommandDataJson.New().Int("expanded", expandedCount).Text("modelName", newModel.Name).Build());
                     return true;
                 }
 
@@ -361,23 +271,6 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                case StartMorphPreviewCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).StartMorphPreview(c.MorphIndices);
-                    return true;
-
-                case ApplyMorphPreviewCommand c:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).ApplyMorphPreview(c.Weight);
-                    return true;
-
-                // 終了時は元の頂点位置へ戻したうえで確定させる。
-                // 法線抑止の解除と全 viewport の再計算が要るので DragEnd を通す。
-                case EndMorphPreviewCommand _:
-                    if (model == null) { Fail("no current model"); return true; }
-                    GetMeshListOps(model).EndMorphPreview();
-                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
-                    return true;
 
                 // ── パネル側で直接変更した後の通知
                 case NotifyListStructureChangedCommand _:
@@ -440,13 +333,19 @@ namespace Poly_Ling.Player
 
                             Matrix4x4 curInv = omc.WorldMatrixInverse;
                             int n = Mathf.Min(omo.VertexCount, startPos.Length);
+                            // 位置と形の控えは同じ関数で出す（式が違うと丸めの差で形が食い違う）。
+                            Matrix4x4 startWorldM = okv.Value;
+                            System.Func<Vector3, Vector3> relocalize =
+                                p => curInv.MultiplyPoint3x4(startWorldM.MultiplyPoint3x4(p));
                             for (int i = 0; i < n; i++)
                             {
-                                Vector3 wp = okv.Value.MultiplyPoint3x4(startPos[i]);
                                 var v = omo.Vertices[i];
-                                v.Position = curInv.MultiplyPoint3x4(wp);
+                                v.Position = relocalize(startPos[i]);
                                 omo.Vertices[i] = v;
                             }
+                            // 形ごとの位置も、開始時の控えから同じ再局所化を掛け直す。
+                            if (_boneOriginStartShapes.TryGetValue(okv.Key, out var startShapes))
+                                Poly_Ling.Ops.ShapeOps.MapShapesFrom(omo, startShapes, relocalize);
                             omo.InvalidatePositionCache();
 
                             // 書き換えた頂点を GPU へ送る（PresentAll 経路では位置バッファが更新されない）。
@@ -949,7 +848,7 @@ namespace Poly_Ling.Player
                     // ObjectMoveTool.SaveSnapshots の OriginOnly 分岐と同じ条件。
                     _boneOriginOnly = c.OriginOnly;
                     _boneOriginStartPositions.Clear();
-                    _boneOriginStartWorld.Clear();
+                    _boneOriginStartWorld.Clear(); _boneOriginStartShapes.Clear();
                     if (c.OriginOnly)
                     {
                         foreach (int idx in c.MasterIndices)
@@ -959,6 +858,7 @@ namespace Poly_Ling.Player
                             if (omc.Type != MeshType.Mesh || omc.IsSkinned) continue;
                             _boneOriginStartPositions[idx] = (Vector3[])omc.MeshObject.Positions.Clone();
                             _boneOriginStartWorld[idx]     = omc.WorldMatrix;
+                            _boneOriginStartShapes[idx]    = Poly_Ling.Ops.ShapeOps.CaptureShapes(omc.MeshObject);
                         }
                     }
                     if (c.Mode == BoneMoveMode.BoneOnlyRebind)
@@ -1029,6 +929,8 @@ namespace Poly_Ling.Player
                                 OldBoneTransform   = _boneTransformBeforeSnapshots.TryGetValue(idx, out var ob0)
                                     ? ob0 : omc.BoneTransform.CreateSnapshot(),
                                 NewBoneTransform   = omc.BoneTransform.CreateSnapshot(),
+                                OldShapes          = _boneOriginStartShapes.TryGetValue(idx, out var os0) ? os0 : null,
+                                NewShapes          = Poly_Ling.Ops.ShapeOps.CaptureShapes(omc.MeshObject),
                             }, "原点だけ移動");
                         }
 
@@ -1037,7 +939,7 @@ namespace Poly_Ling.Player
 
                         _boneOriginOnly = false;
                         _boneOriginStartPositions.Clear();
-                        _boneOriginStartWorld.Clear();
+                        _boneOriginStartWorld.Clear(); _boneOriginStartShapes.Clear();
                         _boneRebindStartSkinning.Clear();
                         _boneRebindStartBindPose.Clear();
                         _boneTransformBeforeSnapshots.Clear();

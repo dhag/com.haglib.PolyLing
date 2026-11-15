@@ -129,7 +129,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 頂点ドラッグ開始
-        /// 呼び出し元: MoveTool, SculptTool, SimpleMorphPanel等
+        /// 呼び出し元: MoveTool, SculptTool 等
         /// </summary>
         public void EnterTransformDragging()
         {
@@ -161,7 +161,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 頂点ドラッグ終了 → Normal(1フレーム) → Idle
-        /// 呼び出し元: MoveTool, SculptTool, SimpleMorphPanel等
+        /// 呼び出し元: MoveTool, SculptTool 等
         /// </summary>
         public void ExitTransformDragging()
         {

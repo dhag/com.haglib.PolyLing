@@ -82,7 +82,7 @@ namespace Poly_Ling.Serialization
         // 階層情報
         // ================================================================
 
-        /// <summary>メッシュの種類 ("Mesh", "Bone", "Helper", "Group", "Morph")</summary>
+        /// <summary>メッシュの種類 ("Mesh", "Bone", "Helper", "Group" など。"Morph" は段 7 で廃止し、読むときに捨てる)</summary>
         public string type = "Mesh";
 
         /// <summary>親メッシュのインデックス（-1=ルート）</summary>
@@ -204,32 +204,8 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public bool hasBakedMirrorChild = false;
 
-        // ================================================================
-        // モーフ基準データ（Phase: Morph対応）
-        // ================================================================
-
-        /// <summary>
-        /// モーフ基準データ（モーフ前の位置等を保持）
-        /// null = モーフではない通常メッシュ
-        /// </summary>
-        public MorphBaseDataDTO morphBaseData;
-
-        /// <summary>
-        /// モーフ親メッシュのインデックス
-        /// -1 = 未指定（名前規則ベースで検索）
-        /// </summary>
-        public int morphParentIndex = -1;
-
-        /// <summary>
-        /// モーフのミラー適用ポリシー（MorphMirrorPolicy）。
-        /// 既定 0 = FollowParent。規約は MorphMirrorPolicy.cs を正典とする。
-        /// </summary>
-        public int morphMirrorPolicy = 0;
-
-        /// <summary>
-        /// MirrorOf のときの参照先モーフのインデックス。-1 = 未指定。
-        /// </summary>
-        public int mirrorOfMorphIndex = -1;
+        // 旧モーフの欄（morphBaseData / morphParentIndex / morphMirrorPolicy / mirrorOfMorphIndex）は
+        // 段 7 で廃止した（PolyLing_モーフ整理計画.md 3.10）。古い .mfproj のこれらの欄は読まずに捨てる。
 
         /// <summary>
         /// ボーンポーズデータ（PreBindPose + Manualレイヤー）
@@ -368,7 +344,76 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public List<float[]> cp;
 
+        /// <summary>
+        /// 形ごとの位置の、形の番号（Vertex.Shapes[].ShapeId）。shp と同じ並び。
+        /// null = 保持なし。
+        /// </summary>
+        public int[] shi;
+
+        /// <summary>形ごとの位置 [x,y,z, x,y,z, ...]（Vertex.Shapes[].Position）。shi と同じ並び。</summary>
+        public float[] shp;
+
         // === 変換ヘルパー ===
+
+        /// <summary>形ごとの位置を取り出す。保持していなければ null。</summary>
+        public List<Poly_Ling.Data.ShapePosition> GetShapes()
+        {
+            if (shi == null || shp == null || shi.Length == 0) return null;
+            int n = Mathf.Min(shi.Length, shp.Length / 3);
+            if (n <= 0) return null;
+            var result = new List<Poly_Ling.Data.ShapePosition>(n);
+            for (int i = 0; i < n; i++)
+                result.Add(new Poly_Ling.Data.ShapePosition(
+                    shi[i], new Vector3(shp[i * 3], shp[i * 3 + 1], shp[i * 3 + 2])));
+            return result;
+        }
+
+        /// <summary>形ごとの UV（UV スロット 0）の、形の番号（Vertex.UVShapes[].ShapeId）。suv と同じ並び。null = 無し。</summary>
+        public int[] sui;
+
+        /// <summary>形ごとの UV [u,v, u,v, ...]（Vertex.UVShapes[].UV）。sui と同じ並び。</summary>
+        public float[] suv;
+
+        /// <summary>形ごとの UV を取り出す。無ければ null。</summary>
+        public List<Poly_Ling.Data.ShapeUV> GetUVShapes()
+        {
+            if (sui == null || suv == null || sui.Length == 0) return null;
+            int n = Mathf.Min(sui.Length, suv.Length / 2);
+            if (n == 0) return null;
+            var list = new List<Poly_Ling.Data.ShapeUV>(n);
+            for (int i = 0; i < n; i++)
+                list.Add(new Poly_Ling.Data.ShapeUV(sui[i], new Vector2(suv[i * 2], suv[i * 2 + 1])));
+            return list;
+        }
+
+        /// <summary>形ごとの UV を設定する。null/空なら sui・suv も null。</summary>
+        public void SetUVShapes(List<Poly_Ling.Data.ShapeUV> shapes)
+        {
+            if (shapes == null || shapes.Count == 0) { sui = null; suv = null; return; }
+            sui = new int[shapes.Count];
+            suv = new float[shapes.Count * 2];
+            for (int i = 0; i < shapes.Count; i++)
+            {
+                sui[i] = shapes[i].ShapeId;
+                suv[i * 2]     = shapes[i].UV.x;
+                suv[i * 2 + 1] = shapes[i].UV.y;
+            }
+        }
+
+        /// <summary>形ごとの位置を設定する。null/空なら shi・shp も null。</summary>
+        public void SetShapes(List<Poly_Ling.Data.ShapePosition> shapes)
+        {
+            if (shapes == null || shapes.Count == 0) { shi = null; shp = null; return; }
+            shi = new int[shapes.Count];
+            shp = new float[shapes.Count * 3];
+            for (int i = 0; i < shapes.Count; i++)
+            {
+                shi[i] = shapes[i].ShapeId;
+                shp[i * 3]     = shapes[i].Position.x;
+                shp[i * 3 + 1] = shapes[i].Position.y;
+                shp[i * 3 + 2] = shapes[i].Position.z;
+            }
+        }
 
         public Vector3 GetPosition()
         {
@@ -605,18 +650,12 @@ namespace Poly_Ling.Serialization
         /// 0 = なし。再ミラー化のときに相手を引き当てる。
         /// </summary>
         public ulong  detachedMirrorObjectId = 0;
-        public int    morphParentIndex = -1;
-        /// <summary>モーフのミラー適用ポリシー（既定 0 = FollowParent）。</summary>
-        public int    morphMirrorPolicy = 0;
-        /// <summary>MirrorOf のときの参照先モーフのインデックス。-1 = 未指定。</summary>
-        public int    mirrorOfMorphIndex = -1;
         public bool   excludeFromExport = false;
         public bool   ignorePoseInArmature = false;
         public bool   isMirrorBranchRoot = false;
         /// <summary>ミラー側も実体側と同じ向きに動かすか（MeshObject.MirrorBranchSameSense）。</summary>
         public bool   mirrorBranchSameSense = false;
         public bool   preserveNormals = false;
-        public MorphBaseDataDTO  morphBaseData;
         public BoneTransformDTO  exportSettingsDTO;
         public BonePoseDataDTO   bonePoseData;
         public List<SelectionSetDTO> selectionSets = new List<SelectionSetDTO>();

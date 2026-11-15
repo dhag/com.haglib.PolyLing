@@ -48,7 +48,7 @@ using Poly_Ling.Diagnostics;
 namespace Poly_Ling.Player
 {
     [Poly_Ling.Data.PLTool("move", Description = "選択頂点の移動（確定は MoveSelectedVerticesCommand）")]
-    public partial class MoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPlayerPressHandler
+    public partial class MoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPlayerPressHandler, IPointerAxisClient
     {
         // ================================================================
         // 状態機（Editor MoveTool と同等）

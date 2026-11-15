@@ -3,13 +3,12 @@
 // Phase7: マルチマテリアル対応版
 // Phase8: 選択状態シリアライズ対応（Edge/Face/Line/Mode）
 // Phase9: 選択セット対応
-// Phase Morph: モーフ基準データ対応
 // Phase BonePose: BonePoseData対応
 //
 // 【分割先】このファイルから次へ分けてある。
 //   ModelDTO.Material.cs  DTO：マテリアル参照データ。
 //   ModelDTO.Mesh.cs      DTO：メッシュコンテキスト・頂点・面・MeshMetaDTO・MeshGeoDTO。
-//   ModelDTO.Morph.cs     DTO：モーフ基準データとミラーペア。
+//   ModelDTO.MirrorPair.cs DTO：ミラーペア。
 //   ModelDTO.Rig.cs       DTO：IK／剛体／JOINT・スプリングボーン・VRM 1.0 モデルレベル設定・Avatar リターゲット・座標規約。
 //   ModelDTO.Settings.cs  DTO：エクスポート設定・WorkPlane・エディタ状態。
 //   ModelDTO.Underlay.cs  DTO：下絵。
@@ -92,6 +91,19 @@ namespace Poly_Ling.Serialization
         /// 複数メッシュのモーフをグループ化
         /// </summary>
         public List<MorphExpressionDTO> morphExpressions = new List<MorphExpressionDTO>();
+
+        // ================================================================
+        // 形（名前付きの頂点位置。ModelContext.Shapes / CurrentShapeId）
+        // ================================================================
+
+        /// <summary>形の一覧。基本の形（番号 0）は載せない。</summary>
+        public List<ShapeDefDTO> shapes = new List<ShapeDefDTO>();
+
+        /// <summary>今の形の番号。0 = 基本の形。頂点の p はこの形の位置。</summary>
+        public int currentShapeId = 0;
+
+        /// <summary>基本の形の読み込み元（ModelContext.BaseShapeSource）。読んでいなければ null。</summary>
+        public ShapeSourceDTO baseShapeSource;
 
         // ================================================================
         // メッシュ選択セット（名前ベース）
@@ -245,5 +257,51 @@ namespace Poly_Ling.Serialization
     {
         public int index;
         public float[] p;
+    }
+
+    /// <summary>形の定義 1 件（Poly_Ling.Data.ShapeDef）。</summary>
+    [Serializable]
+    public class ShapeDefDTO
+    {
+        public int id;
+        public string name = "";
+        public string nameEnglish = "";
+        public int panel = 3;
+        /// <summary>種類（ShapeDef.Kind。0 位置 / 1 UV）。</summary>
+        public int kind = 0;
+        /// <summary>読み込み元の MQO（ShapeDef.Source）。読んでいなければ null。</summary>
+        public ShapeSourceDTO source;
+    }
+
+    /// <summary>形の読み込み元（Poly_Ling.Data.ShapeSource）。</summary>
+    [Serializable]
+    public class ShapeSourceDTO
+    {
+        public string path = "";
+        public float scale = 0.01f;
+        public bool flipX = true;
+        public bool flipZ = false;
+        /// <summary>組のモデル側の名前。mqoNames と同じ並び。</summary>
+        public List<string> modelNames = new List<string>();
+        /// <summary>組の MQO 側の名前。</summary>
+        public List<string> mqoNames = new List<string>();
+
+        public static ShapeSourceDTO From(Poly_Ling.Data.ShapeSource s)
+        {
+            if (s == null) return null;
+            var d = new ShapeSourceDTO { path = s.Path ?? "", scale = s.Scale, flipX = s.FlipX, flipZ = s.FlipZ };
+            if (s.Pairs != null)
+                foreach (var p in s.Pairs) { d.modelNames.Add(p.Model ?? ""); d.mqoNames.Add(p.Mqo ?? ""); }
+            return d;
+        }
+
+        public static Poly_Ling.Data.ShapeSource To(ShapeSourceDTO d)
+        {
+            if (d == null) return null;
+            var s = new Poly_Ling.Data.ShapeSource { Path = d.path ?? "", Scale = d.scale, FlipX = d.flipX, FlipZ = d.flipZ };
+            int n = System.Math.Min(d.modelNames?.Count ?? 0, d.mqoNames?.Count ?? 0);
+            for (int i = 0; i < n; i++) s.Pairs.Add(new Poly_Ling.Data.ShapeSourcePair(d.modelNames[i], d.mqoNames[i]));
+            return s;
+        }
     }
 }

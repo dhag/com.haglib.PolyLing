@@ -103,6 +103,7 @@ namespace Poly_Ling.Ops
             // 手順 1: 変換対象の現在のワールド座標を先に控える。
             // 親を付け替えると WorldMatrix が変わるため、後から取ると別の値になる。
             var worldPositions = new Dictionary<int, Vector3[]>();
+            var toWorldMatrices = new Dictionary<int, Matrix4x4>();   // 形ごとの位置へ同じ変換を掛ける用
 
             foreach (int idx in masterIndices)
             {
@@ -142,6 +143,7 @@ namespace Poly_Ling.Ops
                     buf[v] = toWorld.MultiplyPoint3x4(mo.Vertices[v].Position);
 
                 worldPositions[idx] = buf;
+                toWorldMatrices[idx] = toWorld;
             }
 
             if (worldPositions.Count == 0) return results;
@@ -177,6 +179,13 @@ namespace Poly_Ling.Ops
                 int n = Mathf.Min(world.Length, mo.VertexCount);
                 for (int v = 0; v < n; v++)
                     mo.Vertices[v].Position = inv.MultiplyPoint3x4(world[v]);
+
+                // 形ごとの位置も同じ変換（元のワールドへ → 新しいワールドの逆）を、位置と同じ順で掛ける。
+                if (toWorldMatrices.TryGetValue(idx, out var toWorld0))
+                {
+                    Matrix4x4 toWorldM = toWorld0;
+                    ShapeOps.MapShapes(mo, p => inv.MultiplyPoint3x4(toWorldM.MultiplyPoint3x4(p)));
+                }
 
                 mo.InvalidatePositionCache();
 
@@ -301,6 +310,10 @@ namespace Poly_Ling.Ops
                 int n = Mathf.Min(world.Length, mo.VertexCount);
                 for (int v = 0; v < n; v++)
                     mo.Vertices[v].Position = world[v];
+
+                // 形ごとの位置も同じ行列でワールドへ焼く。
+                if (bakeMatrices.TryGetValue(idx, out var bake0))
+                    ShapeOps.TransformShapes(mo, bake0);
 
                 mo.InvalidatePositionCache();
 

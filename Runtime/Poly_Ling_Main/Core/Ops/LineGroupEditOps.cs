@@ -505,8 +505,16 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 弦（線分群の区間の 2 頂点の面）の表示を揃える。ハンドルを持つ群の弦は曲線を
-        /// 重ね描きで見せるので非表示（FaceFlags.Hidden）にし、持たない群の弦は表示に戻す。
-        /// 頂点の表示は 3 頂点以上の面だけで決まるので、群の点は表示・選択できるまま。
+        /// 重ね描きで見せるので「曲線で見せる弦」（FaceFlags.CurveChord）にし、持たない群の弦は外す。
+        /// CurveChord は線分を描かない・当てないだけで、面は非表示にしない。そのため GPU の
+        /// ComputeFaceVisibility が端点の頂点をカリングから戻し、群の点は表示・選択・吸着できる。
+        ///
+        /// 【非表示（Hidden）を使わない理由】（縦横制限計画 段7）
+        ///   以前は Hidden にしていた。GPU は非表示の面を先に返すので端点がカリング済みのまま残り、
+        ///   ハンドルを持つ群の点が通常ホバー・吸着判定のどちらにも当たらなかった。
+        ///   面の表示・非表示の「すべて表示」が弦を出してしまう問題もあった。
+        ///   以前の保存データの弦に残る Hidden は、ここを通るときに外す（弦を Hidden にする経路は他に無い。
+        ///   面の表示・非表示の非表示操作は 3 頂点以上の面だけを対象にする）。
         /// </summary>
         public static void SyncChordVisibility(MeshObject mo)
         {
@@ -529,8 +537,8 @@ namespace Poly_Ling.Ops
             {
                 if (f?.VertexIndices == null || f.VertexIndices.Count != 2) continue;
                 long key = LineGroupOps.PairKey(f.VertexIndices[0], f.VertexIndices[1]);
-                if (hide.Contains(key))      f.SetFlag(FaceFlags.Hidden);
-                else if (show.Contains(key)) f.ClearFlag(FaceFlags.Hidden);
+                if (hide.Contains(key))      { f.SetFlag(FaceFlags.CurveChord);   f.ClearFlag(FaceFlags.Hidden); }
+                else if (show.Contains(key)) { f.ClearFlag(FaceFlags.CurveChord); f.ClearFlag(FaceFlags.Hidden); }
             }
         }
 

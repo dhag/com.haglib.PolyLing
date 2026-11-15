@@ -82,6 +82,30 @@ namespace Poly_Ling.MQO
             int startOffset = modelVertexOffset;
             int localCount  = 0;
 
+            // 【頂点番号で対応する場合】（MQOPartialImportOps.IsVertexWise と同じ判定）
+            //   この MQO オブジェクトの位置に来るモデル側のメッシュ（展開位置 startOffset から始まるもの）が
+            //   MQO と同じ頂点数なら、展開していないメッシュ（MQO から読んだモデル）なので頂点番号どうしで写す。
+            //   次のオブジェクトの展開位置は、そのメッシュの展開頂点数だけ進める。
+            var wise = FindEntryAt(modelMeshes, startOffset);
+            if (wise != null && MQOPartialImportOps.IsVertexWise(wise.Context?.MeshObject, mqoMo))
+            {
+                var src = wise.Context.MeshObject;
+                if (writeBackPosition)
+                {
+                    for (int i = 0; i < mqoMo.VertexCount; i++)
+                    {
+                        Vector3 pos = AxisFlipOps.Position(flip, src.Vertices[i].Position);
+                        pos /= exportScale;
+                        mqoMo.Vertices[i].Position = pos;
+                        if (i < mqoDocObj.Vertices.Count) mqoDocObj.Vertices[i].Position = pos;
+                        transferred++;
+                    }
+                }
+                modelVertexOffset += wise.ExpandedVertexCount;
+                // UV・ウェイトの書き戻しは展開順の対応を前提にしているので、この場合は行わない。
+                return transferred;
+            }
+
             if (writeBackPosition)
             {
                 MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
@@ -224,6 +248,20 @@ namespace Poly_Ling.MQO
         // 展開後インデックスナビゲーター
         // PMXは展開済みのため、展開後インデックスで頂点を参照する。
         // ================================================================
+
+        /// <summary>展開位置 offset から始まるモデル側のメッシュ。境目でなければ null。</summary>
+        private static PartialMeshEntry FindEntryAt(List<PartialMeshEntry> modelMeshes, int offset)
+        {
+            int current = 0;
+            foreach (var m in modelMeshes)
+            {
+                if (m.Context?.MeshObject == null) continue;
+                if (current == offset) return m;
+                if (current > offset) return null;
+                current += m.ExpandedVertexCount;
+            }
+            return null;
+        }
 
         private static Vector3? GetModelVertexPosition(List<PartialMeshEntry> modelMeshes, int offset)
         {

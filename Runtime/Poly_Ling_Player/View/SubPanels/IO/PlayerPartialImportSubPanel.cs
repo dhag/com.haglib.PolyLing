@@ -61,7 +61,6 @@ namespace Poly_Ling.Player
         private bool _pmxImportBW       = false;
         private bool _pmxImportFace     = false;
         private bool _pmxImportMaterial = false;
-        private bool _pmxRebuildMorphBase = true;
 
         // インポート対象（MQO）
         private bool _mqoImportPos      = true;
@@ -327,13 +326,6 @@ namespace Poly_Ling.Player
                     if (_pmxImportBW)  attrs.Add("BW");
                     results.Add($"{string.Join("+", attrs)}:{vertCount}verts");
                 }
-
-                if (_pmxRebuildMorphBase && (_pmxImportPos || _pmxImportUV))
-                {
-                    PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                        selectedModels, _model, _pmxImportPos, _pmxImportUV);
-                    results.Add("MorphBase:remapped");
-                }
             }
 
             if (_pmxImportMaterial && _pmxOps.PMXImportResult != null)
@@ -363,11 +355,6 @@ namespace Poly_Ling.Player
                 results.Add($"Structure:{indexMaps.Count(m => m != null)}meshes");
                 if (_mqoImportPos) results.Add("Pos:included");
                 topologyChanged = true;
-
-                PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                    selectedModels, _model, remapPosition: _mqoImportPos, remapUV: true,
-                    indexMaps: indexMaps);
-                results.Add("MorphBase:remapped");
             }
             else if (_mqoImportPos && selectedModels.Count > 0 && selectedMQOs.Count > 0)
             {
@@ -460,7 +447,6 @@ namespace Poly_Ling.Player
             parent.Add(FloatRow("scale", "Scale", () => _pmxScale, v => _pmxScale = v));
             parent.Add(ToggleRow("flipX", "Flip X", () => _pmxFlipX, v => { _pmxFlipX = v; }));
             parent.Add(ToggleRow("flipZ", "Flip Z", () => _pmxFlipZ, v => { _pmxFlipZ = v; }));
-            parent.Add(ToggleRow("rebuildMorphBase", "表情移植", () => _pmxRebuildMorphBase, v => { _pmxRebuildMorphBase = v; }));
         }
 
         private void BuildPmxList(VisualElement parent)

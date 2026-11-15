@@ -305,6 +305,8 @@ namespace Poly_Ling.Data
 
                 mirrorMesh.Vertices[mi].Position = MirrorPosition(realMesh.Vertices[i].Position);
             }
+            // 形ごとの位置も実体側から取り直す（どちらも形を持たなければ何もしない）。
+            Poly_Ling.Ops.ShapeOps.SyncMirrorShapes(realMesh, mirrorMesh, VertexMap, MirrorPosition);
         }
 
         /// <summary>
@@ -416,39 +418,6 @@ namespace Poly_Ling.Data
                     mirrorNormals.Add(mirroredNormal);
                 else
                     mirrorMesh.Vertices[mi].Normals = new List<Vector3> { mirroredNormal };
-            }
-        }
-
-        /// <summary>
-        /// 対称モーフの同期: Real側のオフセットをX反転してMirror側に適用。
-        /// </summary>
-        /// <param name="realMorphBase">Real側のMorphBaseData</param>
-        /// <param name="mirrorMorphBase">Mirror側のMorphBaseData</param>
-        /// <param name="realMesh">Real側の現在のMeshObject</param>
-        /// <param name="mirrorMesh">Mirror側のMeshObject</param>
-        public void SyncMorphSymmetric(
-            MorphBaseData realMorphBase,
-            MorphBaseData mirrorMorphBase,
-            MeshObject realMesh,
-            MeshObject mirrorMesh)
-        {
-            if (!IsValid || realMorphBase == null || mirrorMorphBase == null) return;
-            if (realMesh == null || mirrorMesh == null) return;
-
-            for (int i = 0; i < VertexMap.Length; i++)
-            {
-                int mi = VertexMap[i];
-                if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
-                if (i >= realMorphBase.VertexCount || mi >= mirrorMorphBase.VertexCount) continue;
-
-                // Real側のオフセット = 現在位置 - 基準位置
-                Vector3 realOffset = realMesh.Vertices[i].Position - realMorphBase.BasePositions[i];
-
-                // ミラー反転: (dx, dy, dz) → (-dx, dy, dz)
-                Vector3 mirrorOffset = MirrorDirection(realOffset);
-
-                // Mirror側に適用: 基準位置 + ミラーオフセット
-                mirrorMesh.Vertices[mi].Position = mirrorMorphBase.BasePositions[mi] + mirrorOffset;
             }
         }
 

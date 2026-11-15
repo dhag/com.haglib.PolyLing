@@ -123,10 +123,8 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            // 法線を再計算
-            // モーフ関連メッシュはUVスロットを増やしてはならない（展開index空間の一致が必要）。
-            _context.ActiveMeshObject.RecalculateNormals(
-                splitSlots: !(_context.ActiveMeshContext?.IsMorphRelated(_context.Model) ?? false));
+            // 法線を再計算（形は頂点が持つので、UV スロットが増えても形は崩れない）
+            _context.ActiveMeshObject.RecalculateNormals(splitSlots: true);
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -181,10 +179,8 @@ namespace Poly_Ling.Tools
                 flippedCount++;
             }
 
-            // 法線を再計算
-            // モーフ関連メッシュはUVスロットを増やしてはならない（展開index空間の一致が必要）。
-            _context.ActiveMeshObject.RecalculateNormals(
-                splitSlots: !(_context.ActiveMeshContext?.IsMorphRelated(_context.Model) ?? false));
+            // 法線を再計算（形は頂点が持つので、UV スロットが増えても形は崩れない）
+            _context.ActiveMeshObject.RecalculateNormals(splitSlots: true);
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();

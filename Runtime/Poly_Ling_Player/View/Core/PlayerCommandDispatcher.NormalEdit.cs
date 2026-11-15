@@ -306,7 +306,7 @@ namespace Poly_Ling.Player
                         //     (UnifiedBufferManager_Build 参照)。差分更新の口が無いため
                         //     再構築が要る。
                         //   位置 … SyncMeshPositionsAndTransform で差分同期できる。
-                        //   頂点ID / モーフ基準 / 選択辞書 … 描画に出ないので更新不要。
+                        //   頂点ID / 選択辞書 … 描画に出ないので更新不要。
                         //
                         // また、転送先が CurrentModel でない場合は今の adapter が
                         // 別モデルのものなので更新しても無駄（かつ誤り）。モデル切替時に
@@ -473,7 +473,6 @@ namespace Poly_Ling.Player
                     var sdCategory = c.Category switch
                     {
                         MeshCategory.Bone  => ModelContext.SelectionCategory.Bone,
-                        MeshCategory.Morph => ModelContext.SelectionCategory.Morph,
                         _                  => ModelContext.SelectionCategory.Mesh,
                     };
                     string sdName = string.IsNullOrEmpty(c.SetName)

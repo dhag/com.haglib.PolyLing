@@ -19,7 +19,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// MeshContextリストからフェースメタCSVを出力する。
         /// </summary>
-        /// <param name="meshContexts">対象メッシュコンテキストリスト（ボーン・モーフ除く）</param>
+        /// <param name="meshContexts">対象メッシュコンテキストリスト（ボーン除く）</param>
         /// <param name="pmxOutputPath">PMX出力パス（拡張子を .plmface.csv に変換）</param>
         public static void Save(IEnumerable<MeshContext> meshContexts, string pmxOutputPath)
         {
@@ -29,7 +29,6 @@ namespace Poly_Ling.PMX
             foreach (var ctx in meshContexts)
             {
                 if (ctx?.MeshObject == null) continue;
-                if (ctx.Type == MeshType.Morph) continue;
                 if (ctx.ExcludeFromExport) continue;
 
                 var mo = ctx.MeshObject;

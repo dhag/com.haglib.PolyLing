@@ -399,9 +399,16 @@ namespace Poly_Ling.Player
             return result;
         }
 
+        /// <summary>
+        /// 原点の目印のクリック選択。PivotOffset だけが使う（PivotOffsetToolHandler はピック対象を
+        /// すべて外しているので、選択の手段がここしかない）。
+        /// ObjectMove では ObjectMoveTool.TryPickObject（同じピックフィルタ、Shift＝追加・Ctrl＝反転）が
+        /// 同じクリックを受け持つ。ここでも受けると Shift・Ctrl のクリックが打ち消し合っていた
+        /// （縦横制限計画 段7）。
+        /// </summary>
         private bool TrySelectIndicatorAtScreenPos(Vector2 screenPos, ModifierKeys mods)
         {
-            if (_interactionMode != InteractionMode.ObjectMove && _interactionMode != InteractionMode.PivotOffset)
+            if (_interactionMode != InteractionMode.PivotOffset)
                 return false;
 
             int idx = HitTestOverlayIndicator(screenPos);

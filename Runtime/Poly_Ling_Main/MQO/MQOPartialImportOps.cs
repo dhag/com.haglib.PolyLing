@@ -80,6 +80,33 @@ namespace Poly_Ling.MQO
 
             int updated = 0;
 
+            // 【頂点番号で対応する場合】（IsVertexWise）
+            //   MQO から読んだモデル（展開していない。頂点の並びは MQO と同じ）は、頂点数が MQO と同じ。
+            //   この場合は展開順ではなく頂点番号どうしで写す（UV スロットの数は法線の再計算で
+            //   変わりうるので、展開順で数えると別の頂点へ入る）。
+            if (IsVertexWise(modelMo, mqoMo))
+            {
+                bool peerWise = isMirrored && hasPeer && peerMo != null && IsVertexWise(peerMo, mqoMo);
+                for (int i = 0; i < mqoMo.VertexCount; i++)
+                {
+                    var mqoVertex = mqoMo.Vertices[i];
+                    Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flip);
+                    var dst = modelMo.Vertices[i];
+                    if (position) dst.Position = pos;
+                    if (uv) CopyUVSlots(dst, mqoVertex, flipUV_V);
+                    updated++;
+
+                    if (peerWise)
+                    {
+                        var pd = peerMo.Vertices[i];
+                        if (position) pd.Position = MirrorPosition(pos, mirrorAxis);
+                        if (uv) CopyUVSlots(pd, mqoVertex, flipUV_V);
+                        updated++;
+                    }
+                }
+                return updated;
+            }
+
             MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
                 var mqoVertex = mqoMo.Vertices[vIdx];
@@ -113,6 +140,26 @@ namespace Poly_Ling.MQO
             });
 
             return updated;
+        }
+
+        /// <summary>
+        /// モデル側のメッシュが、MQO の頂点と頂点番号で対応するか（展開していないメッシュ）。
+        /// 頂点数が同じなら頂点番号で対応する。展開済み（PMX 由来）のメッシュは頂点数が展開頂点数なので、
+        /// MQO の全頂点が UV 1 個・孤立点なしのときだけ一致し、そのときは展開順と頂点番号が同じになる。
+        /// </summary>
+        public static bool IsVertexWise(MeshObject modelMo, MeshObject mqoMo)
+            => modelMo != null && mqoMo != null && modelMo.VertexCount == mqoMo.VertexCount;
+
+        /// <summary>頂点番号で対応するとき、UV スロットを重なる数だけ写す。</summary>
+        private static void CopyUVSlots(Vertex dst, Vertex mqoVertex, bool flipUV_V)
+        {
+            int n = System.Math.Min(dst.UVs.Count, mqoVertex.UVs.Count);
+            for (int u = 0; u < n; u++)
+            {
+                Vector2 value = mqoVertex.UVs[u];
+                if (flipUV_V) value.y = 1f - value.y;
+                dst.UVs[u] = value;
+            }
         }
 
         /// <summary>

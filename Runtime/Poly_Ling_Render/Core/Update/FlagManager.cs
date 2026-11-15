@@ -34,9 +34,6 @@ namespace Poly_Ling.Core
         /// <summary>選択ボーンインデックス（Bone タイプ）</summary>
         public int SelectedBoneIndex { get; set; } = -1;
 
-        /// <summary>選択頂点モーフインデックス（Morph タイプ）</summary>
-        public int SelectedMorphIndex { get; set; } = -1;
-
         /// <summary>アクティブモデルインデックス（編集対象）</summary>
         public int ActiveModelIndex { get; set; } = 0;
 
@@ -62,8 +59,7 @@ namespace Poly_Ling.Core
             
             // カテゴリ別選択もチェック
             if (meshIndex == SelectedDrawableMeshIndex ||
-                meshIndex == SelectedBoneIndex ||
-                meshIndex == SelectedMorphIndex)
+                meshIndex == SelectedBoneIndex)
                 return true;
             
             return false;

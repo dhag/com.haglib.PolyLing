@@ -231,9 +231,6 @@ namespace Poly_Ling.Player
             return map;
         }
 
-        /// <summary>ボーン編集中のオブジェクトドラッグを担当者判定で許可したか（H-2）。</summary>
-        private bool _boneDragAllowed = true;
-
         private HostToolSurface _toolSurface;
 
         /// <summary>
@@ -261,9 +258,6 @@ namespace Poly_Ling.Player
             id => ToolRegistry().TryGetValue(id ?? "", out var h) ? h : null,
             DispatchHost,
             PanelModelIndex);
-
-        /// <summary>ボーン編集中のオブジェクトドラッグで TryBeginHostPreview を呼んだか。</summary>
-        private bool _boneDragBegun;
 
         /// <summary>
         /// ホストの操作者。名前はリモートサーバの HostUserName（未起動なら既定の "(host)"）。

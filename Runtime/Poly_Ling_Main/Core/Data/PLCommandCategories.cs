@@ -53,7 +53,7 @@ namespace Poly_Ling.Data
             Pair("rig.skeleton.humanoid",      "Humanoid 割当・可動域・リターゲット"),
             Pair("rig.skinning",               "スキンウェイトと種別変換"),
             Pair("dynamics.spring",            "スプリングボーンとコライダ"),
-            Pair("morph",                      "モーフの作成・編集・プレビュー"),
+            Pair("morph",                      "形（シェイプ）と表情の作成・編集・プレビュー"),
             Pair("animation",                  "モーション・クリップの書き出しと変換"),
             Pair("io.import",                  "取り込み"),
             Pair("io.export",                  "書き出し"),

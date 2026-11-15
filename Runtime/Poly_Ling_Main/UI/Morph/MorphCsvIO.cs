@@ -1,6 +1,18 @@
 // MorphCsvIO.cs
 // モーフエクスプレッションのCSV Import/Export ロジック
 // ファイルダイアログはEditorBridge経由
+//
+// 【行の形】表情名,オブジェクト名,ブレンドシェイプ名,重み,オブジェクト名,ブレンドシェイプ名,重み,...
+//
+// 【形で読み書きする】（PolyLing_モーフ整理計画.md 3.12・段 6）
+//   書き出し：形を指す表情（同じ名前の形がある頂点の表情・グループの子のうち形）は、その形の差分を持つ
+//     オブジェクトごとに「オブジェクト名,形の名前,重み」を書く。表情に無い形（UV の形を除く）は形の名前の行にする。
+//     形を指さない表情は書かない。
+//   読み込み：ブレンドシェイプ名が形の名前なら、形の子にする。1 つの形について、並んだオブジェクトが
+//     その形の差分を持つオブジェクトと一致し、重みが全部同じときだけ読む（違えば読まずに unmatched に数える。
+//     オブジェクトごとに違う重みは「形の名前 × 重み」で表せないため）。
+//     表情名と同じ名前の形を重み 1 で指すだけの行は形そのものなので、表情は作らない（読んだ数には入れる）。
+//     形の名前でないものは読まずに unmatched に数える（段 7 で旧モーフを撤去した）。
 
 using System;
 using System.Collections.Generic;
@@ -49,16 +61,9 @@ namespace Poly_Ling.UI
             var rows = CSVHelper.ParseFile(path);
             if (rows.Count == 0) { statusLog?.Invoke("CSVが空です"); return (0, 0, 0); }
 
-            var meshNameToIndex = new Dictionary<string, int>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc != null && !string.IsNullOrEmpty(mc.Name))
-                    meshNameToIndex[mc.Name] = i;
-            }
-
             var importedSets   = new Dictionary<string, MorphExpression>();
             int unmatchedCount = 0;
+            int selfShapes     = 0;
 
             foreach (var row in rows)
             {
@@ -69,6 +74,10 @@ namespace Poly_Ling.UI
                 if (string.IsNullOrEmpty(expressionName)) continue;
 
                 var set = new MorphExpression { Name = expressionName, NameEnglish = "", Panel = 3, Type = MorphType.Vertex };
+                // 形の名前 → (並んだオブジェクト, 重み)
+                var shapeMeshes  = new Dictionary<string, HashSet<string>>();
+                var shapeWeights = new Dictionary<string, List<float>>();
+                var shapeOrder   = new List<string>();
 
                 for (int i = 1; i + 2 < row.FieldCount; i += 3)
                 {
@@ -80,18 +89,63 @@ namespace Poly_Ling.UI
                         System.Globalization.NumberStyles.Float,
                         System.Globalization.CultureInfo.InvariantCulture, out float w)) continue;
 
-                    string morphMeshName = $"{meshName}_{shapeName}";
-                    if (meshNameToIndex.TryGetValue(morphMeshName, out int meshIndex))
-                        set.AddMesh(meshIndex, w);
-                    else
-                        unmatchedCount++;
+                    var shape = model.FindShapeByName(shapeName);
+                    if (shape != null && !shape.IsUV)
+                    {
+                        if (!shapeMeshes.ContainsKey(shapeName))
+                        {
+                            shapeMeshes[shapeName]  = new HashSet<string>();
+                            shapeWeights[shapeName] = new List<float>();
+                            shapeOrder.Add(shapeName);
+                        }
+                        shapeMeshes[shapeName].Add(meshName);
+                        shapeWeights[shapeName].Add(w);
+                        continue;
+                    }
+
+                    unmatchedCount++;
                 }
 
-                if (set.MeshCount > 0) importedSets[expressionName] = set;
+                bool bad = false;
+                foreach (var sn in shapeOrder)
+                {
+                    var shape = model.FindShapeByName(sn);
+                    var expected = ShapeMeshNames(model, shape.Id);
+                    var ws = shapeWeights[sn];
+                    bool uniform = ws.TrueForAll(x => x == ws[0]);
+                    if (!uniform || !expected.SetEquals(shapeMeshes[sn])) { bad = true; break; }
+                    set.GroupChildren.Add(new MorphGroupChild(sn, ws[0]));
+                }
+                if (bad)
+                {
+                    unmatchedCount++;
+                    statusLog?.Invoke($"表情「{expressionName}」は、形のオブジェクトか重みが形と合わないので読みません");
+                    continue;
+                }
+
+                if (set.GroupChildren.Count > 0)
+                {
+                    // 同じ名前の形を重み 1 で指すだけ → 形そのもの（表情は作らない）。
+                    if (set.GroupChildren.Count == 1
+                        && set.GroupChildren[0].Name == expressionName && set.GroupChildren[0].Weight == 1f)
+                    {
+                        selfShapes++;
+                        continue;
+                    }
+                    set.Type = MorphType.Group;
+                }
+
+                if (set.GroupChildren.Count > 0) importedSets[expressionName] = set;
+            }
+
+            if (importedSets.Count == 0 && selfShapes > 0)
+            {
+                statusLog?.Invoke($"CSV読込完了: 形そのものの行 {selfShapes} 件（表情は作りません）");
+                return (selfShapes, 0, unmatchedCount);
             }
 
             if (importedSets.Count == 0)
-            { statusLog?.Invoke($"マッチするモーフメッシュが見つかりません (未マッチ: {unmatchedCount})"); return (0, 0, unmatchedCount); }
+            { statusLog?.Invoke($"マッチする形が見つかりません (未マッチ: {unmatchedCount})"); return (0, 0, unmatchedCount); }
 
             var overwriteNames = importedSets.Keys.Where(n => model.FindMorphExpressionByName(n) != null).ToList();
             if (overwriteNames.Count > 0)
@@ -109,8 +163,9 @@ namespace Poly_Ling.UI
             }
 
             string unmatchMsg = unmatchedCount > 0 ? $" (未マッチ: {unmatchedCount})" : "";
-            statusLog?.Invoke($"CSV読込完了: {importedSets.Count}セット ({overwriteNames.Count}件上書き){unmatchMsg}");
-            return (importedSets.Count, overwriteNames.Count, unmatchedCount);
+            string selfMsg = selfShapes > 0 ? $" (形そのものの行: {selfShapes})" : "";
+            statusLog?.Invoke($"CSV読込完了: {importedSets.Count}セット ({overwriteNames.Count}件上書き){unmatchMsg}{selfMsg}");
+            return (importedSets.Count + selfShapes, overwriteNames.Count, unmatchedCount);
         }
 
         public static void Export(ModelContext model, System.Action<string> statusLog)
@@ -131,7 +186,7 @@ namespace Poly_Ling.UI
         /// </summary>
         public static void ExportToPath(ModelContext model, string path, System.Action<string> statusLog)
         {
-            if (model == null || model.MorphExpressionCount == 0)
+            if (model == null || (model.MorphExpressionCount == 0 && model.ShapeCount == 0))
             { statusLog?.Invoke("保存するモーフエクスプレッションがありません"); return; }
             if (string.IsNullOrEmpty(path)) return;
 
@@ -140,32 +195,69 @@ namespace Poly_Ling.UI
                 var writer = new CSVWriter(MQOExportSettings.DefaultDecimalPrecision);
                 writer.AddComment(" ExpressionName,MeshName,BlendShapeName,Weight,...");
 
+                int rowsWritten = 0;
+                var exprNames = new HashSet<string>();
                 foreach (var set in model.MorphExpressions)
                 {
-                    if (set.Type != MorphType.Vertex || !set.IsValid) continue;
-                    var parts = new List<object> { set.Name };
+                    if (set == null) continue;
+                    if (!string.IsNullOrEmpty(set.Name)) exprNames.Add(set.Name);
 
-                    foreach (var entry in set.MeshEntries)
-                    {
-                        if (entry.MeshIndex < 0 || entry.MeshIndex >= model.MeshContextCount) continue;
-                        var morphCtx = model.GetMeshContext(entry.MeshIndex);
-                        if (morphCtx == null || !morphCtx.IsMorph) continue;
-
-                        int lastUnderscore = morphCtx.Name.LastIndexOf('_');
-                        if (lastUnderscore <= 0) continue;
-
-                        parts.Add(morphCtx.Name.Substring(0, lastUnderscore));
-                        parts.Add(set.Name);
-                        parts.Add(entry.Weight);
-                    }
-
-                    if (parts.Count > 1) writer.AddRow(parts.ToArray());
+                    // 形を指す表情（冒頭の注記）
+                    var shapeParts = new List<object> { set.Name };
+                    var same = set.Type == MorphType.Vertex ? model.FindShapeByName(set.Name) : null;
+                    if (same != null) AddShapeParts(model, same, 1f, shapeParts);
+                    else if (set.Type == MorphType.Group && set.GroupChildren != null)
+                        foreach (var ch in set.GroupChildren)
+                        {
+                            var sd = model.FindShapeByName(ch.Name);
+                            if (sd != null) AddShapeParts(model, sd, ch.Weight, shapeParts);
+                        }
+                    if (shapeParts.Count > 1) { writer.AddRow(shapeParts.ToArray()); rowsWritten++; }
                 }
 
+                // 表情に無い形（形 1 つ＝頂点の表情 1 つ）
+                if (model.Shapes != null)
+                    foreach (var sd in model.Shapes)
+                    {
+                        if (sd == null || sd.IsUV || string.IsNullOrEmpty(sd.Name) || exprNames.Contains(sd.Name)) continue;
+                        var parts = new List<object> { sd.Name };
+                        AddShapeParts(model, sd, 1f, parts);
+                        if (parts.Count > 1) { writer.AddRow(parts.ToArray()); rowsWritten++; }
+                    }
+
                 writer.WriteToFile(path);
-                statusLog?.Invoke($"CSV保存完了: {model.MorphExpressionCount}セット → {System.IO.Path.GetFileName(path)}");
+                statusLog?.Invoke($"CSV保存完了: {rowsWritten}行 → {System.IO.Path.GetFileName(path)}");
             }
             catch (Exception ex) { statusLog?.Invoke($"CSV保存失敗: {ex.Message}"); }
+        }
+        /// <summary>形 shapeId の差分を持つ描画オブジェクトの名前。</summary>
+        private static HashSet<string> ShapeMeshNames(ModelContext model, int shapeId)
+        {
+            var names = new HashSet<string>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc?.MeshObject == null || string.IsNullOrEmpty(mc.Name)) continue;
+                if (Poly_Ling.Ops.ShapeOps.GetSparseOffsets(mc.MeshObject, model.CurrentShapeId, shapeId).Count > 0)
+                    names.Add(mc.Name);
+            }
+            return names;
+        }
+
+        /// <summary>形の差分を持つオブジェクトごとに「オブジェクト名,形の名前,重み」を足す。</summary>
+        private static void AddShapeParts(ModelContext model, ShapeDef shape, float weight, List<object> parts)
+        {
+            if (shape == null || shape.IsUV) return;
+            var names = ShapeMeshNames(model, shape.Id);
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || !names.Contains(mc.Name)) continue;
+                parts.Add(mc.Name);
+                parts.Add(shape.Name);
+                parts.Add(weight);
+                names.Remove(mc.Name);
+            }
         }
     }
 }

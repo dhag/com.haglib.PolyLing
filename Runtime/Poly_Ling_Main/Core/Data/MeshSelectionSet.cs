@@ -20,7 +20,7 @@ namespace Poly_Ling.Data
         /// <summary>セット名</summary>
         public string Name { get; set; } = "MeshSet";
 
-        /// <summary>選択カテゴリ（Mesh/Bone/Morph）</summary>
+        /// <summary>選択カテゴリ（Mesh/Bone）</summary>
         public ModelContext.SelectionCategory Category { get; set; } = ModelContext.SelectionCategory.Mesh;
 
         /// <summary>選択メッシュの名前リスト</summary>
@@ -70,7 +70,6 @@ namespace Poly_Ling.Data
             {
                 ModelContext.SelectionCategory.Mesh => model.SelectedDrawableMeshIndices,
                 ModelContext.SelectionCategory.Bone => model.SelectedBoneIndices,
-                ModelContext.SelectionCategory.Morph => model.SelectedMorphIndices,
                 _ => new List<int>()
             };
 
@@ -108,9 +107,6 @@ namespace Poly_Ling.Data
                 case ModelContext.SelectionCategory.Bone:
                     model.ClearBoneSelection();
                     break;
-                case ModelContext.SelectionCategory.Morph:
-                    model.ClearMorphSelection();
-                    break;
             }
 
             for (int i = 0; i < model.MeshContextCount; i++)
@@ -126,9 +122,6 @@ namespace Poly_Ling.Data
                         break;
                     case ModelContext.SelectionCategory.Bone:
                         model.AddToBoneSelection(i);
-                        break;
-                    case ModelContext.SelectionCategory.Morph:
-                        model.AddToMorphSelection(i);
                         break;
                 }
             }
@@ -155,9 +148,6 @@ namespace Poly_Ling.Data
                         break;
                     case ModelContext.SelectionCategory.Bone:
                         model.AddToBoneSelection(i);
-                        break;
-                    case ModelContext.SelectionCategory.Morph:
-                        model.AddToMorphSelection(i);
                         break;
                 }
             }

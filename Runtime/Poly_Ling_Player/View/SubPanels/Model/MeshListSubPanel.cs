@@ -9,7 +9,7 @@
 // Runtime/Poly_Ling_Player/View/ に配置
 //
 // 【分割先】このファイルから次へ分けてある。
-//   MeshListSubPanel.BoneMorph.cs  オブジェクトリストのサブパネル：BonePose・モーフエディタ・BoneTransform。
+//   MeshListSubPanel.BoneMorph.cs  オブジェクトリストのサブパネル：BonePose・BoneTransform。
 //   MeshListSubPanel.BuildUI.cs    オブジェクトリストのサブパネル：UI 構築（ビューポート操作モード・姿勢調整・名称一括変更の UI）。
 //   MeshListSubPanel.Helpers.cs    オブジェクトリストのサブパネル：ヘルパーと UI パーツ生成。
 //   MeshListSubPanel.Refresh.cs    オブジェクトリストのサブパネル：表示変更への追従・ツリー更新・詳細パネル。
@@ -50,10 +50,8 @@ namespace Poly_Ling.MeshListV2
         // 指すので、UI とスキーマで範囲の定義が1箇所になる。
         // ================================================================
 
-        private static float MorphWeightMin => ParameterLimits.GetF("MorphPreview.Weight.Min");
-        private static float MorphWeightMax => ParameterLimits.GetF("MorphPreview.Weight.Max");
-
-        private enum TabType { Drawable, Bone, Morph, RigidBody, Joint }
+        // モーフタブは段 7 で撤去した（旧モーフが無くなった。形は「形」のパネル）。
+        private enum TabType { Drawable, Bone, RigidBody, Joint }
 
         // ================================================================
         // ビューポート操作モード（3択）
@@ -95,7 +93,7 @@ namespace Poly_Ling.MeshListV2
         // 姿勢調整チェック（ObjectMoveSettings と双方向同期）
         // UI 自動操作の ID は "meshList.<下の Id>"（UiControlAttribute.cs）。
         // このパネルは「スキンドメッシュ」チェックで簡易表示と詳細表示が変わり、
-        // 詳細表示のときだけタブ（メッシュ／ボーン／モーフ／剛体／Joint）が出る。
+        // 詳細表示のときだけタブ（メッシュ／ボーン／剛体／Joint）が出る。
         // タブでだけ出る欄には、詳細表示にしてそのタブへ切り替える表示の下準備を付ける。
         [UiControl("originOnly", Description = "原点だけ移動する")]
         private Toggle _toggleOriginOnly;
@@ -124,16 +122,12 @@ namespace Poly_Ling.MeshListV2
         private Button _tabDrawable;
         [UiControl("tab.bone", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDetailMode), Description = "「ボーン」タブ")]
         private Button _tabBone;
-        [UiControl("tab.morph", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDetailMode), Description = "「モーフ」タブ")]
-        private Button _tabMorph;
         [UiControl("tab.rigidBody", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDetailMode), Description = "「剛体」タブ")]
         private Button _tabRigidBody;
         [UiControl("tab.joint", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDetailMode), Description = "「Joint」タブ")]
         private Button _tabJoint;
         [UiControl(Ignore = true)]
         private VisualElement _mainContent;
-        [UiControl(Ignore = true)]
-        private VisualElement _morphEditor;
         [UiControl("tree", Description = "オブジェクトの一覧（一覧の行番号）")]
         private TreeView _treeView;
 
@@ -144,8 +138,6 @@ namespace Poly_Ling.MeshListV2
         private float _treeHeight = TreeBaseHeight;
         private const float TreeMinHeight = 80f;
         private bool  _treeHeightUserAdjusted;         // 手動リサイズ後は自動調整しない
-        private float _morphListHeight = 140f;
-        private const float MorphListMinHeight = 60f;
         [UiControl("count", Safety = UiSafety.ReadOnly, Description = "件数")]
         private Label _countLabel;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
@@ -361,54 +353,7 @@ namespace Poly_Ling.MeshListV2
         private Button _btnMirrorOff;
         [UiControl("rename.browse", Safety = UiSafety.UserOnly, Description = "名称一括変更の CSV を選ぶ（ファイル選択ダイアログを開く）")]
         private Button _btnRenameBrowse;
-        [UiControl("morph.testSelectAll", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "モーフ試用の全選択")]
-        private Button _btnMorphTestSelectAll;
-        [UiControl("morph.testDeselectAll", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "モーフ試用の全解除")]
-        private Button _btnMorphTestDeselectAll;
-        [UiControl("morph.testReset", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "モーフ試用のリセット")]
-        private Button _btnMorphTestReset;
         private bool _isSyncingTransformUI;
-
-        // モーフエディタ
-        [UiControl("morph.count", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealMorphTab), Description = "モーフの件数")]
-        private Label _morphCountLabel;
-        [UiControl("morph.status", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealMorphTab), Description = "モーフ編集の結果")]
-        private Label _morphStatusLabel;
-        [UiControl("morph.list", Reveal = nameof(RevealMorphTab), Description = "モーフの一覧（一覧の行番号）")]
-        private ListView _morphListView;
-        [UiControl("morph.testWeight", Reveal = nameof(RevealMorphTab), Description = "モーフの試用ウェイト")]
-        private Slider _morphTestWeight;
-        [UiControl("morph.filter", Reveal = nameof(RevealMorphTab), Description = "モーフ一覧の絞り込み")]
-        private TextField _morphFilterField;
-        [UiControl(Ignore = true)]
-        private VisualElement _morphSourceMeshPopupContainer;
-        [UiControl(Ignore = true)]
-        private VisualElement _morphParentPopupContainer;
-        [UiControl(Ignore = true)]
-        private VisualElement _morphPanelPopupContainer;
-        [UiControl("morph.name", Reveal = nameof(RevealMorphTab), Description = "作るモーフの名前")]
-        private TextField _morphNameField;
-        [UiControl("morph.meshToMorph", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "メッシュをモーフにする")]
-        private Button _btnMeshToMorph;
-        [UiControl("morph.morphToMesh", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "モーフをメッシュにする")]
-        private Button _btnMorphToMesh;
-        // PopupField<int> の代替：DropdownField + マスターインデックスリスト
-        [UiControl("morph.sourceMesh", Reveal = nameof(RevealMorphTab), Description = "モーフの元メッシュ")]
-        private DropdownField _morphSourceMeshDropdown;
-        [UiControl("morph.parent", Reveal = nameof(RevealMorphTab), Description = "モーフの親")]
-        private DropdownField _morphParentDropdown;
-        [UiControl("morph.panel", Reveal = nameof(RevealMorphTab), Description = "モーフのパネル")]
-        private DropdownField _morphPanelDropdown;
-        private List<int> _morphSourceMeshIds = new List<int>();
-        private List<int> _morphParentIds     = new List<int>();
-        [UiControl(Ignore = true)]
-        private VisualElement _morphSetTypePopupContainer;
-        [UiControl("morph.setName", Reveal = nameof(RevealMorphTab), Description = "作るモーフセットの名前")]
-        private TextField _morphSetNameField;
-        [UiControl("morph.setType", Reveal = nameof(RevealMorphTab), Description = "作るモーフセットのタイプ")]
-        private DropdownField _morphSetTypeDropdown;
-        [UiControl("morph.createSet", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMorphTab), Description = "モーフセットを作る")]
-        private Button _btnCreateMorphSet;
 
         /// <summary>
         /// UI 自動操作の表示の下準備。タブは「スキンドメッシュ」がオンのときだけ出る。
@@ -422,9 +367,6 @@ namespace Poly_Ling.MeshListV2
 
         /// <summary>ボーンの欄は詳細表示の「ボーン」タブのときだけ出る。</summary>
         private bool RevealBoneTab() => RevealTab(TabType.Bone);
-
-        /// <summary>モーフエディタは詳細表示の「モーフ」タブのときだけ出る。</summary>
-        private bool RevealMorphTab() => RevealTab(TabType.Morph);
 
         private bool RevealTab(TabType tab)
         {
@@ -450,11 +392,6 @@ namespace Poly_Ling.MeshListV2
         // この世代番号の変化で判定し、OnChanged 側の二重リビルドを避ける。
         private int _applyTreeGeneration;
         private int _genBeforeReorder = -1;
-
-        private List<IMeshView> _morphListData     = new List<IMeshView>();
-        private List<IMeshView> _morphFilteredData = new List<IMeshView>();
-        private bool _isSyncingMorphSelection;
-        private bool _isMorphPreviewStarted;
 
         private class TreeItemCache
         {
@@ -497,7 +434,6 @@ namespace Poly_Ling.MeshListV2
         {
             TabType.Drawable => MeshCategory.Drawable,
             TabType.Bone     => MeshCategory.Bone,
-            TabType.Morph    => MeshCategory.Morph,
             TabType.RigidBody => MeshCategory.RigidBody,
             TabType.Joint    => MeshCategory.RigidBodyJoint,
             _                => MeshCategory.All
@@ -520,7 +456,6 @@ namespace Poly_Ling.MeshListV2
             RegisterButtonEvents();
             BindBonePoseUI(parent);
             BindTransformUI(parent);
-            BindMorphEditorUI(parent);
             SwitchTab(TabType.Drawable);
         }
 
@@ -538,7 +473,6 @@ namespace Poly_Ling.MeshListV2
         public void Detach()
         {
             if (_ctx != null) _ctx.OnViewChanged -= OnViewChanged;
-            SendEndMorphPreview();
             CleanupDragDrop();
         }
     }

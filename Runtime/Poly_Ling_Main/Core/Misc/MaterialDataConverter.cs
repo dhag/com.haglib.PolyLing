@@ -784,7 +784,11 @@ namespace Poly_Ling.Materials
             if (tex == null)
                 return null;
             
-            return PLEditorBridge.I.GetAssetPath(tex);
+            // アセットでないテクスチャ（ファイルから読んだもの）は GetAssetPath が空文字を返す。
+            // 「パスなし」は null にそろえる（CSV・バイナリは読むときに空を null にするので、
+            // 空文字のままだと保存の往復で JSON の表し方が変わる）。
+            string path = PLEditorBridge.I.GetAssetPath(tex);
+            return string.IsNullOrEmpty(path) ? null : path;
         }
         
         private static void SetTexture(Material mat, string propertyName, string path)

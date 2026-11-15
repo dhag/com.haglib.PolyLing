@@ -14,8 +14,35 @@ using Poly_Ling.Commands;
 namespace Poly_Ling.Player
 {
     [Poly_Ling.Data.PLTool("knife", Description = "KnifeTool（確定は Knife*Command）")]
-    public class KnifeToolHandler : IPlayerToolHandler, IPlayerPressHandler
+    public class KnifeToolHandler : IPlayerToolHandler, IPlayerPressHandler, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>
+        /// シンプル切断で 1 点目が確定していれば「点を指定」とし、1 点目を基準にする。
+        /// クリック式・ドラッグ式とも、1 点目を置いた後は同じ状態なので同じ扱いになる。
+        /// ボタンを離しても 1 点目はツールの状態として残るため、基準点も消えない。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _tool.SimpleCutFirstPoint;
+            return _tool.Mode == KnifeMode.SimpleCut && _tool.SimpleCutHasFirstPoint
+                ? AxisConstraintUse.PointSpec
+                : AxisConstraintUse.None;
+        }
+
+        /// <summary>
+        /// 2 点目の頂点吸着の判定（Viewer が縦横制限の AcceptsCandidate を刺す）。
+        /// 制限方向を崩す頂点には吸着しない。
+        /// </summary>
+        public Func<Vector2, bool> SecondPointSnapFilter
+        {
+            get => _tool.SecondPointSnapFilter;
+            set => _tool.SecondPointSnapFilter = value;
+        }
+
         // ================================================================
         // 依存
         // ================================================================

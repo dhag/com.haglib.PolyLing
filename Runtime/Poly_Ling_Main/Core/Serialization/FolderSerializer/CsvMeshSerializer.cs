@@ -23,14 +23,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
 {
 
     /// <summary>
-    /// メッシュ/ボーン/モーフCSVの読み書き
+    /// メッシュ/ボーンCSVの読み書き
     /// </summary>
     public static partial class CsvMeshSerializer
     {
         private const string Separator = "---";
         private const string VersionMesh = "#PolyLing_Mesh,version,1.0";
         private const string VersionBone = "#PolyLing_Bone,version,1.0";
-        private const string VersionMorph = "#PolyLing_Morph,version,1.0";
 
         /// <summary>
         /// PMX 物理（剛体 / JOINT）用のヘッダ。
@@ -58,7 +57,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             switch (fileType)
             {
                 case "bone": sb.AppendLine(VersionBone); break;
-                case "morph": sb.AppendLine(VersionMorph); break;
                 case "pmx_physics": sb.AppendLine(VersionPmxPhysics); break;
                 default: sb.AppendLine(VersionMesh); break;
             }
@@ -119,12 +117,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     sb.AppendLine(
                         $"vrmConstraint,{(int)vrmCon.Kind},{EscapeCsv(vrmCon.SourceName ?? "")}," +
                         $"{F(vrmCon.Weight)},{(int)vrmCon.RollAxis},{(int)vrmCon.AimAxis}");
-
-                // モーフ固有データ
-                if (mc.Type == MeshType.Morph)
-                {
-                    WriteMorphData(sb, mc, useNameBased, indexToName);
-                }
 
                 // Humanoid 割当・可動域（Bone 以外）
                 //   Bone の場合は WriteBoneData 内で出力済み（従来の行位置を維持するため）。

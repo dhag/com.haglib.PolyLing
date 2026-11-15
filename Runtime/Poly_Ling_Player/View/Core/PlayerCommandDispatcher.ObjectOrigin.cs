@@ -105,6 +105,7 @@ namespace Poly_Ling.Player
                 {
                     Scale           = mc.BoneTransform.Scale,
                     VertexPositions = oldVerts,
+                    Shapes          = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
 
                 Vector3 sc = mc.BoneTransform.Scale;
@@ -114,6 +115,8 @@ namespace Poly_Ling.Player
                     vert.Position = Vector3.Scale(vert.Position, sc);
                     mo.Vertices[v] = vert;
                 }
+                // 形ごとの位置にも同じ倍率を掛ける（掛けないと今の形だけが拡大される）。
+                Poly_Ling.Ops.ShapeOps.MapShapes(mo, p => Vector3.Scale(p, sc));
                 mo.InvalidatePositionCache();
 
                 mc.BoneTransform.Scale = Vector3.one;
@@ -124,6 +127,7 @@ namespace Poly_Ling.Player
                 {
                     Scale           = Vector3.one,
                     VertexPositions = newVerts,
+                    Shapes          = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
             }
 
@@ -208,7 +212,11 @@ namespace Poly_Ling.Player
 
                 var oldVerts = new Vector3[mo.Vertices.Count];
                 for (int v = 0; v < mo.Vertices.Count; v++) oldVerts[v] = mo.Vertices[v].Position;
-                before[idx] = new ObjectScaleSnapshot { Scale = keepScale, VertexPositions = oldVerts };
+                before[idx] = new ObjectScaleSnapshot
+                {
+                    Scale = keepScale, VertexPositions = oldVerts,
+                    Shapes = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
+                };
 
                 for (int v = 0; v < mo.Vertices.Count; v++)
                 {
@@ -216,15 +224,21 @@ namespace Poly_Ling.Player
                     vert.Position = frame * Vector3.Scale(frameInv * vert.Position, s);
                     mo.Vertices[v] = vert;
                 }
+                // 形ごとの位置にも同じ変換（R · S · R⁻¹）を、位置と同じ式で掛ける。
+                Poly_Ling.Ops.ShapeOps.MapShapes(mo, p => frame * Vector3.Scale(frameInv * p, s));
                 mo.InvalidatePositionCache();
                 vertexTotal += mo.Vertices.Count;
 
                 var newVerts = new Vector3[mo.Vertices.Count];
                 for (int v = 0; v < mo.Vertices.Count; v++) newVerts[v] = mo.Vertices[v].Position;
-                after[idx] = new ObjectScaleSnapshot { Scale = keepScale, VertexPositions = newVerts };
+                after[idx] = new ObjectScaleSnapshot
+                {
+                    Scale = keepScale, VertexPositions = newVerts,
+                    Shapes = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
+                };
             }
 
-            // 生成ミラーは実体側の頂点から作り直す（v_M = S·v_R を保つ）
+            // 生成ミラーは実体側の頂点から作り直す（v_M = S·v_R を保つ。形の控えも一緒に作り直される）
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
             model.ComputeWorldMatrices();
 
@@ -404,6 +418,7 @@ namespace Poly_Ling.Player
                     Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
+                    Shapes            = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
                 startWorld[idx]  = world;
                 startMatrix[idx] = wm;
@@ -464,6 +479,9 @@ namespace Poly_Ling.Player
                     vert.Position = inv.MultiplyPoint3x4(world[v]);
                     mo.Vertices[v] = vert;
                 }
+                // 形ごとの位置も同じ再局所化（元のワールドへ → 新しいワールドの逆）を、位置と同じ順で掛ける。
+                Matrix4x4 wmStart0 = wm0;
+                Poly_Ling.Ops.ShapeOps.MapShapes(mo, p => inv.MultiplyPoint3x4(wmStart0.MultiplyPoint3x4(p)));
                 mo.InvalidatePositionCache();
 
                 if (de != null) de.Relocalized = true;
@@ -511,10 +529,6 @@ namespace Poly_Ling.Player
             // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
 
-            // ②派生ミラー実体のミラー側モーフも Real 側から作り直す
-            // （規約は MorphMirrorPolicy.cs を正典とする）。
-            model.SyncAllMirrorMorphs();
-
             // 書き換えたローカル頂点を描画側へ送る。
             //
             // ここを省くと、GPU には新しいワールド行列だけが届き、頂点位置は
@@ -557,6 +571,7 @@ namespace Poly_Ling.Player
                     Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
+                    Shapes            = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
             }
 
@@ -715,6 +730,7 @@ namespace Poly_Ling.Player
             // ── 変更前スナップショット + 現在の頂点ワールド位置 ──────
             var before     = new Dictionary<int, ObjectPoseSnapshot>();
             var startWorld = new Dictionary<int, Vector3[]>();
+            var startWorldMatrix = new Dictionary<int, Matrix4x4>();   // 形の控えの再局所化用
 
             model.ComputeWorldMatrices();
 
@@ -740,8 +756,10 @@ namespace Poly_Ling.Player
                     Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
+                    Shapes            = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
                 startWorld[idx] = world;
+                startWorldMatrix[idx] = wm;
             }
 
             // ── 姿勢を適用（親から順に）─────────────────────────────
@@ -788,16 +806,18 @@ namespace Poly_Ling.Player
                     vert.Position = inv.MultiplyPoint3x4(world[v]);
                     mo.Vertices[v] = vert;
                 }
+                // 形ごとの位置も同じ再局所化（元のワールドへ → 新しいワールドの逆）を、位置と同じ順で掛ける。
+                if (startWorldMatrix.TryGetValue(idx, out var wmStart))
+                {
+                    Matrix4x4 wmStartM = wmStart;
+                    Poly_Ling.Ops.ShapeOps.MapShapes(mo, p => inv.MultiplyPoint3x4(wmStartM.MultiplyPoint3x4(p)));
+                }
                 mo.InvalidatePositionCache();
             }
 
             // 実体側のローカル頂点が変わったので、生成ミラーを作り直して
             // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
-
-            // ②派生ミラー実体のミラー側モーフも Real 側から作り直す
-            // （規約は MorphMirrorPolicy.cs を正典とする）。
-            model.SyncAllMirrorMorphs();
 
             // ── 変更後スナップショット ───────────────────────────────
             var after = new Dictionary<int, ObjectPoseSnapshot>();
@@ -816,6 +836,7 @@ namespace Poly_Ling.Player
                     Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
+                    Shapes            = Poly_Ling.Ops.ShapeOps.CaptureShapes(mo),
                 };
             }
 

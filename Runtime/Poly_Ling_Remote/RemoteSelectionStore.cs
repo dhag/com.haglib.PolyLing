@@ -8,7 +8,7 @@
 // オブジェクト単位で担当を分けても同時作業ができない。
 //
 // 【方針（案B: 選択スコープの一時差し替え）】
-// PanelCommand の多く（PartsSet 系・SkinWeight 系・Morph 系など約48種）は
+// PanelCommand の多く（PartsSet 系・SkinWeight 系など）は
 // MasterIndex を持たず「今の選択」を見て動く。これらすべてに明示ターゲットを
 // 持たせる改修は広範なので、代わりに
 //
@@ -48,7 +48,6 @@ namespace Poly_Ling.Remote
 
         public List<int> Drawable = new List<int>();
         public List<int> Bone     = new List<int>();
-        public List<int> Morph    = new List<int>();
 
         /// <summary>現在の ModelContext の選択を写し取る。</summary>
         public static UserSelection Capture(ModelContext model, int modelIndex)
@@ -59,7 +58,6 @@ namespace Poly_Ling.Remote
             s.Category = model.ActiveCategory;
             s.Drawable = new List<int>(model.SelectedDrawableMeshIndices ?? new List<int>());
             s.Bone     = new List<int>(model.SelectedBoneIndices         ?? new List<int>());
-            s.Morph    = new List<int>(model.SelectedMorphIndices        ?? new List<int>());
             return s;
         }
 
@@ -73,7 +71,6 @@ namespace Poly_Ling.Remote
             int count = model.MeshContextCount;
             model.SelectedDrawableMeshIndices = Filter(Drawable, count);
             model.SelectedBoneIndices         = Filter(Bone,     count);
-            model.SelectedMorphIndices        = Filter(Morph,    count);
             model.SetActiveCategory(Category);
         }
 
@@ -92,7 +89,6 @@ namespace Poly_Ling.Remote
             Category   = Category,
             Drawable   = new List<int>(Drawable),
             Bone       = new List<int>(Bone),
-            Morph      = new List<int>(Morph),
         };
 
         /// <summary>差分検出用シグネチャ。</summary>
@@ -101,8 +97,7 @@ namespace Poly_Ling.Remote
             var sb = new StringBuilder();
             sb.Append(ModelIndex).Append('|').Append((int)Category).Append('|');
             Append(sb, Drawable); sb.Append('|');
-            Append(sb, Bone);     sb.Append('|');
-            Append(sb, Morph);
+            Append(sb, Bone);
             return sb.ToString();
         }
 

@@ -186,16 +186,17 @@ namespace Poly_Ling.Player
         ///   なので、一括で末尾へ足せばずれは崩れない。
         /// 【索引参照】親・ミラー元・左右対ボーン・ボーンウェイト・IK を既存のオブジェクト数
         ///   だけずらす（ModelContext.OffsetIndexReferences）。
-        /// 【表情（PMX のモーフ）】MorphExpressions は索引で描画オブジェクトを指すので、同じだけずらして
-        ///   末尾へ足す。名前が重なれば改名する（材質と同じ決め方）。
+        /// 【表情（PMX のモーフ）】MorphExpressions は形の名前を指す（描画オブジェクトの索引は持たない）。
+        ///   末尾へ足す。名前が重なれば改名し、子の名前も形の改名に合わせる（材質と同じ決め方）。
         /// 【ボーンの引き当て】boneNames を渡したとき（PMX をボーン無しで追加）は、頂点のウェイトが
         ///   PMX のボーン番号を指しているので、その番号の名前で target のボーンを引いて付け替える。
         ///   引けない名前が 1 つでもあるオブジェクトはウェイトを捨てて足す（ボーンに付かない通常のメッシュ）。
         ///   一部の頂点だけウェイトを外すと、スキンドのまま無ウェイトの頂点が混ざって形が崩れるため。
         /// 【名前】既存と重なる名前は改名する（ResolveAppendNames）。
         /// 【モデル単位の情報】target の名前・パス・下絵・Humanoid 割当はそのまま。
+        /// 【形】番号を振り直して末尾へ足す。名前が重なれば改名する（本文の注記）。
         /// 【Undo】MeshListChangeRecord（材質参照・ミラー対も戻す）と、表情を足したときは
-        ///   MorphExpressionListReplaceRecord を 1 件にまとめる。
+        ///   MorphExpressionListReplaceRecord、形を足したときは ShapeListRecord を 1 件にまとめる。
         /// </summary>
         /// <param name="kind">状態表示とログの名前（MQO / PMX）。</param>
         /// <param name="boneNames">PMX のボーン番号 → 名前。ウェイトを名前で引き当てるときだけ渡す。</param>
@@ -304,7 +305,7 @@ namespace Poly_Ling.Player
                 v.MirrorBoneWeight = m;
             }
 
-            // ── 表情の索引をずらし、名前の重複を解消する（target へ足すのはオブジェクトを足した後）──
+            // ── 表情の名前の重複を解消する（target へ足すのはオブジェクトを足した後）──
             var addExpressions = new List<MorphExpression>();
             int renamedExprs = 0;
             if (imported.MorphExpressions != null && imported.MorphExpressions.Count > 0)
@@ -318,12 +319,6 @@ namespace Poly_Ling.Player
                 foreach (var e in imported.MorphExpressions)
                 {
                     if (e == null) continue;
-                    for (int i = 0; i < e.MeshEntries.Count; i++)
-                    {
-                        var entry = e.MeshEntries[i];
-                        if (entry.MeshIndex >= 0) entry.MeshIndex += meshOffset;
-                        e.MeshEntries[i] = entry;
-                    }
                     if (!string.IsNullOrEmpty(e.Name) && exprMap.TryGetValue(e.Name, out var nn))
                     {
                         e.Name = nn;
@@ -331,6 +326,74 @@ namespace Poly_Ling.Player
                     }
                     addExpressions.Add(e);
                 }
+            }
+
+            // ── 形（PolyLing_モーフ整理計画.md 段 6）──
+            //   番号は target の空き番号から振り直し、頂点の控えの番号も付け替える。
+            //   名前が target の形と重なれば「名前_n」に改名し、表情の子の名前も追随させる。
+            //   target が基本の形でないときは、足す頂点に基本の位置（番号 0）の控えを付ける
+            //   （足す頂点は基本の形の位置で読んでいる。付けないと「今の形の間に作られた頂点」になる）。
+            var oldShapes = ShapeListRecord.CloneList(target.Shapes);
+            int addedShapes = 0, renamedShapes = 0;
+            if (imported.Shapes != null && imported.Shapes.Count > 0)
+            {
+                var shapeNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var s in target.Shapes) if (!string.IsNullOrEmpty(s?.Name)) shapeNames.Add(s.Name);
+                var idMap = new Dictionary<int, int>();
+                var nameMap = new Dictionary<string, string>(StringComparer.Ordinal);
+                int next = target.NextShapeId();
+                var addDefs = new List<ShapeDef>();
+                foreach (var s in imported.Shapes)
+                {
+                    if (s == null) continue;
+                    var d = s.Clone();
+                    d.Id = next++;
+                    idMap[s.Id] = d.Id;
+                    string n = string.IsNullOrEmpty(d.Name) ? $"Shape_{d.Id}" : d.Name;
+                    if (shapeNames.Contains(n))
+                    {
+                        int k = 1;
+                        while (shapeNames.Contains($"{n}_{k}")) k++;
+                        nameMap[n] = $"{n}_{k}";
+                        n = $"{n}_{k}";
+                        renamedShapes++;
+                    }
+                    d.Name = n;
+                    shapeNames.Add(n);
+                    addDefs.Add(d);
+                }
+
+                int curShape = target.CurrentShapeId;
+                foreach (var mc in imported.MeshContextList)
+                {
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+                    foreach (var v in mo.Vertices)
+                    {
+                        if (v.Shapes != null)
+                            for (int i = 0; i < v.Shapes.Count; i++)
+                                if (idMap.TryGetValue(v.Shapes[i].ShapeId, out int nid))
+                                    v.Shapes[i] = new ShapePosition(nid, v.Shapes[i].Position);
+                        if (v.UVShapes != null)
+                            for (int i = 0; i < v.UVShapes.Count; i++)
+                                if (idMap.TryGetValue(v.UVShapes[i].ShapeId, out int nid))
+                                    v.UVShapes[i] = new ShapeUV(nid, v.UVShapes[i].UV);
+                        if (curShape != ShapeOps.BaseShapeId)
+                        {
+                            v.SetShape(ShapeOps.BaseShapeId, v.Position);
+                            if (ShapeOps.HasUV0(v)) v.SetUVShape(ShapeOps.BaseShapeId, v.UVs[0]);
+                        }
+                    }
+                }
+
+                if (nameMap.Count > 0)
+                    foreach (var e in addExpressions)
+                        for (int i = 0; i < e.GroupChildren.Count; i++)
+                            if (nameMap.TryGetValue(e.GroupChildren[i].Name, out var nn))
+                                e.GroupChildren[i] = new MorphGroupChild(nn, e.GroupChildren[i].Weight);
+
+                target.Shapes.AddRange(addDefs);
+                addedShapes = addDefs.Count;
             }
 
             // ── 材質を末尾へ ──
@@ -407,6 +470,19 @@ namespace Poly_Ling.Player
                     PLDiag.UndoRecord("MeshList", desc, exprRecord);
                     undo.MeshListStack.Record(exprRecord, desc);
                 }
+                if (addedShapes > 0)
+                {
+                    var shapeRecord = new ShapeListRecord
+                    {
+                        Before = oldShapes,
+                        After  = ShapeListRecord.CloneList(target.Shapes),
+                        ShapeId = ShapeOps.BaseShapeId,
+                        PreviousBefore = target.PreviousShapeId,
+                        PreviousAfter  = target.PreviousShapeId,
+                    };
+                    PLDiag.UndoRecord("MeshList", desc, shapeRecord);
+                    undo.MeshListStack.Record(shapeRecord, desc);
+                }
                 undo.MeshListStack.EndGroup();
                 undo.FocusMeshList();
             }
@@ -420,6 +496,7 @@ namespace Poly_Ling.Player
             _status = $"{kind}追加読込: {System.IO.Path.GetFileName(filePath)}" +
                       $"（オブジェクト +{added.Count} / 材質 +{imported.MaterialReferences?.Count ?? 0}" +
                       (addExpressions.Count > 0 ? $" / 表情 +{addExpressions.Count}" : "") +
+                      (addedShapes > 0 ? $" / 形 +{addedShapes}" + (renamedShapes > 0 ? $"（改名 {renamedShapes}）" : "") : "") +
                       (renamedObjects + renamedMats + renamedExprs > 0
                           ? $" / 改名 オブジェクト {renamedObjects}・材質 {renamedMats}・表情 {renamedExprs}" : "") +
                       (unboundObjects > 0

@@ -108,7 +108,7 @@ namespace Poly_Ling.Player
                         //
                         // 作り直すかは、記録の種類ではなく「描画バッファが今のモデルと合っているか」で決める
                         // （作り直し整備計画 段 A）。以前は記録の種類を並べて決めており、並びから漏れた
-                        // MorphCreateRecord の Undo では作り直さずに古いバッファが残った。
+                        // 記録（旧モーフ作成の記録など）の Undo では作り直さずに古いバッファが残った。
                         // 位置だけを戻した記録の GPU への反映は、Undo コマンドの終わりの
                         // SettleWorldPositions が受け持つ（段 B）。
                         // 並び替えの判定はパネルへの知らせ方にだけ使う。
@@ -143,7 +143,7 @@ namespace Poly_Ling.Player
                         else if (lastRecord is MeshSelectionChangeRecord)
                         {
                             // 選択変更の Undo/Redo: Record.Undo / Redo で ModelContext の
-                            // SelectedDrawableMeshIndices / SelectedBoneIndices / SelectedMorphIndices が
+                            // SelectedDrawableMeshIndices / SelectedBoneIndices が
                             // RestoreSelectionFromIndices で既に復元済み。画面反映のみ行う。
                             var firstMc = model.ActiveMeshContext;
                             if (firstMc?.Selection != null)

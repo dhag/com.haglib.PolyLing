@@ -700,7 +700,7 @@ namespace Poly_Ling.Fbx
             {
                 // 差分（頂点番号の昇順。同じ番号は足す。範囲外は捨てる）
                 var sum = new SortedDictionary<int, Vector3>();
-                var offsets = _model.GetMeshContext(slot.MorphContextIndex)?.GetMorphOffsets();
+                var offsets = slot.Offsets;
                 if (offsets != null)
                     foreach (var (vi, o) in offsets)
                     {
@@ -961,7 +961,7 @@ namespace Poly_Ling.Fbx
             // ── 表情 → ブレンドシェイプの重み（DeformPercent は 0〜100）──
             foreach (var slot in _built.MorphShapes)
             {
-                if (!s.MorphWeights.TryGetValue(slot.MorphContextIndex, out var weights)) continue;
+                if (!s.MorphWeights.TryGetValue(slot.Key, out var weights)) continue;
                 if (!_channelOf.TryGetValue((slot.Renderer, slot.ShapeIndex), out long chId)) continue;
                 var v = new float[nF];
                 for (int f = 0; f < nF; f++) v[f] = weights[f] * 100f;

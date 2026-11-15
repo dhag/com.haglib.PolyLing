@@ -40,10 +40,36 @@ namespace Poly_Ling.Player
     /// 作業軸ギズモ。移動 / 回転をサブモードで切り替える。
     /// </summary>
     [Poly_Ling.Data.PLTool("workAxis", Description = "作業軸ギズモ（WorkAxisToolHandler）")]
-    public class WorkAxisToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class WorkAxisToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient
     {
         /// <summary>作業軸ギズモのサブモード。</summary>
         public enum WorkAxisGizmoMode { Move, Rotate }
+
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// 掴んだハンドル（原点か Y 先端）の画面位置 − ドラッグを始めた位置（Y=0 下）。
+        /// 吸着候補の判定で、候補をポインタの位置へ戻すのに使う（制限線はポインタの基準点を通る）。
+        /// </summary>
+        private Vector2 _grabOffset;
+
+        /// <summary>
+        /// 吸着候補の判定（Viewer が縦横制限の AcceptsCandidate を刺す）。引数はポインタ側の画面位置（Y=0 下）。
+        /// false の候補には吸着しない（制限方向を崩さない）。null なら判定しない。
+        /// </summary>
+        public Func<Vector2, bool> SnapCandidateFilter;
+
+        /// <summary>原点ハンドル（移動）と Y 先端ハンドルを自由に動かしている間だけ「対象を動かす」。</summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            return IsFreeHandleDragging ? AxisConstraintUse.ObjectMove : AxisConstraintUse.None;
+        }
 
         // ================================================================
         // 外部コールバック（Viewer から設定）
@@ -324,6 +350,14 @@ namespace Poly_Ling.Player
             // クリックのみでは何もしない（選択操作とは無関係のツール）。
         }
 
+        /// <summary>
+        /// 原点ハンドル（移動モードの中央）か Y 先端ハンドルを自由に動かしている間 true。
+        /// 軸の移動・回転・ロールでは false。縦横制限の問い合わせ（ModifierGizmoToolHandler）に使う。
+        /// </summary>
+        public bool IsFreeHandleDragging
+            => _dragYTip
+            || (Mode == WorkAxisGizmoMode.Move && !_dragRoll && _dragAxis == AxisGizmo.AxisType.Center);
+
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
             _dragAxis     = AxisGizmo.AxisType.None;
@@ -332,6 +366,8 @@ namespace Poly_Ling.Player
             _snapTarget   = null;
             _tipDragWorld = null;
             _dragStarted  = false;
+            _dragOriginPos = screenPos;
+            _grabOffset    = Vector2.zero;
 
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || !SyncGizmoFromAxis()) return;
@@ -376,6 +412,7 @@ namespace Poly_Ling.Player
             {
                 _dragYTip     = true;
                 _tipDragWorld = wa.YTip;   // 掴んだ位置から動かし始める
+                _grabOffset   = WorldToHandlerScreen(ctx, wa.YTip) - screenPos;
                 _dragStarted  = true;
                 _dragBefore   = wa.CreateSnapshot();
                 SetSnapHitTest(true);
@@ -392,7 +429,10 @@ namespace Poly_Ling.Player
             // 原点ハンドルは自由移動中に吸着させる。軸拘束移動は吸着させない
             // （軸から外れた位置へ飛ぶことになり拘束の意味が無くなるため）。
             if (hitAxis == AxisGizmo.AxisType.Center)
+            {
+                _grabOffset = WorldToHandlerScreen(ctx, wa.Origin) - screenPos;
                 SetSnapHitTest(true);
+            }
         }
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
@@ -552,7 +592,15 @@ namespace Poly_Ling.Player
         private Vector3? ResolveSnapTarget(Vector2 screenPos)
         {
             if (GetSnapTargetWorld == null || !HasAnySnapTarget) return null;
-            return GetSnapTargetWorld(ToImgui(screenPos));
+            var w = GetSnapTargetWorld(ToImgui(screenPos));
+            if (!w.HasValue || SnapCandidateFilter == null) return w;
+
+            // 縦横制限で固定中、ハンドルを候補へ動かすと制限方向から外れるなら吸着しない
+            // （面追加の DropIfOffAxis と同じ。外したら自由移動＝制限線上のまま）。
+            // 制限線はポインタの基準点を通るので、候補を掴んだずれの分だけポインタ側へ戻して判定する。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return w;
+            return SnapCandidateFilter(WorldToHandlerScreen(ctx, w.Value) - _grabOffset) ? w : null;
         }
 
         private void DragRotate(Vector2 screenPos)
@@ -775,5 +823,9 @@ namespace Poly_Ling.Player
             float h = GetPanelHeight?.Invoke() ?? 0f;
             return new Vector2(screenPosYDown.x, h - screenPosYDown.y);
         }
+
+        /// <summary>ワールド → 画面（Y=0 下）。Y の反転は ToImgui と同じ（往復で同じ式）。</summary>
+        private Vector2 WorldToHandlerScreen(ToolContext ctx, Vector3 world)
+            => ToImgui(ctx.WorldToScreen(world));
     }
 }

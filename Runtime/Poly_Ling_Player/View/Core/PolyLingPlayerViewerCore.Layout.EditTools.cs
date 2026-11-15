@@ -35,6 +35,8 @@ namespace Poly_Ling.Player
             _addFaceHandler = new AddFaceToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                // 縦横制限で固定中は、制限方向上の候補にだけ吸着する。
+                SnapCandidateFilter = p => _axisConstraint.AcceptsCandidate(p),
                 GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
                 // 表裏判定用。GPU が計算済みのワールド座標を渡す（CPU で計算し直さない）。
                 GetVertexWorldPosition = vi =>
@@ -239,6 +241,8 @@ namespace Poly_Ling.Player
                 // 原点 / Y 先端ハンドルの吸着先。頂点は GPU 吸着ヒットテスト、
                 // ボーンは MeshContext の WorldMatrix 投影で拾う。
                 GetSnapTargetWorld = imguiPos => WorkAxisSnapTargetWorld(imguiPos),
+                // 縦横制限で固定中は、制限方向から外れる吸着先を捨てる（縦横制限計画 段7）。
+                SnapCandidateFilter = p => _axisConstraint.AcceptsCandidate(p),
                 // 吸着用ヒットテストの有効化。作業軸モードでハンドルを掴んでいる間だけ。
                 // 有効な間はポインタ移動ごとに頂点数ぶんの読み戻しが増えるため、
                 // 他モードでは必ず切る。
@@ -638,6 +642,8 @@ namespace Poly_Ling.Player
                     SetToolSelectModeOverride(m);
                 },
                 GetFaceCulledMask   = (ctxIdx, faceCount) => _viewportManager.GetFaceCulledMask(ctxIdx, faceCount, _activeViewport),
+                // 縦横制限中の 2 点目の頂点吸着は、制限方向を崩さない頂点に限る。
+                SecondPointSnapFilter = p => _axisConstraint.AcceptsCandidate(p),
                 // 切断点の比率をスクリーン空間から 3D 空間へ補正するために使う。
                 GetVertexClipW      = vi =>
                 {

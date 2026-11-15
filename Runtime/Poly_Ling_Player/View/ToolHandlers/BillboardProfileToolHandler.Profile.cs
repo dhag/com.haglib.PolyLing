@@ -25,8 +25,29 @@ using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
-    public partial class BillboardProfileToolHandler : IPlayerPressHandler
+    public partial class BillboardProfileToolHandler : IPlayerPressHandler, IPointerAxisClient
     {
+        // ── 縦横制限（計画と規約/PolyLing_縦横制限計画.md）──
+        /// <summary>動かし始めた位置（Y=0 下）。挿入は押した位置、点・ハンドルはドラッグを始めた位置。</summary>
+        private Vector2 _axisAnchor;
+
+        /// <summary>
+        /// Profile で、挿入待ちの点（押した時点から）・点・ハンドルを動かしている間だけ「対象を動かす」。
+        /// 矩形選択では制限しない。
+        /// Line と Freeform は、点を 1 つ以上置いていれば「点を指定」（直前の点が基準。Freeform の手描き中は除く）。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _axisAnchor;
+            if (Mode == SubMode.Line || Mode == SubMode.Freeform)
+                return TryLinePointAnchor(out anchor) ? AxisConstraintUse.PointSpec : AxisConstraintUse.None;
+            if (Mode != SubMode.Profile) return AxisConstraintUse.None;
+            if (_piActive) return AxisConstraintUse.ObjectMove;
+            return _drag == DragKind.Points || _drag == DragKind.Handle
+                ? AxisConstraintUse.ObjectMove
+                : AxisConstraintUse.None;
+        }
+
         /// <summary>選択中の点（群の番号, 群の中の点の番号）。</summary>
         private readonly HashSet<(int G, int P)> _selected = new HashSet<(int, int)>();
         public IReadOnlyCollection<(int G, int P)> SelectedPoints => _selected;
@@ -93,6 +114,7 @@ namespace Poly_Ling.Player
             if (!TryScreenToLocal(mc, ctx, imgui, out _piPointerStart)) return;
 
             _piActive = true;
+            _axisAnchor = screenPos;
             _piG = _ph.G;
             _piAt = _ph.P + 1;
             _piBase = _piLocal = _ph.InsertLocal;
@@ -336,6 +358,7 @@ namespace Poly_Ling.Player
             if (!TryGetTarget(out var model, out var mc, out var ctx)) return;
             var imgui = ToImgui(screenPos, ctx);
             _dragStartImgui = imgui;
+            if (!_piActive) _axisAnchor = screenPos;   // 挿入は押した位置のまま
 
             // 弦の上で押していれば、挿入待ちの点をそのまま動かす。
             if (_piActive) { _drag = DragKind.Insert; return; }

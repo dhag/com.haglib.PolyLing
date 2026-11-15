@@ -247,7 +247,8 @@ namespace Poly_Ling.Ops
             backup.WorldMatrices.Clear();
             backup.BindPoses.Clear();
             backup.VertexPositions.Clear();
-            backup.MorphBasePositions.Clear();
+            backup.ShapeSnapshots.Clear();
+            backup.VertexNormals.Clear();
             backup.PhysicsPoses.Clear();
 
             for (int i = 0; i < meshContexts.Count; i++)
@@ -282,11 +283,13 @@ namespace Poly_Ling.Ops
                     for (int v = 0; v < verts.Count; v++)
                         positions[v] = verts[v].Position;
                     backup.VertexPositions[i] = positions;
-
-                    // モーフの基準位置も焼き込みで変わるので控える
-                    var mbd = ctx.MorphBaseData;
-                    if (mbd != null && mbd.IsValid)
-                        backup.MorphBasePositions[i] = (Vector3[])mbd.BasePositions.Clone();
+                    // 形ごとの位置も焼き込みで変わるので控える
+                    backup.ShapeSnapshots[i] = ShapeOps.CaptureShapes(ctx.MeshObject);
+                    // 法線も焼き込みで回るので控える
+                    var normals = new Vector3[verts.Count][];
+                    for (int v = 0; v < verts.Count; v++)
+                        normals[v] = verts[v].Normals != null ? verts[v].Normals.ToArray() : null;
+                    backup.VertexNormals[i] = normals;
 
                     // 剛体・ジョイントの位置と回転も焼き込みで変わるので控える
                     var rbd = ctx.MeshObject.RigidBodyData;
@@ -377,20 +380,25 @@ namespace Poly_Ling.Ops
                     for (int v = 0; v < verts.Count && v < positions.Length; v++)
                         verts[v].Position = positions[v];
 
+                    // 形ごとの位置も戻す（控えが無ければ触らない）
+                    if (backup.ShapeSnapshots.TryGetValue(idx, out var shapeSnap))
+                        ShapeOps.RestoreShapes(ctx.MeshObject, shapeSnap);
+
+                    // 法線も戻す（控えが無ければ触らない。スロット数が違う頂点は触らない）
+                    if (backup.VertexNormals.TryGetValue(idx, out var normalSnap) && normalSnap != null)
+                    {
+                        for (int v = 0; v < verts.Count && v < normalSnap.Length; v++)
+                        {
+                            var src = normalSnap[v];
+                            var dst = verts[v].Normals;
+                            if (src == null || dst == null || dst.Count != src.Length) continue;
+                            for (int s = 0; s < src.Length; s++) dst[s] = src[s];
+                        }
+                    }
+
                     // UnityMeshを再生成
                     ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
                 }
-            }
-
-            // モーフの基準位置を復元（頂点数が同じときだけ）
-            foreach (var kv in backup.MorphBasePositions)
-            {
-                int idx = kv.Key;
-                if (idx < 0 || idx >= meshContexts.Count) continue;
-                var mbd = meshContexts[idx]?.MorphBaseData;
-                if (mbd == null || !mbd.IsValid || kv.Value == null) continue;
-                if (mbd.BasePositions.Length != kv.Value.Length) continue;
-                mbd.BasePositions = (Vector3[])kv.Value.Clone();
             }
 
             // 剛体・ジョイントの位置と回転を復元
@@ -567,17 +575,20 @@ namespace Poly_Ling.Ops
                         var vtx = verts[i];
                         if (vtx == null) continue;
 
+                        Vector3 oldPos   = vtx.Position;
                         Vector3 worldPos = worldPositions[vertexStart + i];
                         vtx.Position = vtx.HasBoneWeight
                             ? worldPos
                             : unskinnedInv.MultiplyPoint3x4(worldPos);
-                    }
 
-                    // モーフメッシュは基準位置も同じスキンで焼く。
-                    // 差分は「頂点位置 − BasePositions」（MorphBaseData.cs）なので、頂点だけ焼くと
-                    // 焼き込みで動いた部位の差分に変換前後の位置の差が混ざる。
-                    // 行列はまだリバインド前（GPU に渡したものと同じ SkinningMatrix）。
-                    RebakeMorphBasePositions(ctx, meshContexts);
+                        // 頂点が持つ形ごとの位置も同じスキンで焼く（焼かないと今の形だけが動く）。
+                        // 行列はまだリバインド前（GPU に渡したものと同じ SkinningMatrix）。
+                        RebakeVertexShapes(vtx, oldPos, meshContexts);
+
+                        // 法線も同じスキンで回す。焼いた後の頂点は変形後のワールド座標を持つので、
+                        // 法線が焼く前の向きのままだと、スキンドの表示（保持した法線をそのまま使う）の陰影が合わない。
+                        RebakeVertexNormals(vtx, meshContexts);
+                    }
 
                     // UnityMeshを再生成して表示を更新
                     ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
@@ -591,24 +602,23 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// モーフメッシュの基準位置（MorphBaseData.BasePositions）を、頂点と同じスキン行列で焼く。
-        /// ウェイトのある頂点だけが対象（ウェイトの無い頂点は焼き込みで位置が変わらない）。
+        /// 頂点 1 個が持つ形ごとの位置（Vertex.Shapes）を、頂点と同じスキン行列で焼く。
         /// 行列の組み方は GPU（UnifiedCompute の skinMatrix）・MeshContext.VertexMatrix と同じ
-        /// 「Σ weight × list[bone].SkinningMatrix」。ParentModelContext を介さず meshContexts を引くので、
+        /// 「Σ weight × list[bone].SkinningMatrix」（リバインド前）。ParentModelContext を介さず meshContexts を引くので、
         /// 読み込み途中（モデルへ入る前）でも使える。
+        /// 頂点の位置は GPU の計算の読み戻しで、ここの行列計算とは丸めが違いうる。
+        /// 焼く前の位置（oldPosition）と同じだった控えは、焼いた後の位置（vtx.Position）にそろえる
+        /// （そろえないと、動かしていない頂点が「形で動いた頂点」になる）。
+        /// ウェイトの無い頂点は、位置と同じだった控えだけをそろえ、ほかは触らない。
+        /// vtx.Position を書き換えた後に呼ぶ。
         /// </summary>
-        private static void RebakeMorphBasePositions(MeshContext ctx, List<MeshContext> meshContexts)
+        private static void RebakeVertexShapes(Vertex vtx, Vector3 oldPosition, List<MeshContext> meshContexts)
         {
-            var mbd = ctx?.MorphBaseData;
-            var mo  = ctx?.MeshObject;
-            if (mbd == null || !mbd.IsValid || mo == null) return;
+            if (vtx == null || vtx.Shapes == null) return;
 
-            int n = Mathf.Min(mbd.BasePositions.Length, mo.VertexCount);
-            for (int i = 0; i < n; i++)
+            System.Func<Vector3, Vector3> bake = null;
+            if (vtx.HasBoneWeight)
             {
-                var vtx = mo.Vertices[i];
-                if (vtx == null || !vtx.HasBoneWeight) continue;
-
                 var bw = vtx.BoneWeight.Value;
                 Matrix4x4 acc = new Matrix4x4();
                 float total = 0f;
@@ -616,9 +626,50 @@ namespace Poly_Ling.Ops
                 total += AddBone(ref acc, meshContexts, bw.boneIndex1, bw.weight1);
                 total += AddBone(ref acc, meshContexts, bw.boneIndex2, bw.weight2);
                 total += AddBone(ref acc, meshContexts, bw.boneIndex3, bw.weight3);
-                if (total <= 0f) continue;
+                if (total > 0f)
+                {
+                    Matrix4x4 m = acc;
+                    bake = p => m.MultiplyPoint3x4(p);
+                }
+            }
 
-                mbd.BasePositions[i] = acc.MultiplyPoint3x4(mbd.BasePositions[i]);
+            ShapeOps.MapVertexShapesKeepingEqual(vtx, oldPosition, bake);
+        }
+
+        /// <summary>
+        /// 頂点 1 個が持つ法線（Vertex.Normals の全スロット）を、頂点と同じスキン行列で回す。
+        /// 行列の組み方は RebakeVertexShapes と同じ（Σ weight × SkinningMatrix、リバインド前）。
+        /// 法線なので逆転置行列を掛けて正規化する（拡大縮小が入っていても面に垂直のまま）。
+        /// ウェイトの無い頂点は焼き込みで位置が変わらないので触らない。
+        /// 行列が逆行列を持たない・結果の長さが 0 の法線は元のまま残す。
+        /// </summary>
+        private static void RebakeVertexNormals(Vertex vtx, List<MeshContext> meshContexts)
+        {
+            if (vtx == null || !vtx.HasBoneWeight || vtx.Normals == null || vtx.Normals.Count == 0) return;
+
+            var bw = vtx.BoneWeight.Value;
+            Matrix4x4 acc = new Matrix4x4();
+            float total = 0f;
+            total += AddBone(ref acc, meshContexts, bw.boneIndex0, bw.weight0);
+            total += AddBone(ref acc, meshContexts, bw.boneIndex1, bw.weight1);
+            total += AddBone(ref acc, meshContexts, bw.boneIndex2, bw.weight2);
+            total += AddBone(ref acc, meshContexts, bw.boneIndex3, bw.weight3);
+            if (total <= 0f) return;
+            if (IsNearIdentity(acc)) return;
+
+            // 3x3 の逆転置（平行移動は法線に効かないので落としてから逆を取る）。
+            Matrix4x4 linear = acc;
+            linear.m03 = 0f; linear.m13 = 0f; linear.m23 = 0f;
+            linear.m30 = 0f; linear.m31 = 0f; linear.m32 = 0f; linear.m33 = 1f;
+            if (Mathf.Abs(linear.determinant) < 1e-12f) return;
+            Matrix4x4 normalMatrix = linear.inverse.transpose;
+
+            for (int s = 0; s < vtx.Normals.Count; s++)
+            {
+                Vector3 n = normalMatrix.MultiplyVector(vtx.Normals[s]);
+                float mag = n.magnitude;
+                if (mag < 1e-12f) continue;
+                vtx.Normals[s] = n / mag;
             }
         }
 

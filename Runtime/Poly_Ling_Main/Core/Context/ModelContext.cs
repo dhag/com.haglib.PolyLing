@@ -128,9 +128,6 @@ namespace Poly_Ling.Context
         /// <summary>ボーンリスト</summary>
         public IReadOnlyList<TypedMeshEntry> Bones => TypedIndices.GetEntries(MeshCategory.Bone);
 
-        /// <summary>モーフリスト</summary>
-        public IReadOnlyList<TypedMeshEntry> Morphs => TypedIndices.GetEntries(MeshCategory.Morph);
-
         /// <summary>剛体リスト</summary>
         public IReadOnlyList<TypedMeshEntry> RigidBodies => TypedIndices.GetEntries(MeshCategory.RigidBody);
 
@@ -154,11 +151,11 @@ namespace Poly_Ling.Context
 
         // ================================================================
         // 選択状態（カテゴリ別・複数選択対応）
-        // v2.0: 選択メッシュ/選択ボーン/選択頂点モーフに分離
+        // v2.0: 選択メッシュ/選択ボーンに分離（モーフの選択は段 7 で廃止）
         // ================================================================
 
         /// <summary>選択カテゴリ</summary>
-        public enum SelectionCategory { Mesh, Bone, Morph }
+        public enum SelectionCategory { Mesh, Bone }
 
         /// <summary>現在アクティブな選択カテゴリ</summary>
         public SelectionCategory ActiveCategory { get; private set; } = SelectionCategory.Mesh;
@@ -170,9 +167,6 @@ namespace Poly_Ling.Context
         /// <summary>選択中のボーンインデックス（Bone タイプ）- 選択順序を保持</summary>
         public List<int> SelectedBoneIndices { get; set; } = new List<int>();
 
-        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）- 選択順序を保持</summary>
-        public List<int> SelectedMorphIndices { get; set; } = new List<int>();
-
 
 
         /// <summary>メッシュが選択されているか</summary>
@@ -181,26 +175,17 @@ namespace Poly_Ling.Context
         /// <summary>ボーンが選択されているか</summary>
         public bool HasBoneSelection => SelectedBoneIndices.Count > 0;
 
-        /// <summary>頂点モーフが選択されているか</summary>
-        public bool HasMorphSelection => SelectedMorphIndices.Count > 0;
-
         /// <summary>メッシュが複数選択されているか</summary>
         public bool IsMeshMultiSelected => SelectedDrawableMeshIndices.Count > 1;
 
         /// <summary>ボーンが複数選択されているか</summary>
         public bool IsBoneMultiSelected => SelectedBoneIndices.Count > 1;
 
-        /// <summary>頂点モーフが複数選択されているか</summary>
-        public bool IsMorphMultiSelected => SelectedMorphIndices.Count > 1;
-
         /// <summary>メッシュ選択リストの先頭インデックス</summary>
         public int FirstMeshIndex => SelectedDrawableMeshIndices.Count > 0 ? SelectedDrawableMeshIndices[0] : -1;
 
         /// <summary>ボーン選択リストの先頭インデックス</summary>
         public int FirstBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices[0] : -1;
-
-        /// <summary>モーフ選択リストの先頭インデックス</summary>
-        public int FirstMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices[0] : -1;
 
         // ================================================================
         // カテゴリ別選択操作
@@ -233,17 +218,6 @@ namespace Poly_Ling.Context
             {
                 SelectedBoneIndices.Add(index);
                 ActiveCategory = SelectionCategory.Bone;
-            }
-        }
-
-        /// <summary>頂点モーフを選択（単一選択）</summary>
-        public void SelectMorph(int index)
-        {
-            ClearMorphSelection();
-            if (index >= 0 && index < Count)
-            {
-                SelectedMorphIndices.Add(index);
-                ActiveCategory = SelectionCategory.Morph;
             }
         }
 
@@ -308,24 +282,11 @@ namespace Poly_Ling.Context
             }
         }
 
-        /// <summary>頂点モーフ選択に追加（重複防止・順序保持）</summary>
-        public void AddToMorphSelection(int index)
-        {
-            if (index >= 0 && index < Count && !SelectedMorphIndices.Contains(index))
-            {
-                SelectedMorphIndices.Add(index);
-                ActiveCategory = SelectionCategory.Morph;
-            }
-        }
-
         /// <summary>メッシュ選択をクリア</summary>
         public void ClearMeshSelection() => SelectedDrawableMeshIndices.Clear();
 
         /// <summary>ボーン選択をクリア</summary>
         public void ClearBoneSelection() => SelectedBoneIndices.Clear();
-
-        /// <summary>頂点モーフ選択をクリア</summary>
-        public void ClearMorphSelection() => SelectedMorphIndices.Clear();
 
         /// <summary>
         /// アクティブ選択カテゴリを設定する。
@@ -339,7 +300,7 @@ namespace Poly_Ling.Context
 
         /// <summary>
         /// 選択中の全インデックス（読み取り専用）
-        /// 設定にはSelect/SelectMesh/SelectBone/SelectMorph等を使用
+        /// 設定にはSelect/SelectMesh/SelectBone等を使用
         /// </summary>
         public HashSet<int> SelectedMeshContextIndices
         {
@@ -347,8 +308,6 @@ namespace Poly_Ling.Context
             {
                 var all = new HashSet<int>(SelectedDrawableMeshIndices);
                 foreach (var i in SelectedBoneIndices)
-                    all.Add(i);
-                foreach (var i in SelectedMorphIndices)
                     all.Add(i);
                 return all;
             }
@@ -363,14 +322,13 @@ namespace Poly_Ling.Context
                 {
                     SelectionCategory.Mesh => SelectedDrawableMeshIndices,
                     SelectionCategory.Bone => SelectedBoneIndices,
-                    SelectionCategory.Morph => SelectedMorphIndices,
                     _ => new List<int>()
                 };
             }
         }
 
         /// <summary>選択があるか</summary>
-        public bool HasSelection => HasMeshSelection || HasBoneSelection || HasMorphSelection;
+        public bool HasSelection => HasMeshSelection || HasBoneSelection;
 
         /// <summary>複数選択されているか</summary>
         public bool IsMultiSelected => SelectedMeshContextIndices.Count > 1;
@@ -421,7 +379,7 @@ namespace Poly_Ling.Context
         // 編集対象メッシュの取得元（一本化）
         // ================================================================
         //
-        // FirstSelectedMeshContext は ActiveCategory が Bone/Morph のとき
+        // FirstSelectedMeshContext は ActiveCategory が Bone のとき
         // メッシュ以外を指し得る。FirstDrawableMeshContext は常に描画メッシュを返す。
         // メッシュ編集ツール・ハンドラ・オーバーレイは必ず ActiveMeshContext /
         // ActiveMeshIndex を使うこと。MeshObject と行列の取得元がずれると座標がずれる。
@@ -472,11 +430,6 @@ namespace Poly_Ling.Context
                         SelectedBoneIndices.Add(index);
                     ActiveCategory = SelectionCategory.Bone;
                     break;
-                case MeshType.Morph:
-                    if (!SelectedMorphIndices.Contains(index))
-                        SelectedMorphIndices.Add(index);
-                    ActiveCategory = SelectionCategory.Morph;
-                    break;
                 default:
                     // Mesh, BakedMirror, Helper, Group, RigidBody, RigidBodyJoint等
                     if (!SelectedDrawableMeshIndices.Contains(index))
@@ -504,11 +457,6 @@ namespace Poly_Ling.Context
                     SelectedBoneIndices.Add(index);
                     ActiveCategory = SelectionCategory.Bone;
                     break;
-                case MeshType.Morph:
-                    ClearMorphSelection();
-                    SelectedMorphIndices.Add(index);
-                    ActiveCategory = SelectionCategory.Morph;
-                    break;
                 default:
                     // Mesh, BakedMirror, Helper, Group, RigidBody, RigidBodyJoint等
                     ClearMeshSelection();
@@ -529,9 +477,6 @@ namespace Poly_Ling.Context
                 case MeshType.Bone:
                     SelectedBoneIndices.Remove(index);
                     break;
-                case MeshType.Morph:
-                    SelectedMorphIndices.Remove(index);
-                    break;
                 default:
                     SelectedDrawableMeshIndices.Remove(index);
                     break;
@@ -542,8 +487,7 @@ namespace Poly_Ling.Context
         public bool IsSelectedInAnyCategory(int index)
         {
             return SelectedDrawableMeshIndices.Contains(index) ||
-                   SelectedBoneIndices.Contains(index) ||
-                   SelectedMorphIndices.Contains(index);
+                   SelectedBoneIndices.Contains(index);
         }
 
         /// <summary>全カテゴリの選択をクリア</summary>
@@ -551,7 +495,6 @@ namespace Poly_Ling.Context
         {
             SelectedDrawableMeshIndices.Clear();
             SelectedBoneIndices.Clear();
-            SelectedMorphIndices.Clear();
             SelectedDrawableMeshIndices.Clear();
         }
 

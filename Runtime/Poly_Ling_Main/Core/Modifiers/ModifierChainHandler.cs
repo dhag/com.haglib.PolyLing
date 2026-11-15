@@ -273,8 +273,10 @@ namespace Poly_Ling.Modifiers
         // 項目 1 つ
         // ================================================================
 
+        /// <param name="meshOf">参照オブジェクトの形状の引き方。null なら参照の MeshObject（形ごとの評価は形にした写しを渡す）。</param>
         private static bool RunItem(ModifierStackStep s, MeshObject input, MeshContext source,
-            Dictionary<ulong, MeshContext> map, ulong fp, out ItemCache ic, out string error)
+            Dictionary<ulong, MeshContext> map, ulong fp, out ItemCache ic, out string error,
+            Func<MeshContext, MeshObject> meshOf = null)
         {
             ic = null;
             if (!MeshModifierRegistry.FromArgs(s.Action, s.Args, out var mod, out var scope, out error)) return false;
@@ -289,7 +291,7 @@ namespace Poly_Ling.Modifiers
                 if (ids.Count == 0) continue;
                 if (!map.TryGetValue(ids[0], out var rmc) || rmc?.MeshObject == null)
                 { error = $"参照 \"{p.Key}\" のオブジェクト {ids[0]} が見つからない"; return false; }
-                refs[p.Key] = rmc.MeshObject;
+                refs[p.Key] = meshOf != null ? meshOf(rmc) : rmc.MeshObject;
                 refMats[p.Key] = RefToSource(source, rmc);
             }
 
@@ -334,6 +336,141 @@ namespace Poly_Ling.Modifiers
             return mesh;
         }
 
+        // ================================================================
+        // 形ごとの評価（PolyLing_モーフ整理計画.md 段 7）
+        //   適用・書き出しの結果は形を持たないので、形ごとに元メッシュと参照をその形にした写しから
+        //   流し直し、形の控え（Vertex.Shapes・UVShapes）として結果に付ける。
+        //   頂点数か面の構成が今の形の結果と違う形があれば、頂点番号で対応が付かないので失敗にする。
+        // ================================================================
+
+        /// <summary>
+        /// 元メッシュを形 shapeId にした写しから items を流す。参照（メッシュ参照）も同じ形にした写しを使う。
+        /// 作業中の足し込み（WorkingPositions）は使わない。モデルは書き換えない。失敗したら null と理由。
+        /// </summary>
+        public static MeshObject EvaluateOnSourceAtShape(ModelContext model, IList<ModifierStackStep> items,
+            MeshContext source, int shapeId, out string error)
+        {
+            error = null;
+            int current = model.CurrentShapeId;
+            var copies = new Dictionary<MeshContext, MeshObject>();
+            MeshObject At(MeshContext mc)
+            {
+                if (mc?.MeshObject == null) return null;
+                if (!copies.TryGetValue(mc, out var m))
+                {
+                    m = mc.MeshObject.Clone();
+                    ShapeOps.SwitchMesh(m, current, shapeId);
+                    copies[mc] = m;
+                }
+                return m;
+            }
+
+            var map = ModifierEvaluator.BuildIdMap(model);
+            var mesh = source.MeshObject.Clone();
+            ShapeOps.SwitchMesh(mesh, current, shapeId);
+            foreach (var s in items)
+            {
+                if (!RunItem(s, mesh, source, map, 0UL, out var ic, out error, At)) return null;
+                mesh = ic.Output;
+            }
+            return mesh;
+        }
+
+        /// <summary>
+        /// output（元メッシュの今の形から items を流した形）に、形ごとの位置と UV スロット 0 を控えとして付ける。
+        /// 付ける前に output の控えを全部落とす。元メッシュか参照に差分のある形だけを流し直す
+        /// （差分の無い形は入力が基本の形と同じなので、結果も基本の形と同じ）。
+        /// 成功なら null。頂点数・面の構成が合わない形・流せない形があれば理由を返し、output の控えは落としたまま。
+        /// </summary>
+        public static string AttachShapes(ModelContext model, IList<ModifierStackStep> items, MeshContext source, MeshObject output)
+        {
+            if (model == null || source?.MeshObject == null || output == null) return null;
+            ShapeOps.ClearShapes(output);
+            if (model.Shapes == null || model.Shapes.Count == 0) return null;
+
+            // 流す入力：元メッシュと参照
+            var map = ModifierEvaluator.BuildIdMap(model);
+            var involved = new List<MeshObject> { source.MeshObject };
+            foreach (var s in items)
+            {
+                if (s == null) continue;
+                foreach (var kv in s.SortedMeshRefIds())
+                {
+                    if (kv.Key == SourceKey || kv.Value == null) continue;
+                    foreach (ulong id in kv.Value)
+                        if (map.TryGetValue(id, out var rmc) && rmc?.MeshObject != null) involved.Add(rmc.MeshObject);
+                }
+            }
+
+            int current = model.CurrentShapeId;
+            bool HasOffsets(int shapeId)
+            {
+                if (shapeId == ShapeOps.BaseShapeId) return false;
+                foreach (var mo in involved)
+                    if (ShapeOps.GetSparseOffsets(mo, current, shapeId).Count > 0
+                        || ShapeOps.GetSparseUVOffsets(mo, current, shapeId).Count > 0) return true;
+                return false;
+            }
+
+            string NameOf(int id) => id == ShapeOps.BaseShapeId ? "基本の形" : (model.FindShapeById(id)?.Name ?? id.ToString());
+
+            MeshObject Eval(int shapeId, out string err)
+            {
+                var r = EvaluateOnSourceAtShape(model, items, source, shapeId, out err);
+                if (r == null) { err = $"形「{NameOf(shapeId)}」で流せません: {err}"; return null; }
+                if (!SameTopology(r, output)) { err = $"形「{NameOf(shapeId)}」では頂点数か面の構成が変わるので、形を引き継げません"; return null; }
+                return r;
+            }
+
+            // 基本の形の結果。今の形が基本の形なら output そのもの。
+            MeshObject baseResult = output;
+            if (current != ShapeOps.BaseShapeId && HasOffsets(current))
+            {
+                baseResult = Eval(ShapeOps.BaseShapeId, out var err);
+                if (baseResult == null) return err;
+            }
+
+            // 先に全部流して確かめてから書く（途中で失敗したとき output を半端にしない）。
+            var results = new List<(int id, MeshObject r)>();
+            foreach (var def in model.Shapes)
+            {
+                if (def == null || def.Id == current || !HasOffsets(def.Id)) continue;
+                var r = Eval(def.Id, out var err);
+                if (r == null) return err;
+                results.Add((def.Id, r));
+            }
+
+            int n = output.VertexCount;
+            if (!ReferenceEquals(baseResult, output))
+                for (int i = 0; i < n; i++) PutEntry(output.Vertices[i], ShapeOps.BaseShapeId, baseResult.Vertices[i], output.Vertices[i]);
+            foreach (var (id, r) in results)
+                for (int i = 0; i < n; i++) PutEntry(output.Vertices[i], id, r.Vertices[i], baseResult.Vertices[i]);
+            return null;
+        }
+
+        /// <summary>形 id の控えを、ref（控えが無いときに使われる位置）と違うときだけ付ける。</summary>
+        private static void PutEntry(Vertex dst, int id, Vertex at, Vertex reference)
+        {
+            if (!ShapeOps.Same(at.Position, reference.Position)) dst.SetShape(id, at.Position);
+            if (ShapeOps.HasUV0(dst) && ShapeOps.HasUV0(at) && ShapeOps.HasUV0(reference)
+                && !ShapeOps.Same(at.UVs[0], reference.UVs[0]))
+                dst.SetUVShape(id, at.UVs[0]);
+        }
+
+        /// <summary>頂点数と、面ごとの頂点の並びが同じか。</summary>
+        private static bool SameTopology(MeshObject a, MeshObject b)
+        {
+            if (a.VertexCount != b.VertexCount || a.FaceCount != b.FaceCount) return false;
+            for (int f = 0; f < a.FaceCount; f++)
+            {
+                var fa = a.Faces[f].VertexIndices;
+                var fb = b.Faces[f].VertexIndices;
+                if (fa.Count != fb.Count) return false;
+                for (int k = 0; k < fa.Count; k++) if (fa[k] != fb[k]) return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// 「ここまで表示」を全部解除し、結果を最後までの形へ作り直す。適用と書き出しの前に呼ぶ。
         /// 書き出しは作り直した結果を読むので、ここで同期して流す。
@@ -360,6 +497,7 @@ namespace Poly_Ling.Modifiers
             dst.Vertices.Clear();
             dst.Faces.Clear();
             foreach (var v in src.Vertices) dst.Vertices.Add(v.Clone());
+            Poly_Ling.Ops.ShapeOps.ClearShapes(dst);   // 出力は形を持たない（入力の今の形に追随する）
             foreach (var f in src.Faces) dst.Faces.Add(f.Clone());
             var lgs = new List<LineGroup>();
             if (src.LineGroups != null) foreach (var lg in src.LineGroups) if (lg != null) lgs.Add(lg.Clone());
@@ -484,6 +622,8 @@ namespace Poly_Ling.Modifiers
                 {
                     c.SourceFp = srcFp;
                     c.SourceMesh = SourceCopy(source);
+                    // 出力は形を持たない（入力の今の形に追随する）。写しが運んだ形の控えを落とす。
+                    Poly_Ling.Ops.ShapeOps.ClearShapes(c.SourceMesh);
                     c.Items.Clear();
                 }
                 int keep = 0;

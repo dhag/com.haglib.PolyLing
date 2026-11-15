@@ -221,6 +221,7 @@ namespace Poly_Ling.Player
             _p2dCanvas.RegisterCallback<PointerDownEvent>(OnP2dPointerDown);
             _p2dCanvas.RegisterCallback<PointerMoveEvent>(OnP2dPointerMove);
             _p2dCanvas.RegisterCallback<PointerUpEvent>(OnP2dPointerUp);
+            AttachP2dAxis();   // Shift の縦横制限（点のドラッグ）
             _p2dCanvas.RegisterCallback<WheelEvent>(e =>
             {
                 if (_p2dBgMode)

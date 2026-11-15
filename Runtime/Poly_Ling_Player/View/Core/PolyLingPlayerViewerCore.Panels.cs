@@ -372,18 +372,19 @@ namespace Poly_Ling.Player
             _morphSubPanel?.Refresh();
         }
 
-        private void ShowMorphCreatePanel()
+        private void ShowShapePanel()
         {
             // カテゴリ 3
             ApplyGeneralPanelMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.MorphCreateSection, _layoutRoot?.MorphCreateBtn);
+            ShowRightPanel(_layoutRoot?.ShapeSection, _layoutRoot?.ShapeBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
-            var morphCrModel = ActiveProject?.CurrentModel;
-            if (morphCrModel != null && _editOps?.UndoController != null)
-                _editOps.UndoController.SetModelContext(morphCrModel);
+            // （ShapeSwitchRecord / ShapeListRecord が正しいモデルを参照するために必要）
+            var shapeModel = ActiveProject?.CurrentModel;
+            if (shapeModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(shapeModel);
 
-            _morphCreateSubPanel?.Refresh();
+            _shapeSubPanel?.Refresh();
         }
 
         private void ShowTPosePanel()

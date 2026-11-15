@@ -97,7 +97,7 @@ polyling_call command=<名前> args=<引数>
 
 **利用シーン（`optimized` のみ）**
 
-利用シーンとは、スキニングやモーフ編集のような作業の一局面について、検索するコマンドと見せる道具を
+利用シーンとは、スキニングや形・表情の編集のような作業の一局面について、検索するコマンドと見せる道具を
 あらかじめ決めておくプリセットである。シナリオが作業全体、コマンドが 1 つの操作なら、
 利用シーンはその中間の「一区間」にあたる。Unity のシーンとは無関係。
 
@@ -132,8 +132,9 @@ polyling_call command=<名前> args=<引数>
 - `queryScenarios usageScene=<名前>` で、その利用シーンを使うシナリオを引ける
 - 利用シーンを消したり改名したりしたら `queryScenarioAudit` を回す（`unknownUsageScene` が出る）
 
-**モデル状態** は `queryModelState` で取れる。ボーン・スキンウェイト・モーフ・Humanoid・スプリングボーン・ミラーの有無と、
-`topologyLocked`（スキンウェイトかモーフがあり、頂点や面を増減すると壊れる状態）を返す。
+**モデル状態** は `queryModelState` で取れる。ボーン・スキンウェイト・形と表情（`hasMorphs`。形か表情があれば真）・Humanoid・スプリングボーン・ミラーの有無と、
+`topologyLocked`（スキンウェイトがあり、頂点や面を増減すると壊れる状態）を返す。形は頂点が持つので、頂点の増減では壊れない（新しい頂点はどの形でも同じ位置。`PolyLing_モーフ整理計画.md` 3.3・段 7）。
+形と表情を扱うコマンドは分類 `morph`（`addShape`・`setCurrentShape`・`swapShape`・`mirrorShape`・`importShapeMqo`・`addExpression`・`setExpressionShapes`・`previewShapes` など。`polyling_search` で「形」「表情」）。旧モーフのコマンド（`convertMeshToMorph`・`createMorphFromDiff`・`createMorphSet` など）は段 7 で撤去した。
 - `tools` が空なら道具は絞らない。`polyling_search` / `polyling_describe` / `polyling_call` / `polyling_scenes` はどの利用シーンでも消えない
 - 目的のコマンドが利用シーンに無いときは `scene` を外して探し直す。見つかったら利用シーンに足すかを利用者に諮る
 
@@ -270,6 +271,20 @@ Unity のシーン（PolyLing の利用シーンとは別）のオブジェク�
 - 操作を足すのは Editor 側 `Editor/HierarchyIO/SceneObjectOps.cs` の `Run` と `Help` だけでよい（`unity_validate_changes` で反映。MCP サーバの再ビルドは要らない）。
   MCP サーバは `action` の頭に `scene_` を付けて転送するだけなので、この道具から `play`・`build_all` などは呼べない。
 - 利用シーンの `tools` 列で道具を絞っているときは、そこに `unity_scene_call` を書かないと見えない。
+
+### 1-8. Blender でスクリプトを流す（`blender_run`・`blender_status`。正本は MCP サーバの `BlenderRunTools.cs`）
+
+| 道具 | 何をする |
+|---|---|
+| `blender_run` | `blender.exe -b [--factory-startup] --python <script> -- <args…>` を起動する。`script` は書き込みを許したフォルダの中の `.py`（`write_file` と同じ書き方）。`args` はスクリプトの `sys.argv` の `--` の後ろへそのまま渡る。`wait_ms`（既定 50000、最大 55000）まで待ち、終われば終了コードとログの末尾 60 行、終わらなければ `RUNNING: pid=…; log=…` |
+| `blender_status` | `pid` を渡すと続きを待って同じ形で返す。`pid` を省くと実行中・待ち中の一覧 |
+
+- ログ（標準出力と標準エラー）は `SandBox/_blender/<日時>_<スクリプト名>.log.txt`。`read_file` で読める。
+- blender.exe は、起動引数 `--blender` → ストア版の起動名 `%LOCALAPPDATA%\Microsoft\WindowsApps\blender.exe` → `C:\Program Files\Blender Foundation\Blender*\blender.exe`（新しい版から）の順に、起動できた最初のもの。ストア版は `C:\Program Files\WindowsApps` の中の exe を直接起動できない（アクセス拒否）。
+- 既定はユーザー設定を読む（入れたアドオンが使える）。`factory_startup=true` で設定とアドオンを読まない。
+- この PC はストア版の Blender の中身を `C:\Program Files\Blender Foundation\Blender 5.3` へ写して使っている（2026-11-15。ストア版は起動名が無く、直接も起動できないため）。ストア版の Blender の中から入れたアドオンは、この Blender からは `%APPDATA%\Blender Foundation\Blender\5.3\scripts\addons` に見えなかった。アドオンを試すスクリプトには、手元の `データとツール/ツール/poly_ling_py`（`polyling_io` の親）を渡す。
+- Blender アドオン PolyLing IO の確認スクリプトは `SandBox/段8/bl_shapes.py`（読んでそのまま書き、形・表情が元と一致するか）。例：`script="SandBox/段8/bl_shapes.py"`、`args=["<アドオンの親フォルダ>", "<出力フォルダ>", "<元の model.csv か .mfproj>", …]`。
+- `--target player` では隠れる。MCP サーバの道具なので、足したり直したりしたときは MCP サーバの再ビルドと再起動が要る（操作者に頼む）。
 
 ---
 

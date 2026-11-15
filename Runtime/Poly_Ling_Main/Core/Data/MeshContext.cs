@@ -3,11 +3,11 @@
 // MeshObject（Vertex/Face）ベース対応版
 // DefaultMaterials対応版
 // Phase 1: 選択状態をMeshContextに統合
-// Phase Morph: モーフ基準データ対応
+// （旧モーフの基準データは段 7 で撤去。形は頂点が持つ）
 // Phase BonePose: BonePoseData対応（BindPose相互変換）
 //
 // 【分割先】このファイルから次へ分けてある。
-//   MeshContext.Attributes.cs  MeshContext：オブジェクト属性・協働編集・モーフ基準とミラー適用・エクスポート制御・ミラー設定と
+//   MeshContext.Attributes.cs  MeshContext：オブジェクト属性・協働編集・エクスポート制御・ミラー設定と
 //   MeshContext.Transform.cs   MeshContext：階層・トランスフォーム・変換行列・IK データ・頂点単位のローカル→ワールド変換。
 //   MeshSelectionSnapshot.cs   MeshContext 用の選択スナップショット（MeshContext.cs から分離）。
 using System;

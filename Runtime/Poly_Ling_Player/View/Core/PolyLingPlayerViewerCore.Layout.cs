@@ -88,7 +88,7 @@ namespace Poly_Ling.Player
             InitDisplayToggles();
 
             _layoutRoot.MorphBtn.clicked       += ShowMorphPanel;
-            _layoutRoot.MorphCreateBtn.clicked += ShowMorphCreatePanel;
+            _layoutRoot.ShapeBtn.clicked       += ShowShapePanel;
 
             _layoutRoot.PostBuildButtonColors(_uiRoot);
 
@@ -695,7 +695,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MergeMeshesSection,       () => _mergeMeshesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.BooleanSection,           () => _booleanSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MorphSection,             () => _morphSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.MorphCreateSection,       () => _morphCreateSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.ShapeSection,             () => _shapeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.TPoseSection,             () => _tposeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.HumanoidMappingSection,   () => _humanoidMappingSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SpringBoneSection,        () => _springBoneSubPanel?.Refresh()));

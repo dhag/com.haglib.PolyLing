@@ -618,6 +618,8 @@ namespace Poly_Ling.Remote
                 case UiCaptureStatusCommand _:
                 case QueryCapturePositionCommand _:
                 case UiClickCommand _:
+                case UiViewportPointerCommand _:
+                case UiCanvasPointerCommand _:
                 case QueryUiAutomationAuditCommand _:
                 case QueryCommandUiOperationCommand _:
                 // チュートリアルの作成はホストのファイルへ書き、画面を撮る。

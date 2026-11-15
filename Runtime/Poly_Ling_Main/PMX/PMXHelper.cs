@@ -386,18 +386,15 @@ namespace Poly_Ling.PMX
         /// 複数MeshContextの頂点情報を取得
         /// </summary>
         /// <param name="meshContexts">MeshContextリスト</param>
-        /// <param name="excludeMorphs">モーフメッシュを除外するか</param>
         /// <returns>頂点情報のリスト</returns>
         public static List<MeshVertexInfo> GetVertexInfos(
-            IEnumerable<MeshContext> meshContexts, 
-            bool excludeMorphs = true)
+            IEnumerable<MeshContext> meshContexts)
         {
             var results = new List<MeshVertexInfo>();
 
             foreach (var ctx in meshContexts)
             {
                 if (ctx == null) continue;
-                if (excludeMorphs && ctx.Type == MeshType.Morph) continue;
                 if (ctx.Type == MeshType.Bone) continue;
 
                 results.Add(GetVertexInfo(ctx));

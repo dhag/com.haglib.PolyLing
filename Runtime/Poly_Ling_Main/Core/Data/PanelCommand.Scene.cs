@@ -30,17 +30,17 @@ namespace Poly_Ling.Data
 
     /// <summary>モデルがいまどこまで作られているかを返す。</summary>
     [PLCommand(Writes = PLWriteScope.None, Category = "query",
-        Description = "カレントモデルの状態を実データから調べて返す。ボーン・スキンウェイト・モーフ・Humanoid 割当・スプリングボーン・ミラー関係の有無と、そこから導く topologyLocked（スキンウェイトかモーフがあり、頂点の増減で壊れる状態）。利用シーンの stateAssumptions と同じ名前で返す。モデルは変えない。")]
+        Description = "カレントモデルの状態を実データから調べて返す。ボーン・スキンウェイト・形と表情・Humanoid 割当・スプリングボーン・ミラー関係の有無と、そこから導く topologyLocked（スキンウェイトがあり、頂点の増減で壊れる状態。形は頂点が持つので含めない）。利用シーンの stateAssumptions と同じ名前で返す。モデルは変えない。")]
     [PLResult("hasModel",          PLResultKind.Flag, Description = "カレントモデルがあるか。無ければ他はすべて false")]
     [PLResult("hasBones",          PLResultKind.Flag, Description = "ボーンがある")]
     [PLResult("hasSkinWeights",    PLResultKind.Flag, Description = "スキンウェイトを持つオブジェクトがある")]
-    [PLResult("hasMorphs",         PLResultKind.Flag, Description = "モーフ（表情）がある")]
+    [PLResult("hasMorphs",         PLResultKind.Flag, Description = "形（基本の形以外）か表情がある")]
     [PLResult("hasHumanoid",       PLResultKind.Flag, Description = "Humanoid の割当がある")]
     [PLResult("humanoidComplete",  PLResultKind.Flag, Description = "Humanoid の必須ボーンが揃っている")]
     [PLResult("hasCustomRig",      PLResultKind.Flag, Description = "ボーンはあるが Humanoid の割当が無い")]
     [PLResult("hasSpringBones",    PLResultKind.Flag, Description = "スプリングボーンの関節か鎖の根がある")]
     [PLResult("hasMirrorRelation", PLResultKind.Flag, Description = "ミラー設定かミラーの対がある")]
-    [PLResult("topologyLocked",    PLResultKind.Flag, Description = "hasSkinWeights か hasMorphs。頂点や面を増減するとウェイトかモーフが壊れる")]
+    [PLResult("topologyLocked",    PLResultKind.Flag, Description = "hasSkinWeights と同じ。頂点や面を増減するとウェイトが壊れる")]
     public sealed class QueryModelStateCommand : PanelCommand
     {
         public QueryModelStateCommand(int modelIndex = 0)

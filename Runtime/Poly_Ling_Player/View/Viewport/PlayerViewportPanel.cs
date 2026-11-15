@@ -732,6 +732,68 @@ namespace Poly_Ling.Player
         private readonly Vector2[]  _prevDragPos  = new Vector2[3];
 
         // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>全ビューポート共通の縦横制限。Viewer が刺す。null なら制限しない。</summary>
+        public PointerAxisConstraint AxisConstraint;
+
+        /// <summary>
+        /// 現在の操作で使える制限の種類と基準点（Y=0 下）を返す（Viewer が現在のハンドラへ転送する）。
+        /// null なら制限しない。
+        /// </summary>
+        public Func<(AxisConstraintUse use, Vector2 anchor)> QueryAxisConstraint;
+
+        /// <summary>クリック／ドラッグ判定の経路長用の、補正前の前回位置。</summary>
+        private readonly Vector2[] _prevRawPressPos = new Vector2[3];
+
+        /// <summary>Shift だけを押下・解除したときに移動を出し直すための、最後の実座標（パネルローカル Y=0 上）と修飾キー。</summary>
+        private Vector2      _lastRawLocal;
+        private bool         _hasLastRawLocal;
+        private ModifierKeys _lastMods;
+
+        /// <summary>
+        /// 実座標（Y=0 下）を操作座標へ補正する。補正はこの関数だけで行い、
+        /// 押下・移動・解除・ホバーのすべてがここを通った座標を使う。
+        /// 右・中ボタン（カメラ）操作中は制限しない。
+        /// </summary>
+        private Vector2 ConstrainPos(Vector2 rawPos, bool shift)
+        {
+            var c = AxisConstraint;
+            if (c == null) return rawPos;
+
+            var use    = AxisConstraintUse.None;
+            var anchor = Vector2.zero;
+            bool cameraBusy = _state[1] != BtnState.Idle || _state[2] != BtnState.Idle;
+            if (!cameraBusy && QueryAxisConstraint != null)
+            {
+                var q = QueryAxisConstraint();
+                use    = q.use;
+                anchor = q.anchor;
+            }
+            return c.Apply(rawPos, use, anchor, shift, out _);
+        }
+
+        /// <summary>Y=0 下のビューポート座標をパネルローカル（Y=0 上）へ戻す。</summary>
+        private Vector2 ToPanelLocal(Vector2 viewportPos)
+            => new Vector2(viewportPos.x, resolvedStyle.height - viewportPos.y);
+
+        /// <summary>Shift だけが変わったとき、最後の実座標で移動を出し直してプレビューを更新する。</summary>
+        private void OnShiftChanged(bool down)
+        {
+            if (!_hasLastRawLocal) return;
+            if (_lastMods.Shift == down) return;   // キーリピート・重複は無視
+            var m = _lastMods;
+            m.Shift = down;
+            ProcessMove(_lastRawLocal, m);
+        }
+
+        /// <summary>全ボタンが離されているか。</summary>
+        private bool AllIdle => _state[0] == BtnState.Idle
+                             && _state[1] == BtnState.Idle
+                             && _state[2] == BtnState.Idle;
+
+        // ================================================================
         // コンストラクタ
         // ================================================================
 
@@ -755,6 +817,25 @@ namespace Poly_Ling.Player
             // イベント駆動のためポインタ操作時にフォーカスを取得する。
             focusable = true;
             RegisterCallback<KeyDownEvent>(OnKeyDown);
+            // Shift の押下・解除（縦横制限をマウス移動を待たずに反映する）。
+            // フォーカスがこのパネルに無くても届くよう、UI ルートで先取りして受ける。
+            // 反応するのは最後にポインタが動いたパネルだけ（s_shiftKeyTarget）。
+            RegisterCallback<AttachToPanelEvent>(e =>
+            {
+                e.destinationPanel.visualTree.RegisterCallback<KeyDownEvent>(OnRootShiftKeyDown, TrickleDown.TrickleDown);
+                e.destinationPanel.visualTree.RegisterCallback<KeyUpEvent>(OnRootShiftKeyUp, TrickleDown.TrickleDown);
+            });
+            RegisterCallback<DetachFromPanelEvent>(e =>
+            {
+                e.originPanel.visualTree.UnregisterCallback<KeyDownEvent>(OnRootShiftKeyDown, TrickleDown.TrickleDown);
+                e.originPanel.visualTree.UnregisterCallback<KeyUpEvent>(OnRootShiftKeyUp, TrickleDown.TrickleDown);
+            });
+            // フォーカス喪失：Shift を離した扱いにし、操作中でなければ制限を解除する。
+            RegisterCallback<FocusOutEvent>(_ =>
+            {
+                OnShiftChanged(false);
+                if (AllIdle) AxisConstraint?.Reset();
+            });
 
             // ── 下絵（最背面・既定非表示） ──────────────────────────────
             _underlayImage = new VisualElement();
@@ -1067,17 +1148,28 @@ namespace Poly_Ling.Player
             // ビューポート操作時にフォーカスを取得し、Escape 等のキー入力を受けられるようにする。
             Focus();
 
-            Vector2 pos  = ToViewportCoord(evt.localPosition);
-            var     mods = GetMods(evt);
+            ProcessDown(btn, evt.localPosition, GetMods(evt));
+        }
+
+        /// <summary>押下 1 回ぶんの処理。PointerDown と、uiViewportPointer の再現入力が通る。</summary>
+        private void ProcessDown(int btn, Vector2 rawLocal, ModifierKeys mods)
+        {
+            s_shiftKeyTarget = this;
+            Vector2 rawPos = ToViewportCoord(rawLocal);
+            Vector2 pos    = ConstrainPos(rawPos, mods.Shift);
 
             MousePosition = pos;
+            _lastRawLocal    = rawLocal;
+            _hasLastRawLocal = true;
+            _lastMods        = mods;
+            _prevRawPressPos[btn] = rawPos;
 
             // ここでホバーを再計算してはならない。
             // 押下位置と直前の PointerMove 位置が違うと、その差ぶんホバー判定位置が
             // 飛ぶ。掴む要素は「直前の PointerMove で確定したホバー」を使う。
             if (btn == 0)
                 PLDiag.PickRec("IA.Down", btn,
-                    x: evt.localPosition.x, y: evt.localPosition.y);
+                    x: rawLocal.x, y: rawLocal.y);
 
             _state[btn]        = BtnState.Pressed;
             _downPos[btn]      = pos;
@@ -1086,11 +1178,49 @@ namespace Poly_Ling.Player
             OnButtonDown?.Invoke(btn, pos, mods);
         }
 
+        /// <summary>
+        /// Shift のキー入力に反応するパネル。最後にポインタが動いた（押された）パネル。
+        /// PointerEnter/Leave は子要素への出入りでも届くため使わない。
+        /// </summary>
+        private static PlayerViewportPanel s_shiftKeyTarget;
+
+        private void OnRootShiftKeyDown(KeyDownEvent evt)
+        {
+            if ((evt.keyCode == KeyCode.LeftShift || evt.keyCode == KeyCode.RightShift) && s_shiftKeyTarget == this)
+                OnShiftChanged(true);
+        }
+
+        private void OnRootShiftKeyUp(KeyUpEvent evt)
+        {
+            if ((evt.keyCode == KeyCode.LeftShift || evt.keyCode == KeyCode.RightShift) && s_shiftKeyTarget == this)
+                OnShiftChanged(false);
+        }
+
+        /// <summary>
+        /// Esc 1 回ぶんの処理。Esc キーと、uiViewportPointer の再現入力が通る。
+        /// 縦横制限はその Shift の押下が終わるまで外す（SuppressUntilShiftUp）。
+        ///   ・取り消された操作（ナイフの段を捨てる、頂点移動の取り消しなど）は問い合わせが None になるので解除する
+        ///     （取り消し後の再ホバーは実座標で行う）。
+        ///   ・Esc で終わらない操作（オブジェクト移動など）は続く。Shift を離したときと同じく補正量を
+        ///     引き継ぐので対象は跳ばない。最後の位置で移動を出し直して、すぐ反映する。
+        /// </summary>
+        private void ProcessEscape()
+        {
+            AxisConstraint?.SuppressUntilShiftUp();
+            OnCancelKey?.Invoke();
+
+            var use = QueryAxisConstraint?.Invoke().use ?? AxisConstraintUse.None;
+            if (use == AxisConstraintUse.None)
+                AxisConstraint?.Reset();
+            else if (_hasLastRawLocal)
+                ProcessMove(_lastRawLocal, _lastMods);
+        }
+
         private void OnKeyDown(KeyDownEvent evt)
         {
             if (evt.keyCode == KeyCode.Escape)
             {
-                OnCancelKey?.Invoke();
+                ProcessEscape();
                 evt.StopPropagation();
             }
             else if (evt.keyCode == KeyCode.Backspace || evt.keyCode == KeyCode.Delete)
@@ -1105,19 +1235,32 @@ namespace Poly_Ling.Player
         }
 
         private void OnPointerMove(PointerMoveEvent evt)
+            => ProcessMove(evt.localPosition, GetMods(evt));
+
+        /// <summary>
+        /// 移動 1 回ぶんの処理。PointerMove と、Shift だけの押下・解除の出し直しが通る。
+        /// rawLocal はパネルローカル（Y=0 上）の実座標。
+        /// </summary>
+        private void ProcessMove(Vector2 rawLocal, ModifierKeys mods)
         {
-            Vector2 pos  = ToViewportCoord(evt.localPosition);
-            var     mods = GetMods(evt);
+            s_shiftKeyTarget = this;
+            _lastRawLocal    = rawLocal;
+            _hasLastRawLocal = true;
+            _lastMods        = mods;
+
+            Vector2 rawPos = ToViewportCoord(rawLocal);
+            // 操作座標はここで 1 回だけ作る。以降のホバー・押下中移動・ドラッグはすべてこれを使う。
+            Vector2 pos    = ConstrainPos(rawPos, mods.Shift);
 
             MousePosition = pos;  // CaptureLost時の座標保持
 
             // ホバー通知（ドラッグ中も含め常に発火）
             OnPointerMoved?.Invoke(pos, mods);
 
-            // UpdateHoverOnly 用にパネルローカル座標(Y=0が上)をそのまま渡す。
-            // ToViewportCoord() によるY反転は行わない。
+            // UpdateHoverOnly 用にパネルローカル座標(Y=0が上)を渡す。
             // UpdateHoverOnly が期待する座標系が UIToolkit と同じ左上原点のため。
-            OnPointerHover?.Invoke(evt.localPosition);
+            // 補正後の操作座標を戻して渡し、GPU ヒットテストも同じ点で行わせる。
+            OnPointerHover?.Invoke(ToPanelLocal(pos));
 
             for (int btn = 0; btn < 3; btn++)
             {
@@ -1135,12 +1278,24 @@ namespace Poly_Ling.Player
 
                     // しきい値判定は押下点からの直線距離ではなく移動経路長で行う。
                     // 理由は _pressPathLen の宣言部を参照。
-                    _pressPathLen[btn] += pressDelta.magnitude;
+                    // 経路長は補正前の実座標で測る（縦横制限でクリック／ドラッグの判定を変えない）。
+                    _pressPathLen[btn] += (rawPos - _prevRawPressPos[btn]).magnitude;
+                    _prevRawPressPos[btn] = rawPos;
                     if (_pressPathLen[btn] > DragThreshold)
                     {
                         _state[btn]       = BtnState.Dragging;
                         _prevDragPos[btn] = _downPos[btn];
                         OnDragBegin?.Invoke(btn, _downPos[btn], mods);
+
+                        // 押下を受け持たないハンドラは、ドラッグ開始で初めて「対象を動かす」状態になる。
+                        // 上の ConstrainPos はその前に問い合わせているので、ここで問い合わせ直し、
+                        // この回の OnDrag から補正後の座標を渡す（最初の 1 回だけ補正前になるのを防ぐ）。
+                        // 状態が変わらないハンドラでは同じ結果になる。
+                        if (btn == 0)
+                        {
+                            pos           = ConstrainPos(rawPos, mods.Shift);
+                            MousePosition = pos;
+                        }
                     }
                 }
 
@@ -1154,13 +1309,15 @@ namespace Poly_Ling.Player
             }
         }
 
-        private void OnPointerUp(PointerUpEvent evt)
+        /// <summary>解除 1 回ぶんの処理。PointerUp と、uiViewportPointer の再現入力が通る。</summary>
+        private void ProcessUp(int btn, Vector2 rawLocal, ModifierKeys mods)
         {
-            int btn = evt.button;
-            if (btn < 0 || btn >= 3) return;
-
-            Vector2 pos       = ToViewportCoord(evt.localPosition);
-            var     mods      = GetMods(evt);
+            // 確定（クリック・ドラッグ終了）も補正後の操作座標で行う。状態が Idle になる前に補正する。
+            Vector2 pos       = ConstrainPos(ToViewportCoord(rawLocal), mods.Shift);
+            MousePosition     = pos;
+            _lastRawLocal     = rawLocal;
+            _hasLastRawLocal  = true;
+            _lastMods         = mods;
             var     prevState = _state[btn];
             _state[btn] = BtnState.Idle;
 
@@ -1170,6 +1327,42 @@ namespace Poly_Ling.Player
                 OnClick?.Invoke(btn, pos, mods);
             else if (prevState == BtnState.Dragging)
                 OnDragEnd?.Invoke(btn, pos, mods);
+        }
+
+        // ================================================================
+        // 再現入力（uiViewportPointer）
+        // ================================================================
+
+        /// <summary>
+        /// 実際のポインター・キーと同じ処理を通して入力を再現する（MCP からの操作確認用）。
+        /// kind: down / move / up / shiftDown / shiftUp / escape。
+        /// rawLocal はパネルローカル（Y=0 上）。mods は down / move / up でだけ使う。
+        /// 戻り値は処理後の操作座標（Y=0 下）。
+        /// </summary>
+        public Vector2 SimulateInput(string kind, Vector2 rawLocal, ModifierKeys mods, int btn = 0)
+        {
+            switch (kind)
+            {
+                case "down":      Focus(); ProcessDown(btn, rawLocal, mods); break;
+                case "move":      ProcessMove(rawLocal, mods);              break;
+                case "up":        ProcessUp(btn, rawLocal, mods);            break;
+                case "shiftDown": OnShiftChanged(true);                      break;
+                case "shiftUp":   OnShiftChanged(false);                     break;
+                case "escape":    ProcessEscape();                           break;
+                default: throw new ArgumentException($"unknown kind '{kind}'");
+            }
+            return MousePosition;
+        }
+
+        /// <summary>直前の修飾キー（再現入力で Shift を保ったまま移動するのに使う）。</summary>
+        public ModifierKeys LastModifiers => _lastMods;
+
+        private void OnPointerUp(PointerUpEvent evt)
+        {
+            int btn = evt.button;
+            if (btn < 0 || btn >= 3) return;
+
+            ProcessUp(btn, evt.localPosition, GetMods(evt));
 
             // 全ボタンがIdleになったときにキャプチャ解放。
             bool anyActive = _state[0] != BtnState.Idle
@@ -1199,6 +1392,9 @@ namespace Poly_Ling.Player
                 if (prev == BtnState.Dragging || prev == BtnState.Pressed)
                     OnDragEnd?.Invoke(btn, MousePosition, mods);
             }
+            // 強制解除（フォーカス喪失等）では縦横制限も解除する。
+            AxisConstraint?.Reset();
+            _lastMods.Shift = false;
         }
 
         // キャプチャロスト時の座標用（最後のポインター座標を保持）

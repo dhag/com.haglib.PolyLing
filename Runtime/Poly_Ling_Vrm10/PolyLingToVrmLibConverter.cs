@@ -190,7 +190,6 @@ namespace Poly_Ling.Vrm10Impl
 
                 switch (mc.Type)
                 {
-                    case MeshType.Morph:
                     case MeshType.RigidBody:
                     case MeshType.RigidBodyJoint:
                         continue;
@@ -324,8 +323,7 @@ namespace Poly_Ling.Vrm10Impl
             {
                 var mc = model.GetMeshContext(i);
                 if (mc?.MeshObject == null) continue;
-                if (mc.Type == MeshType.Morph ||
-                    mc.Type == MeshType.RigidBody ||
+                if (mc.Type == MeshType.RigidBody ||
                     mc.Type == MeshType.RigidBodyJoint) continue;
 
                 total++;

@@ -501,12 +501,13 @@ namespace Poly_Ling.Player
             };
             _morphSubPanel.Build(_layoutRoot.MorphSection);
 
-            _morphCreateSubPanel = new PlayerMorphCreateSubPanel
+            _shapeSubPanel = new PlayerShapeSubPanel
             {
-                GetProject          = () => ActiveProjectView,
-                SendCommand         = cmd => DispatchHost(cmd),
+                GetView     = () => ActiveProjectView,
+                SendCommand = cmd => DispatchHost(cmd),
+                GetLastMqoSummary = () => _commandDispatcher?.LastShapeMqoSummary ?? "",
             };
-            _morphCreateSubPanel.Build(_layoutRoot.MorphCreateSection);
+            _shapeSubPanel.Build(_layoutRoot.ShapeSection);
 
             _tposeSubPanel = new PlayerTPoseSubPanel
             {

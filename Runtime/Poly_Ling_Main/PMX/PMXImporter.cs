@@ -349,6 +349,10 @@ namespace Poly_Ling.PMX
             // ミラーペア検出・構築（常に実行）
             DetectAndBuildMirrorPairs(result, boneContextCount, settings);
 
+            // ミラー側の形を実体側から作り直す（PMXImporter.Morph.cs の SyncImportedMirrorShapes）。
+            if (result.Shapes.Count > 0)
+                SyncImportedMirrorShapes(result);
+
             // ボーンを読まないとき、頂点のウェイトは PMX のボーン番号を指したまま残る。
             // 描画はウェイトの番号をモデル内のオブジェクト番号として引くので、ボーンの無いモデルでは
             // 範囲外や別のオブジェクトを引いて形が飛ぶ。部分インポート（KeepSourceBoneWeights）以外では捨てる。

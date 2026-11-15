@@ -2,7 +2,7 @@
 // モデルファイル (.mfmodel) のインポート/エクスポート
 // Phase7: マルチマテリアル対応版
 // Phase5: ModelContext統合
-// Phase Morph: モーフ基準データ対応
+// （旧モーフの基準データは段 7 で撤去。種類 Morph の行を含む保存データは読まない）
 // Phase BonePose: BonePoseData対応
 //
 // 【分割先】このファイルから次へ分けてある。
@@ -77,6 +77,8 @@ namespace Poly_Ling.Serialization
                 vertexDTO.SetBoneWeight(vertex.BoneWeight);
                 vertexDTO.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
                 vertexDTO.SetControlPoints(vertex.ControlPoints);
+                vertexDTO.SetShapes(vertex.Shapes);
+                vertexDTO.SetUVShapes(vertex.UVShapes);
                 vertexDTO.f = (byte)vertex.Flags;
                 meshDTO.vertices.Add(vertexDTO);
             }
@@ -240,6 +242,8 @@ namespace Poly_Ling.Serialization
                 vertex.BoneWeight = vd.GetBoneWeight();
                 vertex.MirrorBoneWeight = vd.GetMirrorBoneWeight();
                 vertex.ControlPoints = vd.GetControlPoints();
+                vertex.Shapes = vd.GetShapes();
+                vertex.UVShapes = vd.GetUVShapes();
                 vertex.Flags = (VertexFlags)vd.f;
                 meshObject.Vertices.Add(vertex);
             }
@@ -389,9 +393,6 @@ namespace Poly_Ling.Serialization
                 mirrorGeometryDerived   = mc.MirrorGeometryDerived,
                 detachedMirrorObjectId  = mc.DetachedMirrorObjectId,
                 hasBakedMirrorChild     = mc.HasBakedMirrorChild,
-                morphParentIndex        = mc.MorphParentIndex,
-                morphMirrorPolicy       = (int)mc.MorphMirrorPolicy,
-                mirrorOfMorphIndex      = mc.MirrorOfMorphIndex,
                 excludeFromExport       = mc.ExcludeFromExport,
                 ignorePoseInArmature    = mc.IgnorePoseInArmature,
                 isMirrorBranchRoot      = mc.IsMirrorBranchRoot,
@@ -399,10 +400,6 @@ namespace Poly_Ling.Serialization
                 preserveNormals         = mc.PreserveNormals,
                 exportSettingsDTO       = ToBoneTransformDTO(mc.BoneTransform),
             };
-
-            // モーフ基準データ
-            if (mc.IsMorph)
-                meta.morphBaseData = ToMorphBaseDataDTO(mc.MorphBaseData);
 
             // BonePoseData
             if (mc.BonePoseData != null)
@@ -454,9 +451,6 @@ namespace Poly_Ling.Serialization
                 MirrorGeometryDerived  = meta.mirrorGeometryDerived,
                 DetachedMirrorObjectId = meta.detachedMirrorObjectId,
                 HasBakedMirrorChild    = meta.hasBakedMirrorChild,
-                MorphParentIndex       = meta.morphParentIndex,
-                MorphMirrorPolicy      = (MorphMirrorPolicy)meta.morphMirrorPolicy,
-                MirrorOfMorphIndex     = meta.mirrorOfMorphIndex,
                 ExcludeFromExport      = meta.excludeFromExport,
                 IgnorePoseInArmature   = meta.ignorePoseInArmature,
                 IsMirrorBranchRoot     = meta.isMirrorBranchRoot,
@@ -466,10 +460,6 @@ namespace Poly_Ling.Serialization
                                          ? ToBoneTransform(meta.exportSettingsDTO)
                                          : null,
             };
-
-            // モーフ基準データ
-            if (meta.morphBaseData != null)
-                mc.MorphBaseData = ToMorphBaseData(meta.morphBaseData);
 
             // BonePoseData
             if (meta.bonePoseData != null)
@@ -521,6 +511,8 @@ namespace Poly_Ling.Serialization
                 vd.SetBoneWeight(vertex.BoneWeight);
                 vd.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
                 vd.SetControlPoints(vertex.ControlPoints);
+                vd.SetShapes(vertex.Shapes);
+                vd.SetUVShapes(vertex.UVShapes);
                 vd.f = (byte)vertex.Flags;
                 geo.vertices.Add(vd);
             }

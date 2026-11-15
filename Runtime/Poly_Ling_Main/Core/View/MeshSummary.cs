@@ -86,10 +86,6 @@ namespace Poly_Ling.View
         public int BoneIndex { get; }
         public BonePoseSummary BonePoseData { get; }
 
-        // モーフ情報
-        public bool IsMorph { get; }
-        public int MorphParentIndex { get; }
-        public string MorphName { get; }
         public bool ExcludeFromExport { get; }
         public bool IgnorePoseInArmature { get; }
         public bool PreserveNormals { get; }
@@ -172,7 +168,7 @@ namespace Poly_Ling.View
             MirrorType = 0; MirrorAxis = 1; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
             MirrorGeometryDerived = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
-            IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
+            ExcludeFromExport = false; IgnorePoseInArmature = false;
             PreserveNormals = false; IsMirrorBranchRoot = false; MirrorBranchSameSense = false;
             Billboard = BillboardMode.Off;
             ObjectId = 0UL; EditorName = "";
@@ -187,7 +183,7 @@ namespace Poly_Ling.View
             int depth, int hierarchyParentIndex,
             int mirrorType, bool isBakedMirror, bool isMirrorSide, bool isRealSide, bool hasBakedMirrorChild,
             int boneIndex, BonePoseSummary bonePose,
-            bool isMorph, int morphParentIndex, string morphName, bool excludeFromExport,
+            bool excludeFromExport,
             bool ignorePoseInArmature = false,
             bool preserveNormals = false,
             ulong objectId = 0UL,
@@ -208,8 +204,7 @@ namespace Poly_Ling.View
             IsMirrorSide = isMirrorSide; IsRealSide = isRealSide; HasBakedMirrorChild = hasBakedMirrorChild;
             MirrorGeometryDerived = mirrorGeometryDerived;
             BoneIndex = boneIndex; BonePoseData = bonePose;
-            IsMorph = isMorph; MorphParentIndex = morphParentIndex;
-            MorphName = morphName ?? ""; ExcludeFromExport = excludeFromExport;
+            ExcludeFromExport = excludeFromExport;
             IgnorePoseInArmature = ignorePoseInArmature;
             PreserveNormals = preserveNormals;
             IsMirrorBranchRoot = isMirrorBranchRoot;
@@ -266,7 +261,7 @@ namespace Poly_Ling.View
                 ctx.Depth, ctx.HierarchyParentIndex,
                 ctx.MirrorType, ctx.IsBakedMirror, isMirrorSide, isRealSide, ctx.HasBakedMirrorChild,
                 boneIndex, bonePose,
-                ctx.IsMorph, ctx.MorphParentIndex, ctx.MorphName, ctx.ExcludeFromExport,
+                ctx.ExcludeFromExport,
                 ctx.IgnorePoseInArmature,
                 ctx.PreserveNormals,
                 ctx.ObjectId,

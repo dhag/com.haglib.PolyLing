@@ -13,9 +13,10 @@
 //       "bakedBones"（BVH・FBX・VRMA の読込、bakedBones だけの .plmotion）: bakedBones の
 //         正準ローカル回転を UnityClipApplier.ApplyFrame(…, canonLocals) で当てる。
 //         マッスルで表せない回転（肩・手のねじり、前腕・すねの横曲げ）も残る。
-//   - expressions: モデルの MorphExpression を名前（Name、無ければ NameEnglish）で引き、
-//       頂点モーフの差分を基準メッシュの WorkingPositions へ重みを掛けて足す
-//       （MorphPreviewState.Apply と同じ置き場所）。グループモーフは MeshEntries で展開する（ExpandToVertexMorphs）。
+//   - expressions: 名前を「表情の名前 → 形の名前」の順に解き（ShapeBlendOps.Resolve。Name、無ければ NameEnglish）、
+//       形・旧モーフの差分を描画オブジェクトの WorkingPositions へ重みを掛けて足す
+//       （ShapeBlendBuffer。表情の試し表示と同じ 1 系統。PolyLing_モーフ整理計画.md 3.6）。
+//       足し込みは基本の形への差分なので、再生する側（MotionClipHandler）が基本の形へ切り替えてから当てる。
 //       頂点モーフ以外の種類（ボーン・UV・材質など）は未対応として報告する。
 //       provider は解決に使っていない（どの provider でも名前で引く）。
 //
@@ -137,20 +138,13 @@ namespace Poly_Ling.Motion
         // 競合で外した path トラック
         private readonly HashSet<MotionTrackDTO> _conflicted = new HashSet<MotionTrackDTO>();
 
-        // 表情の結び付け
-        private sealed class OffsetEntry
-        {
-            public int BaseIndex;
-            public List<(int VertexIndex, Vector3 Offset)> Offsets;
-            public float Weight;
-        }
-        private sealed class ExpressionBinding
-        {
-            public MotionExpressionTrackDTO Track;
-            public readonly List<OffsetEntry> Entries = new List<OffsetEntry>();
-        }
-        private readonly List<ExpressionBinding> _expressionBindings = new List<ExpressionBinding>();
-        private readonly HashSet<int> _touchedBases = new HashSet<int>();
+        // 表情の結び付け（トラック 1 本＝足し込みのチャンネル 1 つ）
+        private readonly List<MotionExpressionTrackDTO> _expressionTracks = new List<MotionExpressionTrackDTO>();
+        private readonly Poly_Ling.Ops.ShapeBlendBuffer _expressionBlend = new Poly_Ling.Ops.ShapeBlendBuffer();
+        private float[] _expressionWeights = Array.Empty<float>();
+
+        /// <summary>表情トラックがモデルの形・旧モーフに 1 本でも当たったか（再生前に基本の形へ切り替える判断に使う）。</summary>
+        public bool HasExpressionBindings => _expressionTracks.Count > 0;
 
         /// <summary>
         /// 表情適用で WorkingPositions を書き換えた基準メッシュの表示を更新する口。
@@ -247,8 +241,8 @@ namespace Poly_Ling.Motion
             if (_mappedModel != null)
             {
                 ClearExpressionBuffers(_mappedModel);
-                _touchedBases.Clear();
-                _expressionBindings.Clear();
+                _expressionBlend.Reset();
+                _expressionTracks.Clear();
             }
 
             _mappedModel = model;
@@ -289,8 +283,9 @@ namespace Poly_Ling.Motion
         {
             if (_mappedModel != null) ClearExpressionBuffers(_mappedModel);
             _conflicted.Clear();
-            _expressionBindings.Clear();
-            _touchedBases.Clear();
+            _expressionBlend.Reset();
+            _expressionTracks.Clear();
+            _expressionWeights = Array.Empty<float>();
 
             var rep = new MotionBindingReport();
             BindingReport = rep;
@@ -399,76 +394,34 @@ namespace Poly_Ling.Motion
                     continue;
                 }
 
-                var expr = FindExpression(model, tr.name);
-                if (expr == null)
+                // 名前は「表情の名前 → 形の名前」の順（ShapeBlendOps。旧モーフと同じ名前の形があれば形を使う）。
+                var terms = new List<Poly_Ling.Ops.MorphTargetTerm>();
+                var found = Poly_Ling.Ops.ShapeBlendOps.Resolve(model, tr.name, 1f, terms);
+                if (found == Poly_Ling.Ops.MorphTargetResolve.None)
                 {
-                    rep.Add(MotionFileCodes.UnknownExpression, $"{tr.name}（同じ名前のモーフがありません）");
+                    rep.Add(MotionFileCodes.UnknownExpression, $"{tr.name}（同じ名前の表情・形がありません）");
                     continue;
                 }
 
-                var binding = new ExpressionBinding { Track = tr };
-                ExpandToVertexMorphs(model, expr, 1f, (morphIndex, baseIndex, morphCtx, w) =>
+                _expressionBlend.AddChannel(model, terms, out int entries);
+                if (entries == 0)
                 {
-                    var offsets = morphCtx.GetMorphOffsets();
-                    if (offsets == null || offsets.Count == 0) return;
-                    binding.Entries.Add(new OffsetEntry { BaseIndex = baseIndex, Offsets = offsets, Weight = w });
-                });
-                if (binding.Entries.Count == 0)
-                {
-                    rep.Add(MotionFileCodes.UnknownExpression, $"{tr.name}（頂点モーフを含みません: {expr.Type}）");
+                    // チャンネル番号を詰めるため作り直さず、重み 0 のまま空のチャンネルとして残す。
+                    _expressionTracks.Add(null);
+                    var expr = Poly_Ling.Ops.ShapeBlendOps.FindExpression(model, tr.name);
+                    rep.Add(MotionFileCodes.UnknownExpression,
+                        expr != null ? $"{tr.name}（頂点モーフを含みません: {expr.Type}）" : $"{tr.name}（形に差分がありません）");
                     continue;
                 }
 
-                foreach (var e in binding.Entries) _touchedBases.Add(e.BaseIndex);
-                _expressionBindings.Add(binding);
+                _expressionTracks.Add(tr);
                 rep.ExpressionResolved++;
             }
-        }
-
-        /// <summary>表情トラックの名前からモデルの表情を引く（Name、無ければ NameEnglish の完全一致）。</summary>
-        public static MorphExpression FindExpression(ModelContext model, string name)
-        {
-            if (model?.MorphExpressions == null || string.IsNullOrEmpty(name)) return null;
-            foreach (var e in model.MorphExpressions)
-                if (e != null && string.Equals(e.Name, name, StringComparison.Ordinal)) return e;
-            foreach (var e in model.MorphExpressions)
-                if (e != null && string.Equals(e.NameEnglish, name, StringComparison.Ordinal)) return e;
-            return null;
-        }
-
-        /// <summary>
-        /// 表情を頂点モーフ（モーフ MeshContext）へ展開する。頂点モーフとグループモーフは
-        /// MeshEntries（モーフメッシュと重み）で展開する。モーフのパネルの試し当て
-        /// （MorphExpressionHandler → MorphPreviewState.BuildMorphBasePairs）と同じ規則。
-        /// グループは取り込み（PMX・VRM）で子のモーフメッシュを重み付きで MeshEntries に展開して持ち、
-        /// 子の表情そのものは一覧から外すので、GroupChildren（PMX 書き出しの構造用）の名前では辿れない
-        /// （以前は GroupChildren で辿り、グループの表情は何も動かなかった。PolyLing_Blender不具合修正計画.md の 9）。
-        /// それ以外の種類は何も返さない。
-        /// 再生（BuildExpressionBindings）と FBX 書き出しのブレンドシェイプ曲線が同じ展開を使う。
-        /// </summary>
-        /// <param name="visit">(モーフ MeshContext 索引, 基準メッシュ索引, モーフ MeshContext, 重み)。</param>
-        public static void ExpandToVertexMorphs(ModelContext model, MorphExpression expr, float weight,
-            Action<int, int, MeshContext, float> visit)
-        {
-            if (visit == null) return;
-            ExpandToVertexMorphs(model, expr, weight, visit, new HashSet<MorphExpression>());
-        }
-
-        private static void ExpandToVertexMorphs(ModelContext model, MorphExpression expr, float weight,
-            Action<int, int, MeshContext, float> visit, HashSet<MorphExpression> visiting)
-        {
-            if (expr == null || !visiting.Add(expr)) return;
-            try
-            {
-                if (expr.Type != MorphType.Vertex && expr.Type != MorphType.Group) return;
-
-                foreach (var (morphIndex, baseIndex, morphCtx, baseCtx, w) in MorphPreviewState.BuildMorphBasePairs(model, expr))
-                    visit(morphIndex, baseIndex, morphCtx, weight * w);
-            }
-            finally
-            {
-                visiting.Remove(expr);
-            }
+            _expressionWeights = new float[_expressionTracks.Count];
+            // 当たったトラックが 1 本も無ければ空にする（HasExpressionBindings を false に）。
+            bool anyTrack = false;
+            foreach (var t in _expressionTracks) if (t != null) { anyTrack = true; break; }
+            if (!anyTrack) { _expressionTracks.Clear(); _expressionBlend.Reset(); _expressionWeights = Array.Empty<float>(); }
         }
 
         // ================================================================
@@ -728,56 +681,24 @@ namespace Poly_Ling.Motion
         // 表情: 触る基準メッシュの WorkingPositions を 0 にしてから、全表情の差分を足す。
         private int ApplyExpressions(ModelContext model, float timeSec)
         {
-            if (_expressionBindings.Count == 0) return 0;
-
-            foreach (int baseIndex in _touchedBases)
-            {
-                var baseCtx = model.GetMeshContext(baseIndex);
-                var mo = baseCtx?.MeshObject;
-                if (mo == null) continue;
-                if (baseCtx.WorkingPositions == null || baseCtx.WorkingPositions.Length != mo.VertexCount)
-                    baseCtx.WorkingPositions = new Vector3[mo.VertexCount];
-                else
-                    Array.Clear(baseCtx.WorkingPositions, 0, baseCtx.WorkingPositions.Length);
-            }
+            if (_expressionTracks.Count == 0) return 0;
 
             int applied = 0;
-            foreach (var b in _expressionBindings)
+            for (int i = 0; i < _expressionTracks.Count; i++)
             {
-                float w = MotionCurveMath.EvaluateScalar(b.Track, timeSec);
+                var tr = _expressionTracks[i];
+                if (tr == null) { _expressionWeights[i] = 0f; continue; }
+                _expressionWeights[i] = MotionCurveMath.EvaluateScalar(tr, timeSec);
                 applied++;
-                if (w == 0f) continue;
-
-                foreach (var e in b.Entries)
-                {
-                    var wp = model.GetMeshContext(e.BaseIndex)?.WorkingPositions;
-                    if (wp == null) continue;
-                    float k = e.Weight * w;
-                    foreach (var (vi, off) in e.Offsets)
-                        if (vi >= 0 && vi < wp.Length) wp[vi] += off * k;
-                }
             }
-
-            if (SyncMeshPositions != null)
-                foreach (int baseIndex in _touchedBases)
-                {
-                    var baseCtx = model.GetMeshContext(baseIndex);
-                    if (baseCtx?.MeshObject != null) SyncMeshPositions(baseCtx);
-                }
-
+            _expressionBlend.Apply(model, _expressionWeights, SyncMeshPositions);
             return applied;
         }
 
         private void ClearExpressionBuffers(ModelContext model)
         {
             if (model == null) return;
-            foreach (int baseIndex in _touchedBases)
-            {
-                var baseCtx = model.GetMeshContext(baseIndex);
-                if (baseCtx == null || baseCtx.WorkingPositions == null) continue;
-                baseCtx.WorkingPositions = null;
-                if (baseCtx.MeshObject != null) SyncMeshPositions?.Invoke(baseCtx);
-            }
+            _expressionBlend.Clear(model, SyncMeshPositions);
         }
 
         // ================================================================

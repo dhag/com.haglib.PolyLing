@@ -68,6 +68,7 @@ namespace Poly_Ling.EditorIO
         public bool TolerantMirrorBranch      = true;   // ミラー設定漏れを許容
         public bool AttachSpringBones         = true;   // 揺れもの（UniVRM の SpringBone）をプレファブに付ける。VRM パッケージが無ければ付けない
         public bool ApplyModifiers            = true;   // モディファイアを適用した形を元の名前で書き出す。切ると元のメッシュだけ
+        public bool ExportMorphTargets        = true;   // 形・モーフをブレンドシェイプとして載せる（モーフ整理計画 3.9。以前は載せていなかった）
 
         /// <summary>レンダラ種別。定義は Runtime（HierarchyRendererMode）が正本。</summary>
         public HierarchyRendererMode RendererMode = HierarchyRendererMode.Auto;
@@ -367,6 +368,8 @@ namespace Poly_Ling.EditorIO
 
             // モディファイアの元と結果を 1 つのオブジェクトにして書く（ワールド行列を計算した後で写す）。
             model = Poly_Ling.Modifiers.ModifierExportView.For(model, _opt.ApplyModifiers);
+            // 今の形に関係なく基本の形をベースに書く（PolyLing_モーフ整理計画.md 3.9）。
+            model = Poly_Ling.Ops.ShapeExportView.For(model);
 
             WarnAboutExpectations(model);
 
@@ -1131,6 +1134,7 @@ namespace Poly_Ling.EditorIO
                 ExportPhysics             = _opt.ExportPhysics,
                 TolerantMirrorBranch      = _opt.TolerantMirrorBranch,
                 RendererMode              = _opt.RendererMode,
+                ExportMorphTargets        = _opt.ExportMorphTargets,
             };
         }
     }

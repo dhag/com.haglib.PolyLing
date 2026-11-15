@@ -82,6 +82,7 @@ namespace Poly_Ling.Vrm10Impl
                 result.MeshContexts.AddRange(r.MeshContexts);
                 result.MaterialReferences.AddRange(r.MaterialReferences);
                 result.MorphExpressions.AddRange(r.MorphExpressions);
+                result.Shapes.AddRange(r.Shapes);
                 result.Warnings.AddRange(r.Warnings);
 
                 foreach (string w in result.Warnings)

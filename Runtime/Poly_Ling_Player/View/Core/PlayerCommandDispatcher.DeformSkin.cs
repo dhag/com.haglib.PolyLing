@@ -741,6 +741,7 @@ namespace Poly_Ling.Player
 
                         var cloned = srcMesh.Clone();
                         cloned.Name = srcMesh.Name + "_MP";
+                        Poly_Ling.Ops.ShapeOps.ClearShapes(cloned);   // 変形して作る別オブジェクトは形を運ばない
                         for (int i = 0; i < vertexCount; i++) cloned.Vertices[i].Position = positions[i];
 
                         var mpNewMc = new MeshContext
@@ -812,6 +813,7 @@ namespace Poly_Ling.Player
                         var hbSrc  = hbHeadMc.MeshObject;
                         var cloned = hbSrc.Clone();
                         cloned.Name = hbSrc.Name + "_MP";
+                        Poly_Ling.Ops.ShapeOps.ClearShapes(cloned);   // 変形して作る別オブジェクトは形を運ばない
                         var toLocal = hbHeadMc.WorldToVertexMatrix;
                         for (int i = 0; i < cloned.VertexCount; i++) cloned.Vertices[i].Position = toLocal.MultiplyPoint3x4(hbWorld[i]);
                         int hbTextured = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyFaceTexture(
@@ -842,6 +844,7 @@ namespace Poly_Ling.Player
 
                             var half = hbSrc.Clone();
                             half.Name = hbSrc.Name + "_MP_対称";
+                            Poly_Ling.Ops.ShapeOps.ClearShapes(half);   // 変形して作る別オブジェクトは形を運ばない
                             for (int i = 0; i < half.VertexCount; i++) half.Vertices[i].Position = toLocal.MultiplyPoint3x4(halfWorld[i]);
                             // 顔面の材質と UV（詰める前の、元の頭部と同じ頂点番号のうちに当てる）
                             Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyFaceTexture(
@@ -893,6 +896,7 @@ namespace Poly_Ling.Player
                             var tgSrc = tgMc.MeshObject;
                             var tg = tgSrc.Clone();
                             tg.Name = tgSrc.Name + "_MP";
+                            Poly_Ling.Ops.ShapeOps.ClearShapes(tg);   // 変形して作る別オブジェクトは形を運ばない
                             var tgToLocal = tgMc.WorldToVertexMatrix;
                             for (int i = 0; i < tg.VertexCount; i++) tg.Vertices[i].Position = tgToLocal.MultiplyPoint3x4(tgWorld[i]);
                             tgTextured = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyTargetTexture(
@@ -1007,6 +1011,7 @@ namespace Poly_Ling.Player
 
                             var cloned = ftSrc.Clone();
                             cloned.Name = ftSrc.Name + "_MP";
+                            Poly_Ling.Ops.ShapeOps.ClearShapes(cloned);   // 変形して作る別オブジェクトは形を運ばない
                             int movedCount = 0;
                             for (int i = 0; i < vertexCount; i++)
                             {

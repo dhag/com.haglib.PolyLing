@@ -213,7 +213,7 @@ namespace Poly_Ling.Player
         public VisualElement MergeMeshesSection    { get; private set; }
         public VisualElement BooleanSection        { get; private set; }
         public VisualElement MorphSection          { get; private set; }
-        public VisualElement MorphCreateSection    { get; private set; }
+        public VisualElement ShapeSection          { get; private set; }
         public VisualElement TPoseSection          { get; private set; }
         public VisualElement HumanoidMappingSection { get; private set; }
         public VisualElement MirrorSection         { get; private set; }
@@ -583,7 +583,7 @@ namespace Poly_Ling.Player
             MergeMeshesSection         = AddSection(visible: false, kind: RightPanelKind.General);
             BooleanSection             = AddSection(visible: false, kind: RightPanelKind.General);
             MorphSection               = AddSection(visible: false, kind: RightPanelKind.General);
-            MorphCreateSection         = AddSection(visible: false, kind: RightPanelKind.General);
+            ShapeSection               = AddSection(visible: false, kind: RightPanelKind.General);
             TPoseSection               = AddSection(visible: false, kind: RightPanelKind.General);
             HumanoidMappingSection     = AddSection(visible: false, kind: RightPanelKind.General);
             MirrorSection              = AddSection(visible: false, kind: RightPanelKind.General);

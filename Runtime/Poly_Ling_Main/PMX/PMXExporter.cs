@@ -49,6 +49,8 @@ namespace Poly_Ling.PMX
             {
                 // モディファイアの元と結果を 1 つのオブジェクトにして書く。
                 model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+                // 今の形に関係なく基本の形をベースに書く（PolyLing_モーフ整理計画.md 3.9）。
+                model = ShapeExportView.For(model);
 
                 // PMXDocumentを構築
                 var document = BuildPMXDocument(model, settings);
@@ -419,11 +421,11 @@ namespace Poly_Ling.PMX
             for (int i = 0; i < meshContexts.Count; i++)
                 if (meshContexts[i]?.Type == MeshType.Bone) boneNameByMaster[i] = meshContexts[i].Name;
 
-            var vertexMaps = ConvertMeshes(meshOnlyContexts, document, boneNameByMaster, settings);
+            var vertexMaps = ConvertMeshes(meshOnlyContexts, document, boneNameByMaster, settings, out var contextMaps);
 
-            // モーフを出力する。取り込み時に保持した内容から作り直し、
+            // モーフを出力する。形と、取り込み時に保持した内容から作り直し、
             // PolyLing が扱わない種類は元の PMX からそのまま写す。
-            ConvertMorphs(model, document, vertexMaps, settings);
+            ConvertMorphs(model, document, contextMaps, settings);
 
             // 剛体・JOINT を MeshObject データから再構築（段階③）。
             // RigidBodyData/JointData を持つコンテキストが1つでも存在すれば

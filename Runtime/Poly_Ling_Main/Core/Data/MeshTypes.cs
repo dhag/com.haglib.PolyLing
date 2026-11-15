@@ -26,8 +26,8 @@ namespace Poly_Ling.Data
         Mesh = 0,
         /// <summary>ボーン</summary>
         Bone = 1,
-        /// <summaryモーフオブジェクト</summary>
-        Morph = 2,
+        // 2 はモーフオブジェクト（段 7 で廃止。PolyLing_モーフ整理計画.md 3.12）の欠番。
+        // 保存は番号で書くので詰めない。
         /// <summary>剛体オブジェクト</summary>
         RigidBody = 3,
         /// <summary>剛体ジョイントオブジェクト</summary>

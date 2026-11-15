@@ -10,13 +10,15 @@
 // 【取り出し元】（すべて実データ。宣言や推測ではない）
 //   hasBones          … ModelContext.HasBones
 //   hasSkinWeights    … いずれかの MeshContext.IsSkinned
-//   hasMorphs         … ModelContext.HasMorphExpressions、またはモーフ種別のメッシュがある
+//   hasMorphs         … 形（ModelContext.Shapes）か表情（ModelContext.HasMorphExpressions）がある
 //   hasHumanoid       … HumanoidMapping が空でない
 //   humanoidComplete  … HumanoidMapping.CanCreateAvatar（必須ボーンが揃っている）
 //   hasCustomRig      … ボーンはあるが Humanoid 割当が空
 //   hasSpringBones    … いずれかの MeshObject.SpringBoneJoint / SpringBoneChainRoot が非 null
 //   hasMirrorRelation … いずれかの MeshContext.IsMirrored、または ModelContext.MirrorPairs がある
-//   topologyLocked    … hasSkinWeights または hasMorphs（頂点の増減でウェイトかモーフが壊れる状態）
+//   topologyLocked    … hasSkinWeights（頂点の増減でウェイトが壊れる状態）。
+//                       形は頂点が持つので頂点の増減で壊れない（新しい頂点はどの形でも同じ位置。
+//                       PolyLing_モーフ整理計画.md 3.3・段 7）。形の有無では決めない。
 //
 //   方針書 7.2 の hasAnimation と exportReady は、モデルに持つ欄と判定の基準が無いので扱わない。
 //
@@ -58,7 +60,7 @@ namespace Poly_Ling.Data
 
             s.HasModel = true;
             s.HasBones = model.HasBones;
-            s.HasMorphs = model.HasMorphExpressions || (model.Morphs?.Count ?? 0) > 0;
+            s.HasMorphs = model.HasMorphExpressions || (model.Shapes?.Count ?? 0) > 0;
 
             var mapping = model.HumanoidMapping;
             s.HasHumanoid      = mapping != null && !mapping.IsEmpty;
@@ -80,7 +82,7 @@ namespace Poly_Ling.Data
                     s.HasSpringBones = true;
             }
 
-            s.TopologyLocked = s.HasSkinWeights || s.HasMorphs;
+            s.TopologyLocked = s.HasSkinWeights;
             return s;
         }
 
@@ -104,7 +106,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// コマンドの危険性のうち、いまのモデル状態で実際に壊すものがある組み合わせを返す。
-        /// 例：InvalidatesMorphs を持つコマンドを、モーフがあるモデルで実行する。
+        /// 例：InvalidatesMorphs を持つコマンドを、形か表情があるモデルで実行する。
         /// 対応：InvalidatesSkinWeights と ChangesBindPose → hasSkinWeights、InvalidatesMorphs → hasMorphs、
         ///       BreaksMirrorRelation → hasMirrorRelation。
         /// </summary>

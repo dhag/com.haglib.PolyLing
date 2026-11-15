@@ -259,7 +259,8 @@ namespace Poly_Ling.Player
                 PLDataValue.Num("meshContexts",    model.Count),
                 PLDataValue.Num("drawables",       model.DrawableCount),
                 PLDataValue.Num("bones",           model.BoneCount),
-                PLDataValue.Num("morphs",          model.Morphs.Count),
+                PLDataValue.Num("shapes",          model.ShapeCount),
+                PLDataValue.Num("expressions",     model.MorphExpressionCount),
                 PLDataValue.Num("rigidBodies",     model.RigidBodies.Count),
                 PLDataValue.Num("rigidBodyJoints", model.RigidBodyJoints.Count),
                 PLDataValue.Num("helpers",         model.Helpers.Count),
@@ -317,7 +318,8 @@ namespace Poly_Ling.Player
                 .Int("meshContexts", model.Count)
                 .Int("drawables",    model.DrawableCount)
                 .Int("bones",        model.BoneCount)
-                .Int("morphs",       model.Morphs.Count)
+                .Int("shapes",       model.ShapeCount)
+                .Int("expressions",  model.MorphExpressionCount)
                 .Build();
         }
 

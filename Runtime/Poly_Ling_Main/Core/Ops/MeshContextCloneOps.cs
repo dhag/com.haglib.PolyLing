@@ -5,10 +5,10 @@
 // 【なぜ 1 本にするか】
 //   複製は 3 箇所で別々に書かれていて、写す項目が食い違っていた。
 //     ・MeshListRecords.CloneMeshContext  … Undo/Redo 用。ほぼ全項目を写す
-//     ・BlendOperation.CloneContext       … ブレンド用。ミラー・モーフ関係を写さない
+//     ・BlendOperation.CloneContext       … ブレンド用。ミラー関係を写さない
 //     ・PlayerCommandDispatcher の複製     … 5 項目しか写さない
 //   3 番目は MeshContext 側の実体フィールド（BindPose / BonePoseData /
-//   MorphBaseData / ミラー設定ほか）を丸ごと落としていた。
+//   ミラー設定ほか）を丸ごと落としていた。
 //   フィールドを 1 つ足すたびに 3 箇所へ手で足す形になっていたのが原因なので、
 //   写す規則をここへ集める。
 //
@@ -183,12 +183,6 @@ namespace Poly_Ling.Ops
                 dst.HasBakedMirrorChild    = false;
                 dst.DetachedMirrorObjectId = 0;
             }
-
-            // ── モーフ
-            dst.MorphBaseData      = src.MorphBaseData?.Clone();
-            dst.MorphParentIndex   = src.MorphParentIndex;
-            dst.MorphMirrorPolicy  = src.MorphMirrorPolicy;
-            dst.MirrorOfMorphIndex = src.MirrorOfMorphIndex;
 
             // ── エクスポート
             dst.ExcludeFromExport = src.ExcludeFromExport;

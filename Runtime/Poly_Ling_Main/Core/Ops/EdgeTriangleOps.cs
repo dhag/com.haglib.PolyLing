@@ -85,6 +85,7 @@ namespace Poly_Ling.Ops
             var vtx = (edgeT < 0.5f ? va : vb).Clone();
             vtx.Id = 0;
             vtx.Position = position;
+            ShapeOps.ClearShapes(vtx);   // 新しい頂点は形の控えを持たない（複製元の位置へ飛ばないように）
             Vector2 uvA = slotA < va.UVs.Count ? va.UVs[slotA] : Vector2.zero;
             Vector2 uvB = slotB < vb.UVs.Count ? vb.UVs[slotB] : Vector2.zero;
             vtx.UVs     = new List<Vector2> { Vector2.Lerp(uvA, uvB, edgeT) };

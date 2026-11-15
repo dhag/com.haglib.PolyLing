@@ -61,6 +61,8 @@ namespace Poly_Ling.Fbx
 
             // モディファイアの元と結果を 1 つのオブジェクトにして書く。
             model = Poly_Ling.Modifiers.ModifierExportView.For(model, settings.ApplyModifiers);
+            // 今の形に関係なく基本の形をベースに書く（PolyLing_モーフ整理計画.md 3.9）。
+            model = Poly_Ling.Ops.ShapeExportView.For(model);
 
             HierarchyBuildResult built = null;
             try

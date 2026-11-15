@@ -99,9 +99,9 @@
 //   → VertexSubIds → FaceIndices → FaceMaterials → FaceFlags → FaceIds
 //   → FaceUVIndices → FaceNormalIndices
 //   → NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets
-//   → NormalExcludeLocks
-//     （この 6 つは MeshFieldFlags.Extras。All には入れず Complete で送る。2026-09-30 追加、
-//       NormalExcludeLocks は 2026-10-01 追加）
+//   → NormalExcludeLocks → Shapes
+//     （この 7 つは MeshFieldFlags.Extras。All には入れず Complete で送る。2026-09-30 追加、
+//       NormalExcludeLocks は 2026-10-01 追加、Shapes は 2026-11-15 追加）
 //
 //   VertexSubIds(0x0040) は SubID / PartsID を運ぶ後付けのブロックで、
 //   VertexIds(0x0020) の中身は変えていない。読み手はヘッダの FieldFlags に
@@ -219,6 +219,16 @@ namespace Poly_Ling.Remote
         /// 2026-10-01 追加。読み手はフラグが立っているときだけ読むので、旧データはこのブロックを持たない。
         /// </summary>
         NormalExcludeLocks = 0x80000,
+        /// <summary>
+        /// 頂点の形ごとの位置（Vertex.Shapes。頂点ごとに [4B 個数] + 個数×([4B 形の番号] + 12B 位置)）。
+        /// NormalExcludeLocks の後に置く。形の一覧と今の形は PLRM（モデルの見出し）版 14 が運ぶ。
+        /// </summary>
+        Shapes            = 0x100000,
+        /// <summary>
+        /// 頂点の形ごとの UV（Vertex.UVShapes。UV スロット 0。頂点ごとに [4B 個数] + 個数×([4B 形の番号] + 8B UV)）。
+        /// Shapes の後に置く。形の種類は PLRM（モデルの見出し）版 16 が運ぶ。
+        /// </summary>
+        UVShapes          = 0x200000,
 
         // 複合
         VertexBasic    = Positions | Normals | UVs,
@@ -226,7 +236,7 @@ namespace Poly_Ling.Remote
         AllFace        = FaceIndices | FaceMaterials | FaceFlags | FaceIds | FaceUVIndices | FaceNormalIndices,
         All            = AllVertex | AllFace,
         /// <summary>All に追加の欄を足したもの。ファイル保存とプロジェクト転送で使う。</summary>
-        Extras         = NormalsExtra | MirrorBoneWeights | ControlPoints | LineGroups | NormalExcludeSets | NormalExcludeLocks,
+        Extras         = NormalsExtra | MirrorBoneWeights | ControlPoints | LineGroups | NormalExcludeSets | NormalExcludeLocks | Shapes | UVShapes,
         Complete       = All | Extras,
     }
 

@@ -59,6 +59,13 @@ namespace Poly_Ling.Data
         /// <summary>非表示</summary>
         Hidden = 1 << 2,
 
-        // 将来の拡張用に 3-7 を予約
+        /// <summary>
+        /// 曲線で見せる弦（ハンドルを持つ線分群の区間の 2 頂点の面）。線は描かず線分としても当てないが、
+        /// 非表示（Hidden）とは別で、端点の頂点の表示・当たり判定は折れ線の弦と同じに扱う。
+        /// 付け外しは LineGroupEditOps.SyncChordVisibility だけが行う。
+        /// </summary>
+        CurveChord = 1 << 3,
+
+        // 将来の拡張用に 4-7 を予約
     }
 }

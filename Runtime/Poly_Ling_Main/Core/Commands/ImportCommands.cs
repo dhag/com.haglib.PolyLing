@@ -97,6 +97,9 @@ namespace Poly_Ling.Commands
             foreach (var morph in result.MorphExpressions)
                 model.MorphExpressions.Add(morph);
 
+            // 形の一覧（頂点の控えは MeshContexts の頂点が持つ。PolyLing_モーフ整理計画.md 3.9・段 6）
+            model.Shapes.AddRange(result.Shapes);
+
             foreach (var pair in result.MirrorPairs)
                 model.MirrorPairs.Add(pair);
 
@@ -639,6 +642,9 @@ namespace Poly_Ling.Commands
             foreach (var morph in result.MorphExpressions)
                 model.MorphExpressions.Add(morph);
 
+            // 形の一覧（頂点の控えは MeshContexts の頂点が持つ。PolyLing_モーフ整理計画.md 3.9・段 6）
+            model.Shapes.AddRange(result.Shapes);
+
             model.SpringBoneColliderGroupNames = new System.Collections.Generic.List<string>(
                 result.SpringBoneColliderGroupNames);
             model.VrmMeta   = result.VrmMeta;
@@ -738,6 +744,9 @@ namespace Poly_Ling.Commands
             foreach (var morph in result.MorphExpressions)
                 model.MorphExpressions.Add(morph);
 
+            // 形の一覧（頂点の控えは MeshContexts の頂点が持つ。PolyLing_モーフ整理計画.md 3.9・段 6）
+            model.Shapes.AddRange(result.Shapes);
+
             // Humanoid の割当は glTF に無いが、per-bone から Dict を作る同期規約は同じ
             // （HumanoidMappingResolver.cs 冒頭）。
             Poly_Ling.Ops.HumanoidMappingResolver.RebuildMappingFromPerBone(model);
@@ -809,6 +818,9 @@ namespace Poly_Ling.Commands
 
             foreach (var morph in result.MorphExpressions)
                 model.MorphExpressions.Add(morph);
+
+            // 形の一覧（頂点の控えは MeshContexts の頂点が持つ。PolyLing_モーフ整理計画.md 3.9・段 6）
+            model.Shapes.AddRange(result.Shapes);
 
             // Humanoid の割当は FBX に無いが、per-bone から Dict を作る同期規約は同じ
             // （HumanoidMappingResolver.cs 冒頭）。

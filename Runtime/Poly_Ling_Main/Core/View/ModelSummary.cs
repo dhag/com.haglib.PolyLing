@@ -18,7 +18,6 @@ namespace Poly_Ling.View
         // カウント
         public int DrawableCount { get; }
         public int BoneCount { get; }
-        public int MorphCount { get; }
         public int TotalMeshCount { get; }
 
         // その他
@@ -28,12 +27,10 @@ namespace Poly_Ling.View
         // メッシュリスト（IMeshViewとして統一）
         public IReadOnlyList<IMeshView> DrawableList { get; }
         public IReadOnlyList<IMeshView> BoneList { get; }
-        public IReadOnlyList<IMeshView> MorphList { get; }
         public IReadOnlyList<IMeshView> RigidBodyList { get; }
         public IReadOnlyList<IMeshView> RigidBodyJointList { get; }
         public int[] SelectedDrawableIndices { get; }
         public int[] SelectedBoneIndices { get; }
-        public int[] SelectedMorphIndices { get; }
 
         // 選択辞書名（コンストラクタ引数を増やさずに済むよう set 可能にする）
         private IReadOnlyList<string> _meshSelectionSetNames = _emptyNames;
@@ -55,7 +52,7 @@ namespace Poly_Ling.View
         public IMeshView GetMesh(int masterIndex)
         {
             if (masterIndex < 0) return null;
-            foreach (var list in new[] { DrawableList, BoneList, MorphList, RigidBodyList, RigidBodyJointList })
+            foreach (var list in new[] { DrawableList, BoneList, RigidBodyList, RigidBodyJointList })
                 foreach (var m in list)
                     if (m.MasterIndex == masterIndex) return m;
             return null;
@@ -78,6 +75,11 @@ namespace Poly_Ling.View
         public MaterialSlotView GetMaterialSlot(int slot) => null;
         /// <summary>モーフエクスプレッションはスナップショットに載せていない。空。</summary>
         public IReadOnlyList<MorphExpressionView> MorphExpressions => System.Array.Empty<MorphExpressionView>();
+        /// <summary>形はスナップショットに載せていない。空で、今の形は基本の形。</summary>
+        public IReadOnlyList<ShapeView> Shapes => System.Array.Empty<ShapeView>();
+        public int CurrentShapeId  => 0;
+        public int PreviousShapeId => 0;
+        public ShapeView BaseShape => null;
 
         /// <summary>Tポーズ関係はスナップショットに載せていない。</summary>
         public int    HumanoidMappingCount => 0;
@@ -97,14 +99,12 @@ namespace Poly_Ling.View
         // フルコンストラクタ
         public ModelSummary(
             string name, string filePath, bool isDirty,
-            int drawableCount, int boneCount, int morphCount, int totalMeshCount,
+            int drawableCount, int boneCount, int totalMeshCount,
             int meshSelectionSetCount, ModelContext.SelectionCategory activeCategory,
             IReadOnlyList<IMeshView> drawableList = null,
             IReadOnlyList<IMeshView> boneList = null,
-            IReadOnlyList<IMeshView> morphList = null,
             int[] selectedDrawableIndices = null,
             int[] selectedBoneIndices = null,
-            int[] selectedMorphIndices = null,
             IReadOnlyList<IMeshView> rigidBodyList = null,
             IReadOnlyList<IMeshView> rigidBodyJointList = null)
         {
@@ -113,19 +113,16 @@ namespace Poly_Ling.View
             IsDirty = isDirty;
             DrawableCount = drawableCount;
             BoneCount = boneCount;
-            MorphCount = morphCount;
             TotalMeshCount = totalMeshCount;
             MeshSelectionSetCount = meshSelectionSetCount;
             ActiveCategory = activeCategory;
 
             DrawableList = drawableList ?? _empty;
             BoneList = boneList ?? _empty;
-            MorphList = morphList ?? _empty;
             RigidBodyList = rigidBodyList ?? _empty;
             RigidBodyJointList = rigidBodyJointList ?? _empty;
             SelectedDrawableIndices = selectedDrawableIndices ?? _emptyIndices;
             SelectedBoneIndices = selectedBoneIndices ?? _emptyIndices;
-            SelectedMorphIndices = selectedMorphIndices ?? _emptyIndices;
         }
 
         private static readonly IMeshView[] _empty = new IMeshView[0];

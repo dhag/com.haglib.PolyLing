@@ -301,69 +301,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
-        // Write: モーフ固有
-        // ================================================================
-
-        private static void WriteMorphData(StringBuilder sb, MeshContext mc,
-            bool useNameBased = false, Dictionary<int, string> indexToName = null)
-        {
-            if (useNameBased)
-            {
-                sb.AppendLine($"morphParentName,{EscapeCsv(ResolveName(mc.MorphParentIndex, indexToName))}");
-            }
-            else
-            {
-                sb.AppendLine($"morphParentIndex,{mc.MorphParentIndex}");
-            }
-
-            // モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）。
-            // 既定値のときは行を書かない＝旧ファイルと同じ出力になる。
-            if (mc.MorphMirrorPolicy != MorphMirrorPolicy.FollowParent || mc.MirrorOfMorphIndex >= 0)
-            {
-                sb.AppendLine($"morphMirror,{(int)mc.MorphMirrorPolicy},{mc.MirrorOfMorphIndex}");
-            }
-
-            if (mc.MorphBaseData != null && mc.MorphBaseData.IsValid)
-            {
-                var mbd = mc.MorphBaseData;
-                sb.AppendLine($"morphName,{EscapeCsv(mbd.MorphName)}");
-                sb.AppendLine($"morphPanel,{mbd.Panel}");
-                // 作成日時（規約4：.mfproj の morphBaseData.createdAt・バイナリ PLRS v8 と揃える）
-                sb.AppendLine($"morphCreatedAt,{EscapeCsv(mbd.CreatedAt.ToString("o", CultureInfo.InvariantCulture))}");
-
-                // 基準位置
-                if (mbd.BasePositions != null)
-                {
-                    for (int i = 0; i < mbd.BasePositions.Length; i++)
-                    {
-                        var p = mbd.BasePositions[i];
-                        sb.AppendLine($"mb,{i},{F(p.x)},{F(p.y)},{F(p.z)}");
-                    }
-                }
-
-                // 基準法線（規約4：.mfproj の morphBaseData.baseNormals・バイナリ PLRS と揃える）
-                if (mbd.HasNormals)
-                {
-                    for (int i = 0; i < mbd.BaseNormals.Length; i++)
-                    {
-                        var n = mbd.BaseNormals[i];
-                        sb.AppendLine($"mbn,{i},{F(n.x)},{F(n.y)},{F(n.z)}");
-                    }
-                }
-
-                // 基準UV
-                if (mbd.HasUVs && mbd.BaseUVs != null)
-                {
-                    for (int i = 0; i < mbd.BaseUVs.Length; i++)
-                    {
-                        var uv = mbd.BaseUVs[i];
-                        sb.AppendLine($"mbuv,{i},{F(uv.x)},{F(uv.y)}");
-                    }
-                }
-            }
-        }
-
-        // ================================================================
         // Write: 選択セット
         // ================================================================
 
@@ -596,6 +533,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine();
 
             WriteVertexControlPoints(sb, v);
+            WriteVertexShapes(sb, v);
+            WriteVertexUVShapes(sb, v);
         }
 
         // ================================================================
@@ -613,6 +552,44 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.Append($"vcp,{v.ControlPoints.Count}");
             foreach (var p in v.ControlPoints)
                 sb.Append($",{F(p.x)},{F(p.y)},{F(p.z)}");
+
+            sb.AppendLine();
+        }
+
+        // ================================================================
+        // Write: 頂点の形ごとの位置（Vertex.Shapes）
+        //
+        // 直前の v / vn 行の頂点に属する。保持していない頂点では行自体を出力しない。
+        // 制御点の行（vcp）の後に書く。
+        // ================================================================
+
+        private static void WriteVertexShapes(StringBuilder sb, Vertex v)
+        {
+            if (!v.HasShapes) return;
+
+            // vsh,count,shapeId,x,y,z,...
+            sb.Append($"vsh,{v.Shapes.Count}");
+            foreach (var s in v.Shapes)
+                sb.Append($",{s.ShapeId},{F(s.Position.x)},{F(s.Position.y)},{F(s.Position.z)}");
+
+            sb.AppendLine();
+        }
+
+        // ================================================================
+        // Write: 頂点の形ごとの UV（Vertex.UVShapes。UV スロット 0）
+        //
+        // 直前の v / vn 行の頂点に属する。保持していない頂点では行自体を出力しない。
+        // vsh 行の後に書く。
+        // ================================================================
+
+        private static void WriteVertexUVShapes(StringBuilder sb, Vertex v)
+        {
+            if (!v.HasUVShapes) return;
+
+            // vsu,count,shapeId,u,v,...
+            sb.Append($"vsu,{v.UVShapes.Count}");
+            foreach (var s in v.UVShapes)
+                sb.Append($",{s.ShapeId},{F(s.UV.x)},{F(s.UV.y)}");
 
             sb.AppendLine();
         }
@@ -672,6 +649,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine();
 
             WriteVertexControlPoints(sb, v);
+            WriteVertexShapes(sb, v);
+            WriteVertexUVShapes(sb, v);
         }
 
         // ================================================================

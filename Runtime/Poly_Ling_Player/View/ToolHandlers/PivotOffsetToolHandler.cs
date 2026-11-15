@@ -17,8 +17,25 @@ namespace Poly_Ling.Player
     /// 対象メッシュの見た目と直接の子は据え置く。内部は ObjectMoveTool へ委譲。
     /// ギズモ座標/当たり判定は ObjectMoveTool の同一 _axisGizmo を用いるため一致する。
     /// </summary>
-    public class PivotOffsetToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class PivotOffsetToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// 中央ギズモで原点を自由移動している間だけ「対象を動かす」。
+        /// X・Y・Z 軸は既存の軸制限を優先して制限しない（ピックは無効なのでしきい値待ちは起きない）。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            return _tool.IsFreeMoveDragging ? AxisConstraintUse.ObjectMove : AxisConstraintUse.None;
+        }
+
         // ObjectMoveTool を専用設定(OriginOnly=true, 子は据え置き, ピック無効=ギズモ専用)で保持
         private readonly ObjectMoveTool _tool = new ObjectMoveTool();
 
@@ -110,7 +127,18 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(default(ModifierKeys));
             if (ctx == null) { reason = "モデルがありません"; return false; }
 
-            return _tool.ApplyOriginOnlyFromCommand(ctx, indices, worldDelta, out reason);
+            // 子の扱いはコマンドが正典（ObjectMoveToolHandler.ExecuteFromCommand と同じく、退避して戻す）。
+            var settings = _tool.GetSettings();
+            bool savedWithChildren = settings.MoveWithChildren;
+            try
+            {
+                settings.MoveWithChildren = cmd.MoveWithChildren;
+                return _tool.ApplyOriginOnlyFromCommand(ctx, indices, worldDelta, out reason);
+            }
+            finally
+            {
+                settings.MoveWithChildren = savedWithChildren;
+            }
         }
 
         // ================================================================
@@ -129,6 +157,7 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods);
             if (ctx == null) return;
+            _dragOriginPos = screenPos;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }
 

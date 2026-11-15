@@ -293,14 +293,9 @@ namespace Poly_Ling.Ops
 
             if (applied > 0)
             {
+                // ミラー側にも同じ操作を掛けるので、ミラー側の頂点は自分の形の控えを持ったまま増減する
+                // （形は頂点が持つ。PolyLing_モーフ整理計画.md 3.3・3.7）。
                 RebuildAffectedMirrorPairs(model, plan);
-
-                // 実体側の形が変わったので、ミラー側モーフを Real 側モーフから作り直す。
-                // 頂点編集系ツール（DeleteSelection / FaceMerge / VertexDissolve /
-                // Tri4To1 / Quad4To1）は全てここを通るため、
-                // モーフ同期の共通の合流点になる。
-                // 規約は MorphMirrorPolicy.cs を正典とする。
-                model.SyncAllMirrorMorphs();
             }
 
             return applied;

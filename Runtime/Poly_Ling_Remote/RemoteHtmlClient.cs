@@ -69,7 +69,6 @@ namespace Poly_Ling.Remote
     background: #45475a; color: #a6adc8;
   }
   .mesh-item .type.Bone { background: #45475a; color: #f9e2af; }
-  .mesh-item .type.Morph { background: #45475a; color: #cba6f7; }
   .mesh-item .stats { color: #6c7086; font-size: 11px; }
   .mesh-item .vis-btn {
     background: none; border: none; cursor: pointer;
@@ -263,7 +262,7 @@ async function queryMeshDetail(index) {
       params: { index: index.toString() },
       fields: ['Name', 'IsVisible', 'IsLocked', 'Type', 'VertexCount', 'FaceCount',
                'MirrorType', 'MirrorAxis', 'Depth', 'ParentIndex',
-               'IsMorph', 'MorphName', 'SelectMode']
+               'SelectMode']
     });
     if (res.success) {
       renderDetail(res.data);

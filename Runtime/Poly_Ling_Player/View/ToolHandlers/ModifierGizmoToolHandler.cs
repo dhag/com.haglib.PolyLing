@@ -28,8 +28,30 @@ namespace Poly_Ling.Player
 {
     /// <summary>処理列の項目の作業軸とラティスの制御点をビューで動かす。</summary>
     [PLTool("modifierGizmo", Description = "処理列の項目の作業軸とラティスの制御点のハンドル（確定は setMeshModifierArgs）")]
-    public class ModifierGizmoToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class ModifierGizmoToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// 「対象を動かす」のは次の間だけ。
+        ///   作業軸：原点ハンドル（移動）と Y 先端ハンドルを自由に動かしている間（吸着はこの項目では使わない）。
+        ///   ラティス：中央ギズモで制御点を自由移動している間。
+        /// 軸の移動（既存の軸制限を優先）、回転、ロール、矩形選択では制限しない。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            bool free = IsAxisKind
+                ? _axisDrag && _axisTool.IsFreeHandleDragging
+                : !_boxSelecting && _dragAxis == AxisGizmo.AxisType.Center;
+            return free ? AxisConstraintUse.ObjectMove : AxisConstraintUse.None;
+        }
+
         // ================================================================
         // 外部コールバック（Viewer から設定）
         // ================================================================
@@ -380,6 +402,7 @@ namespace Poly_Ling.Player
         {
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || !SyncOrLose(ctx)) return;
+            _dragOriginPos = screenPos;
 
             if (IsAxisKind)
             {

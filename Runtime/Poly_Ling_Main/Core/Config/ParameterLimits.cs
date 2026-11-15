@@ -158,9 +158,8 @@ namespace Poly_Ling.Core
             // --- ThinPlateMorph（TPSモーフ） ---
             ("ThinPlateMorph.Lambda.Min",          0.0f,   "TPSモーフ: 平滑化係数λの下限"),
 
-            // --- MorphPreview（モーフプレビュー） ---
-            ("MorphPreview.Weight.Min",            0.0f,   "モーフプレビュー: ウェイトの下限"),
-            ("MorphPreview.Weight.Max",            1.0f,   "モーフプレビュー: ウェイトの上限"),
+            // MorphPreview.Weight（旧モーフのプレビュー）は段 7 でパネルごと撤去した。
+            // 利用者の CSV に残った行は使われない。
         };
 
         // ================================================================

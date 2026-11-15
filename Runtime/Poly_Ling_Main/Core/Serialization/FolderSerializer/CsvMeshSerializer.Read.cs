@@ -28,15 +28,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var meshObject = new MeshObject("Untitled");
             mc.MeshObject = meshObject;
 
-            // モーフ基準データ用一時バッファ
-            var morphBasePositions = new List<Vector3>();
-            var morphBaseUVs = new List<Vector2>();
-            var morphBaseNormals = new List<Vector3>();   // mbn 行（無い旧ファイルは法線なし）
-            string morphName = "";
-            int morphPanel = 3;
-            bool hasMorphBase = false;
-            DateTime? morphCreatedAt = null;   // morphCreatedAt 行（無い旧ファイルは読込時刻のまま）
-
             // skinKind 行の有無。無い（旧形式）ときだけ頂点ウェイトから求め直す。
             bool sawSkinKind = false;
 
@@ -253,40 +244,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                             AimAxis    = (VrmAimAxis)ParseInt(cols, 5, 0),
                         };
                         break;
-                    case "morphParentIndex":
-                        mc.MorphParentIndex = ParseInt(cols, 1, -1);
-                        break;
-                    case "morphMirror":
-                        // morphMirror,policy,mirrorOfMorphIndex
-                        // 行が無い旧ファイルは FollowParent / -1 のまま。
-                        mc.MorphMirrorPolicy  = (MorphMirrorPolicy)ParseInt(cols, 1, 0);
-                        mc.MirrorOfMorphIndex = ParseInt(cols, 2, -1);
-                        break;
-                    case "morphName":
-                        morphName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
-                        hasMorphBase = true;
-                        break;
-                    case "morphPanel":
-                        morphPanel = ParseInt(cols, 1, 3);
-                        break;
-                    case "morphCreatedAt":
-                        // 規約4：.mfproj の morphBaseData.createdAt と揃える
-                        if (cols.Length > 1 && DateTime.TryParse(UnescapeCsv(cols[1]), CultureInfo.InvariantCulture,
-                                DateTimeStyles.RoundtripKind, out var mca))
-                            morphCreatedAt = mca;
-                        break;
-                    case "mb":
-                        morphBasePositions.Add(new Vector3(
-                            ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)));
-                        hasMorphBase = true;
-                        break;
-                    case "mbuv":
-                        morphBaseUVs.Add(new Vector2(ParseFloat(cols, 2), ParseFloat(cols, 3)));
-                        break;
-                    case "mbn":
-                        morphBaseNormals.Add(new Vector3(
-                            ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)));
-                        break;
+                    // 旧モーフの行（morphParentIndex / morphParentName / morphMirror / morphName / morphPanel /
+                    // morphCreatedAt / mb / mbuv / mbn）は段 7 で廃止した。読まずに捨てる（既定の分岐へ落ちる）。
                     case "workAxis":
                         // workAxis,ox,oy,oz,qx,qy,qz,qw,length,isVisible（作業軸オブジェクトだけが持つ。
                         // 規約4：.mfproj の meshDTOList[].workAxis・バイナリ PLRS v5 と揃える）
@@ -321,6 +280,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "vcp":
                         ReadVertexControlPoints(cols, meshObject);
                         break;
+                    case "vsh":
+                        ReadVertexShapes(cols, meshObject);
+                        break;
+                    case "vsu":
+                        ReadVertexUVShapes(cols, meshObject);
+                        break;
                     case "f":
                         meshObject.Faces.Add(ReadFace(cols));
                         break;
@@ -337,10 +302,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "bakedMirrorSourceName":
                         entry.BakedMirrorSourceName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
-                        break;
-                    case "morphParentName":
-                        entry.MorphParentName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
-                        entry.IsNameBased = true;
                         break;
                     case "vn":
                         var (vtx, boneNames, mirrorBoneNames) = ReadVertexNameBased(cols);
@@ -368,20 +329,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
 
                 i++;
-            }
-
-            // MorphBaseData組み立て
-            if (hasMorphBase && morphBasePositions.Count > 0)
-            {
-                mc.MorphBaseData = new MorphBaseData
-                {
-                    MorphName = morphName,
-                    Panel = morphPanel,
-                    BasePositions = morphBasePositions.ToArray(),
-                    BaseUVs = morphBaseUVs.Count > 0 ? morphBaseUVs.ToArray() : null,
-                    BaseNormals = morphBaseNormals.Count > 0 ? morphBaseNormals.ToArray() : null
-                };
-                if (morphCreatedAt.HasValue) mc.MorphBaseData.CreatedAt = morphCreatedAt.Value;
             }
 
             // 描画オブジェクトの種別。

@@ -1,9 +1,19 @@
 // Runtime/Poly_Ling_Main/HierarchyIO/HierarchyMorphBuilder.cs
 // ============================================================
-// モーフ MeshContext → UnityEngine.Mesh のブレンドシェイプ
+// 形・モーフ → UnityEngine.Mesh のブレンドシェイプ
 // ============================================================
 //
 // 【分離規約】規約は HierarchyBuilder.cs 冒頭のコメントを正典とする。
+//
+// ============================================================
+// 載せるもの（PolyLing_モーフ整理計画.md 3.9・段 5）
+// ============================================================
+//
+//   描画オブジェクトごとに、その描画オブジェクトで基本の形との差分がある形（ShapeOps.GetSparseOffsets）を
+//   ブレンドシェイプにする。割り当ての鍵は MorphTargetKey。ブレンドシェイプ名は形の名前。
+//   差分の無い形は載せない（どのオブジェクトにも差分が無い形は HierarchyBuilder.ReportUnattachedMorphs が警告する）。
+//   差分は書き出しの写し（ShapeExportView。今の形が基本の形）で取るので、今の形に関係なく
+//   基本の形をベースに出る。
 //
 // ============================================================
 // 差分を「もう一度 ToUnityMesh して引く」理由
@@ -41,14 +51,14 @@
 //                                   差分は軸成分を反転（差分なので距離は使わない）
 //     ・ミラー側コンテキスト      … mc.MeshObject（形状は既に反転済み）、差分はそのまま
 //       （BuildMirrorSideMesh の平行移動は全頂点一律なので差分に影響しない）
+//   差分そのものは常にモデルの baseIndex の描画オブジェクト（反転前）から取る。
+//   形の控えはそのオブジェクトの頂点が持つ。
 //
 // ============================================================
-// 差分が 0 件のモーフ
+// 法線（3.13。段 5 で決めた）
 // ============================================================
 //
-//   1 頂点も動いていないモーフも、全頂点 0 の差分でブレンドシェイプにする。
-//   予約枠として置かれている場合があり、書き出しで消えると利用者が混乱する。
-//   頂点数の不一致など、警告付きで飛ばす経路は従来どおり。
+//   ブレンドシェイプに法線の差分は持たせない。PolyLing の法線は全部の形で共有なので差分は常に 0。
 //
 // ============================================================
 
@@ -64,8 +74,11 @@ namespace Poly_Ling.HierarchyIO
     /// <summary>ブレンドシェイプ1本ぶんの登録結果。</summary>
     public struct MorphShapeSlot
     {
-        /// <summary>モーフ MeshContext のマスター索引。</summary>
-        public int MorphContextIndex;
+        /// <summary>載せた相手（形の番号）。</summary>
+        public MorphTargetKey Key;
+
+        /// <summary>載せた差分（頂点番号順。反転前。MeshObject の頂点番号）。FBX はこれを書く。</summary>
+        public List<(int VertexIndex, Vector3 Offset)> Offsets;
 
         /// <summary>ブレンドシェイプを載せたレンダラの Transform。</summary>
         public Transform Renderer;
@@ -77,14 +90,22 @@ namespace Poly_Ling.HierarchyIO
         public string ShapeName;
     }
 
-    /// <summary>モーフ MeshContext から UnityMesh のブレンドシェイプを作る。</summary>
+    /// <summary>形・モーフ MeshContext から UnityMesh のブレンドシェイプを作る。</summary>
     public static class HierarchyMorphBuilder
     {
         /// <summary>ブレンドシェイプのフレーム重み。Unity の慣習にそろえて 100 固定。</summary>
         private const float FrameWeight = 100f;
 
+        /// <summary>載せる候補 1 つ。</summary>
+        private struct Target
+        {
+            public MorphTargetKey Key;
+            public string Name;
+            public List<(int VertexIndex, Vector3 Offset)> Offsets;
+        }
+
         /// <summary>
-        /// baseIndex のメッシュに属するモーフを unityMesh へブレンドシェイプとして載せる。
+        /// baseIndex のメッシュに載せる形を unityMesh へブレンドシェイプとして載せる。
         /// </summary>
         /// <param name="shapeSource">unityMesh を作った MeshObject（ミラー枝では鏡像化済みのもの）。</param>
         /// <param name="mirrorDelta">差分を軸反転するか（許容モードの生成ミラーのみ true）。</param>
@@ -99,8 +120,8 @@ namespace Poly_Ling.HierarchyIO
             var slots = new List<MorphShapeSlot>();
             if (model == null || shapeSource == null || unityMesh == null) return slots;
 
-            var morphIndices = CollectMorphIndices(model, baseIndex);
-            if (morphIndices.Count == 0) return slots;
+            var targets = CollectTargets(model, baseIndex);
+            if (targets.Count == 0) return slots;
 
             // 引き算の基準。unityMesh そのものではなく shapeSource から作り直す（冒頭参照）。
             var baseVerts = BuildBaseVertices(shapeSource);
@@ -119,42 +140,24 @@ namespace Poly_Ling.HierarchyIO
             for (int i = 0; i < unityMesh.blendShapeCount; i++)
                 usedNames.Add(unityMesh.GetBlendShapeName(i));
 
-            foreach (int morphIndex in morphIndices)
+            foreach (var t in targets)
             {
-                var morphCtx = model.GetMeshContext(morphIndex);
-                if (morphCtx == null) continue;
+                // 候補は差分のある形だけ（CollectTargets）。
+                var delta = BuildDelta(shapeSource, baseVerts, t.Offsets, mirrorDelta, mirrorAxis, t.Name, warnings);
+                if (delta == null) continue;
 
-                var offsets = morphCtx.GetMorphOffsets();
-
-                // 差分が 0 件（1 頂点も動いていない）のモーフも落とさない。
-                // 予約枠として置かれている場合があり、黙って消すと利用者が混乱する。
-                // 全頂点 0 の差分でブレンドシェイプを作る。
-                // 受け側の確認：UniVRM はブレンドシェイプを全部書き出し（ModelExporter.cs:268-289）、
-                // 全部 0 のときは疎な形式をやめて通常の形式で書く（BlendShapeExporter.cs:17-32）。
-                Vector3[] delta;
-                if (offsets == null || offsets.Count == 0)
-                {
-                    delta = new Vector3[baseVerts.Length];
-                }
-                else
-                {
-                    delta = BuildDelta(
-                        shapeSource, baseVerts, offsets, mirrorDelta, mirrorAxis,
-                        morphCtx.Name, warnings);
-                    if (delta == null) continue;
-                }
-
-                string shapeName = ShapeNameOf(morphCtx, morphIndex, usedNames);
+                string shapeName = HierarchyBuilder.MakeUniqueName(t.Name, usedNames);
 
                 int shapeIndex = unityMesh.blendShapeCount;
                 unityMesh.AddBlendShapeFrame(shapeName, FrameWeight, delta, null, null);
 
                 slots.Add(new MorphShapeSlot
                 {
-                    MorphContextIndex = morphIndex,
-                    Renderer          = rendererTransform,
-                    ShapeIndex        = shapeIndex,
-                    ShapeName         = shapeName,
+                    Key        = t.Key,
+                    Offsets    = t.Offsets,
+                    Renderer   = rendererTransform,
+                    ShapeIndex = shapeIndex,
+                    ShapeName  = shapeName,
                 });
             }
 
@@ -162,12 +165,11 @@ namespace Poly_Ling.HierarchyIO
         }
 
         /// <summary>
-        /// Unity メッシュを作らずに、載せるモーフの名前と並びだけを決める
+        /// Unity メッシュを作らずに、載せる形の名前と並びだけを決める
         /// （HierarchyBuildOptions.CreateUnityMeshes = false。MeshObject から直接書く書き出し用）。
         /// 名前・並び・飛ばす条件は Apply と同じ：
         ///   ・形状に表示中の 3 頂点以上の面が無い（Apply では展開頂点 0）なら何も載せない。
-        ///   ・差分があるのに 1 つも頂点番号の範囲に入らないモーフは載せない（Apply の BuildDelta が null）。
-        ///   ・差分 0 件のモーフは載せる。
+        ///   ・差分があるのに 1 つも頂点番号の範囲に入らないものは載せない（Apply の BuildDelta が null）。
         /// Apply だけにある「展開頂点数の不一致」は Unity メッシュへ展開し直すことで起きるもので、ここには無い。
         /// ShapeIndex は並びの番号。
         /// </summary>
@@ -177,45 +179,65 @@ namespace Poly_Ling.HierarchyIO
             var slots = new List<MorphShapeSlot>();
             if (model == null || shapeSource == null) return slots;
 
-            var morphIndices = CollectMorphIndices(model, baseIndex);
-            if (morphIndices.Count == 0) return slots;
+            var targets = CollectTargets(model, baseIndex);
+            if (targets.Count == 0) return slots;
 
             if (!HasDrawableFace(shapeSource)) return slots;
 
             int vertexCount = shapeSource.Vertices?.Count ?? 0;
             var usedNames = new HashSet<string>();
 
-            foreach (int morphIndex in morphIndices)
+            foreach (var t in targets)
             {
-                var morphCtx = model.GetMeshContext(morphIndex);
-                if (morphCtx == null) continue;
-
-                var offsets = morphCtx.GetMorphOffsets();
-                if (offsets != null && offsets.Count > 0)
+                if (t.Offsets != null && t.Offsets.Count > 0)
                 {
                     bool any = false;
-                    foreach (var (vertexIndex, _) in offsets)
+                    foreach (var (vertexIndex, _) in t.Offsets)
                         if (vertexIndex >= 0 && vertexIndex < vertexCount) { any = true; break; }
                     if (!any) continue;
                 }
 
                 slots.Add(new MorphShapeSlot
                 {
-                    MorphContextIndex = morphIndex,
-                    Renderer          = rendererTransform,
-                    ShapeIndex        = slots.Count,
-                    ShapeName         = ShapeNameOf(morphCtx, morphIndex, usedNames),
+                    Key        = t.Key,
+                    Offsets    = t.Offsets,
+                    Renderer   = rendererTransform,
+                    ShapeIndex = slots.Count,
+                    ShapeName  = HierarchyBuilder.MakeUniqueName(t.Name, usedNames),
                 });
             }
 
             return slots;
         }
 
-        /// <summary>ブレンドシェイプ名（モーフ名。同じメッシュ内で重なれば「_n」）。</summary>
-        private static string ShapeNameOf(MeshContext morphCtx, int morphIndex, HashSet<string> usedNames)
-            => HierarchyBuilder.MakeUniqueName(
-                string.IsNullOrEmpty(morphCtx.Name) ? $"Morph_{morphIndex}" : morphCtx.Name,
-                usedNames);
+        /// <summary>
+        /// baseIndex の描画オブジェクトに載せる候補。形の並びの順。
+        /// </summary>
+        private static List<Target> CollectTargets(ModelContext model, int baseIndex)
+        {
+            var list = new List<Target>();
+
+            var baseCtx = model.GetMeshContext(baseIndex);
+            var mo = baseCtx?.MeshObject;
+            if (mo != null && mo.VertexCount > 0 && model.Shapes != null)
+            {
+                int current = model.CurrentShapeId;
+                foreach (var shape in model.Shapes)
+                {
+                    // UV の形はブレンドシェイプに出さない（ShapeData.cs の冒頭注記）。
+                    if (shape == null || shape.IsUV) continue;
+                    var off = ShapeOps.GetSparseOffsets(mo, current, shape.Id);
+                    if (off.Count == 0) continue;
+                    list.Add(new Target
+                    {
+                        Key     = MorphTargetKey.Shape(shape.Id),
+                        Name    = string.IsNullOrEmpty(shape.Name) ? $"Shape_{shape.Id}" : shape.Name,
+                        Offsets = off,
+                    });
+                }
+            }
+            return list;
+        }
 
         /// <summary>
         /// ToUnityMesh が面を積む条件（3 頂点以上・表示中。MeshBridgeDefault.ToUnityMesh）を満たす面があるか。
@@ -251,30 +273,6 @@ namespace Poly_Ling.HierarchyIO
             if (mesh == null) return;
             if (Application.isPlaying) Object.Destroy(mesh);
             else                       Object.DestroyImmediate(mesh);
-        }
-
-        /// <summary>
-        /// baseIndex を親に持つモーフ MeshContext を索引の昇順で集める。
-        ///
-        /// 【親の特定は MorphParentIndex を直接見てはいけない】
-        ///   MorphParentIndex は「-1 = 未指定（名前規則ベースで検索）」という仕様
-        ///   （MeshContext.cs:966-970）。PMX 読込では -1 のままのことがあり、
-        ///   実際の親は "&lt;親メッシュ名&gt;_&lt;モーフ名&gt;" の命名規則から引く。
-        ///   その解決は MorphPreviewState.FindBaseMeshIndex が正典で、
-        ///   PMXPartialImportOps.cs:377-380 も同じものを使っている。
-        ///   ここで MorphParentIndex を直接比較すると、-1 のモーフを全て取りこぼす。
-        /// </summary>
-        private static List<int> CollectMorphIndices(ModelContext model, int baseIndex)
-        {
-            var list = new List<int>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || !mc.IsMorph) continue;
-                if (MorphPreviewState.FindBaseMeshIndex(model, mc) != baseIndex) continue;
-                list.Add(i);
-            }
-            return list;
         }
 
         /// <summary>

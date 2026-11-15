@@ -128,7 +128,6 @@ namespace Poly_Ling.MeshListV2
             {
                 MeshCategory.Drawable => CurrentModel.SelectedDrawableIndices,
                 MeshCategory.Bone     => CurrentModel.SelectedBoneIndices,
-                MeshCategory.Morph    => CurrentModel.SelectedMorphIndices,
                 _                     => null,
             };
             if (cur == null || indices == null) return false;
@@ -156,7 +155,6 @@ namespace Poly_Ling.MeshListV2
         ///   まったく別の行が選ばれる（すべて展開・フィルタなしのときだけ
         ///   id と index が一致するので、症状が出たり出なかったりする）。
         ///   id で指定するときは必ず SetSelectionByIdWithoutNotify を使う。
-        ///   モーフ側 (SyncMorphSel) は ListView なので index で正しい。
         /// </summary>
         private void SyncTreeViewSelection()
         {
@@ -281,7 +279,6 @@ namespace Poly_Ling.MeshListV2
         {
             _tabDrawable?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Drawable));
             _tabBone    ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Bone));
-            _tabMorph   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Morph));
             _tabRigidBody?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.RigidBody));
             _tabJoint   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Joint));
 
@@ -408,7 +405,6 @@ namespace Poly_Ling.MeshListV2
         private string RenameCategoryKey() => IsSimpleMode ? "mesh" : _currentTab switch
         {
             TabType.Bone      => "bone",
-            TabType.Morph     => "morph",
             TabType.RigidBody => "rigidbody",
             TabType.Joint     => "joint",
             _                 => "mesh",
@@ -438,7 +434,6 @@ namespace Poly_Ling.MeshListV2
             {
                 TabType.Drawable  => model.DrawableList,
                 TabType.Bone      => model.BoneList,
-                TabType.Morph     => model.MorphList,
                 TabType.RigidBody => model.RigidBodyList,
                 TabType.Joint     => model.RigidBodyJointList,
                 _                 => null,

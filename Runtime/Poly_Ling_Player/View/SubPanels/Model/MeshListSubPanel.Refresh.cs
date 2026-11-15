@@ -58,11 +58,10 @@ namespace Poly_Ling.MeshListV2
                 switch (kind)
                 {
                     case ChangeKind.Selection:
-                        if (_currentTab != TabType.Morph) SyncTreeViewSelection(); else SyncMorphSel();
+                        SyncTreeViewSelection();
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                     case ChangeKind.Attributes:
-                        if (_currentTab != TabType.Morph)
                         {
                             // MeshContext.IsFolding の変化 (Undo/Redo 等) を TreeView 展開状態に反映
                             if (_treeRoot != null)
@@ -71,7 +70,6 @@ namespace Poly_Ling.MeshListV2
                             _treeView?.RefreshItems();
                             SyncTreeViewSelection();
                         }
-                        else RefreshMorphEditor();
                         // Bone タブは BonePoseData 等が変化した可能性があるため
                         // _selectedAdapters のビューを最新スナップショットで更新する
                         if (_currentTab == TabType.Bone) RefreshSelectedAdapterViews();
@@ -90,8 +88,7 @@ namespace Poly_Ling.MeshListV2
                             _detailModeToggle.SetValueWithoutNotify(hasSkinned);
                             OnDetailModeChanged();
                         }
-                        if (_currentTab != TabType.Morph) { CreateTreeRoot(); RefreshAllImmediate(); SyncTreeViewSelection(); }
-                        if (_currentTab == TabType.Morph) RefreshMorphEditor();
+                        CreateTreeRoot(); RefreshAllImmediate(); SyncTreeViewSelection();
                         RefreshSelectionDictionary();
                         UpdateRenameButtonStates();
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
@@ -282,7 +279,7 @@ namespace Poly_Ling.MeshListV2
         {
             if (_countLabel == null) return;
             if (IsSimpleMode) { _countLabel.text = $"メッシュ+ボーン: {_treeRoot?.TotalCount ?? 0}"; return; }
-            string label = _currentTab switch { TabType.Drawable => "メッシュ", TabType.Bone => "ボーン", TabType.RigidBody => "剛体", TabType.Joint => "Joint", _ => "モーフ" };
+            string label = _currentTab switch { TabType.Drawable => "メッシュ", TabType.Bone => "ボーン", TabType.RigidBody => "剛体", TabType.Joint => "Joint", _ => "" };
             _countLabel.text = $"{label}: {_treeRoot?.TotalCount ?? 0}";
         }
 
@@ -305,7 +302,6 @@ namespace Poly_Ling.MeshListV2
 
         private void UpdateDetailPanel()
         {
-            if (_currentTab == TabType.Morph) return;
             if (_selectedAdapters.Count == 0)
             {
                 _meshNameField?.SetValueWithoutNotify("");

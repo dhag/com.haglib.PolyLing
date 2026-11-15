@@ -25,9 +25,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
     public class ModelEntry
     {
         public int GlobalIndex;
-        public string Type;   // "Mesh","Bone","Morph" etc
+        public string Type;   // "Mesh","Bone" etc（"Morph" は段 7 で廃止。読むときに断る）
         public string Name;
-        public string File;   // "mesh","bone","morph"
+        public string File;   // "mesh","bone"（"morph" は段 7 で廃止）
         public int OrderInFile;
         public bool IsNameBased;
     }

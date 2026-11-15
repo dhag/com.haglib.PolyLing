@@ -238,6 +238,32 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>頂点の移動に使う縦横制限。</summary>
+        private CanvasPointerAxis _uvAxis;
+
+        /// <summary>uiCanvasPointer の報告用：選択頂点の数と、先頭の選択頂点のキャンバス位置と UV。</summary>
+        private string DescribeUVAxisState()
+        {
+            var mo = GetMeshObject();
+            if (mo == null || _selected.Count == 0) return $"selected={_selected.Count}";
+            var rect = _canvas.contentRect;
+            foreach (var id in _selected)
+            {
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                var uv = v.UVs[id.UVIndex];
+                var c  = UVToCanvas(uv, rect);
+                return System.FormattableString.Invariant(
+                    $"selected={_selected.Count} first=v{id.VertexIndex}/uv{id.UVIndex} canvas=({c.x:0.0},{c.y:0.0}) uv=({uv.x:0.0000},{uv.y:0.0000})");
+            }
+            return $"selected={_selected.Count}";
+        }
+
+        // ================================================================
         // キャンバス入力
         // ================================================================
 
@@ -350,14 +376,16 @@ namespace Poly_Ling.Player
                     if (Vector2.Distance(mp, _mouseDownPos) > DragThreshold)
                     {
                         BeginUVMove();
-                        ApplyUVMove(mp);
+                        // 縦横制限の基準点は押した位置。動かし始められたときだけ制限を始める。
+                        if (_interaction == Interaction.MovingVertex) _uvAxis.Begin(_mouseDownPos, evt.shiftKey);
+                        ApplyUVMove(_uvAxis.Apply(mp, evt.shiftKey));
                         _canvas.MarkDirtyRepaint();
                     }
                     evt.StopPropagation();
                     return;
 
                 case Interaction.MovingVertex:
-                    ApplyUVMove(mp);
+                    ApplyUVMove(_uvAxis.Apply(mp, evt.shiftKey));
                     _canvas.MarkDirtyRepaint();
                     evt.StopPropagation();
                     return;
@@ -402,7 +430,7 @@ namespace Poly_Ling.Player
 
         private void OnCanvasMouseUp(MouseUpEvent evt)
         {
-            if (_interaction == Interaction.MovingVertex) EndUVMove();
+            if (_interaction == Interaction.MovingVertex) { EndUVMove(); _uvAxis.End(); }
             else if (_interaction == Interaction.Marquee) { ApplyMarqueeSelection(); _marquee.End(); }
             else if (_interaction == Interaction.HandleDrag) EndUVHandle();
             _interaction = Interaction.Idle;

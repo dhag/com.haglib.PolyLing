@@ -944,7 +944,6 @@ namespace Poly_Ling.Core
         private static bool IsMeshOriginTarget(MeshType t)
         {
             return t != MeshType.Bone
-                && t != MeshType.Morph
                 && t != MeshType.RigidBody
                 && t != MeshType.RigidBodyJoint
                 && t != MeshType.Group

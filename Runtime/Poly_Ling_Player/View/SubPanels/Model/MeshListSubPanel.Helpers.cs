@@ -103,7 +103,6 @@ namespace Poly_Ling.MeshListV2
 
         private void SL(Label l, string t)    { if (l != null) l.text = t; }
         private void Log(string m)            { if (_statusLabel != null) _statusLabel.text = m; }
-        private void ML(string m)             { if (_morphStatusLabel != null) _morphStatusLabel.text = m; Log(m); }
 
         private static float NormAngle(float a) { a %= 360f; if (a > 180f) a -= 360f; if (a < -180f) a += 360f; return a; }
         private static void SMV(Toggle t, bool m) { if (t != null) t.showMixedValue = m; }

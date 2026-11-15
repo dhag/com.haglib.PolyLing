@@ -122,6 +122,7 @@ Blender で PolyLing のデータを読み書きするアドオンを作る。
    - モーションの書き出し：同じアーマチュアを選んで「モーションを書く」で書く。読んだまま書いたものは元とバイト一致する（段 ④ で確認済み）。キーを足して書いたものは、PolyLing のコマンド `queryMotionJson` でエラー 0、または左の「その他」→「モーション」で読み込んで再生できればよい。
    - VRM Add-on for Blender が入っていれば、VRM モデルのアーマチュアで「VRM アドオンから取り込む」が押せ、表が埋まる。
    - 改善案：PolyLingMcpServer に道具 `blender_run`（起動引数 `--blender <blender.exe のパス>`、`blender.exe -b --factory-startup --python <作業フォルダ内のスクリプト> -- <引数>` を走らせ、標準出力と書き出した画像のパスを返す）を足す。スクリプトと出力は書き込み許可フォルダ（SandBox・データとツール）に限る。MCP サーバの再ビルドと起動引数の追加は操作者の作業。
+   - 【済 2026-11-15】`blender_run`・`blender_status` を足した（`BlenderRunTools.cs`。モーフ整理計画の段 8 の後。使い方は MCP操作手順書.md の 1-8）。起動引数は `--blender`（省くとストア版の起動名、Program Files の順に探す）。スクリプトは書き込み許可フォルダの .py、ログは `SandBox/_blender`。再ビルド・再起動は操作者の作業。
 
 ---
 

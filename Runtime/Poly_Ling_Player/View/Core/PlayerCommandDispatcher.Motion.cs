@@ -150,7 +150,7 @@ namespace Poly_Ling.Player
             var model = h.GetModel?.Invoke();
             if (model != null && written != null)
                 foreach (var n in written)
-                    if (MotionClipApplier.FindExpression(model, n) == null) unresolved.Add(n);
+                    if (!Poly_Ling.Ops.ShapeBlendOps.CanResolve(model, n)) unresolved.Add(n);
 
             ReportData(CommandDataJson.New()
                 .Int ("moraCount",  moraCount)

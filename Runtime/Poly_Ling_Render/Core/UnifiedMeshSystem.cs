@@ -244,9 +244,6 @@ namespace Poly_Ling.Core
                         case MeshType.Bone:
                             _flagManager.SelectedBoneIndex = meshIndex;
                             break;
-                        case MeshType.Morph:
-                            _flagManager.SelectedMorphIndex = meshIndex;
-                            break;
                     }
                 }
             }

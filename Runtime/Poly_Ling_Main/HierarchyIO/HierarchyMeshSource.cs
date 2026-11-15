@@ -20,8 +20,8 @@
 //   ・Materials … 面の材質番号（0〜Materials.Length−1 に丸める）→ 材質。空サブメッシュを詰める前。
 //   ・Bones / Bindposes / BoneSlotOf … スキンドのみ。BoneSlotOf は MeshContext 索引 → Bones の位置。
 //     Vertex.BoneWeight の索引は HierarchyBuilder.RemapBoneWeight で写す。
-//   ・Morphs … 載せるモーフ（名前・並びは Unity メッシュのブレンドシェイプと同じ規則）。
-//     差分は MeshContext.GetMorphOffsets の疎な差分。MirrorDelta のときは
+//   ・Morphs … 載せる形（名前・並びは Unity メッシュのブレンドシェイプと同じ規則）。
+//     差分は MorphShapeSlot.Offsets（ShapeOps の疎な差分。反転前）。MirrorDelta のときは
 //     MirrorBranchOps.MirrorNormal(MirrorAxis, d) で反転する。
 // ============================================================
 

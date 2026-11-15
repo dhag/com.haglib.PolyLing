@@ -20,8 +20,12 @@
 //   PMX は ExcludeFromExport で読み飛ばす。MQO は種類で飛ばさないので IsPlaceholder を見る。
 //   Depth を十分大きくする（MeshHierarchyOps.BuildParentIndicesFromDepth の親の探索で、穴を親として拾わないため）。
 //
-// 【モーフ】計算で頂点数が変わった行のモーフは、頂点の番号が合わないので書かない（警告を出す）。
-//   頂点数が同じならそのまま書く。
+// 【形】（PolyLing_モーフ整理計画.md 段 7）結果は形を持たないので、焼いた行に形の控えを付ける。
+//   1 段の処理列は形ごとに元と参照をその形にして流し直す（ModifierChainHandler.AttachShapes）。
+//   頂点数か面の構成が今の形と違う形があれば、その行の形は書かない（警告を出す）。
+//   流し直す口の無いもの（サブディビジョン・何段もの畳み）は、頂点数が同じなら元の控えを写す。
+//   控えは今の形の状態で付ける（ShapeOps の決まり）。この後の ShapeExportView が基本の形へ切り替えるので、
+//   今の形が基本の形でなくてもよい。
 //
 // 【ミラー】結果にミラー側があれば（ミラーのモディファイア）、写しの元の行の相方にする。
 //   元にミラー側があって結果に無ければ、焼いた形からミラー側を作り直す。
@@ -95,6 +99,7 @@ namespace Poly_Ling.Modifiers
                 }
 
                 var baked = MakeBaked(p.Source, p.Result);
+                AttachShapes(model, p, baked);
                 Set(si, baked);
                 bakedOfResult[p.Result] = baked;
 
@@ -110,21 +115,6 @@ namespace Poly_Ling.Modifiers
                 else
                 {
                     foreach (int m in sourcePeers) Set(m, MakeMirrorOf(baked, si, list[m], p.Source, list[m].Name));
-                }
-
-                // 頂点数が変わったらモーフは番号が合わない。
-                if (p.Result.MeshObject.VertexCount != p.Source.MeshObject.VertexCount)
-                {
-                    int dropped = 0;
-                    for (int i = 0; i < list.Count; i++)
-                    {
-                        var mc = list[i];
-                        if (mc == null || mc.Type != MeshType.Morph || mc.MorphParentIndex != si) continue;
-                        Set(i, MakePlaceholder(mc));
-                        dropped++;
-                    }
-                    if (dropped > 0)
-                        Debug.LogWarning($"[ModifierExportView] {p.Source.Name}: モディファイアで頂点数が変わったので、モーフ {dropped} 件を書き出しません");
                 }
             }
 
@@ -147,6 +137,41 @@ namespace Poly_Ling.Modifiers
             foreach (var row in replaced.Values)
                 if (row != null) row.ParentModelContext = view;
             return view;
+        }
+
+        /// <summary>
+        /// 焼いた行に形の控えを付ける（冒頭の【形】）。結果は形を持たないので、
+        ///   1 段の処理列     … 形ごとに流し直す（ModifierChainHandler.AttachShapes）。
+        ///   それ以外（サブディビジョン・何段もの畳み）… 形ごとに流し直す口が無い。頂点数が元と同じなら
+        ///                     元の控えを頂点番号で写す。
+        ///   どちらもできない（頂点数・面の構成が合わない）ときは、その行の形を書かずに警告する。
+        /// </summary>
+        private static void AttachShapes(ModelContext model, ModifierResultOps.Fold p, MeshContext baked)
+        {
+            var mo = baked.MeshObject;
+            ShapeOps.ClearShapes(mo);
+            if (model.Shapes == null || model.Shapes.Count == 0) return;
+
+            var pair = ModifierResultOps.FoldedPairOfSource(model, p.Source);
+            string err;
+            if (p.Middle.Count == 0 && pair?.Stack != null && pair.Stack.IsChain)
+            {
+                err = ModifierChainHandler.AttachShapes(model,
+                    pair.Stack.Steps.FindAll(s => s != null && s.IsExecutable && s.Enabled), p.Source, mo);
+            }
+            else if (!ShapeOps.HasAnyShapeData(p.Source.MeshObject)) err = null;
+            else if (mo.VertexCount == p.Source.MeshObject.VertexCount)
+            {
+                ShapeOps.RestoreShapes(mo, ShapeOps.CaptureShapes(p.Source.MeshObject));
+                err = null;
+            }
+            else err = "モディファイアで頂点数が変わり、形ごとに流し直せないので、形を書きません";
+
+            if (err != null)
+            {
+                ShapeOps.ClearShapes(mo);
+                Debug.LogWarning($"[ModifierExportView] {p.Source.Name}: {err}");
+            }
         }
 
         private static MeshContext MakePlaceholder(MeshContext src)

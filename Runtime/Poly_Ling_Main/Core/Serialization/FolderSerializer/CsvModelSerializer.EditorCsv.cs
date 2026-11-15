@@ -44,16 +44,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 string meshName = indexToName.TryGetValue(es.selectedMeshIndex, out var mn) ? mn : "";
                 string boneName = indexToName.TryGetValue(es.selectedBoneIndex, out var bn) ? bn : "";
-                string morphName = indexToName.TryGetValue(es.selectedVertexMorphIndex, out var vmn) ? vmn : "";
                 sb.AppendLine($"selectedMeshName,{Esc(meshName)}");
                 sb.AppendLine($"selectedBoneName,{Esc(boneName)}");
-                sb.AppendLine($"selectedVertexMorphName,{Esc(morphName)}");
             }
             else
             {
                 sb.AppendLine($"selectedMeshIndex,{es.selectedMeshIndex}");
                 sb.AppendLine($"selectedBoneIndex,{es.selectedBoneIndex}");
-                sb.AppendLine($"selectedVertexMorphIndex,{es.selectedVertexMorphIndex}");
             }
 
             // 座標規約（pmx* / mqo*）はここには書かない。coordinate.csv が正本。
@@ -72,7 +69,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // 名前ベース一時格納
             string selectedMeshName = null;
             string selectedBoneName = null;
-            string selectedVertexMorphName = null;
 
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
@@ -93,10 +89,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "currentToolName": es.currentToolName = Unesc(cols[1]); break;
                     case "selectedMeshIndex": es.selectedMeshIndex = PInt(cols, 1, -1); break;
                     case "selectedBoneIndex": es.selectedBoneIndex = PInt(cols, 1, -1); break;
-                    case "selectedVertexMorphIndex": es.selectedVertexMorphIndex = PInt(cols, 1, -1); break;
                     case "selectedMeshName": selectedMeshName = Unesc(cols[1]); break;
                     case "selectedBoneName": selectedBoneName = Unesc(cols[1]); break;
-                    case "selectedVertexMorphName": selectedVertexMorphName = Unesc(cols[1]); break;
+                    // selectedVertexMorphIndex / selectedVertexMorphName（モーフの選択。段 7 で廃止）は読まない。
                     // 座標規約（pmx* / mqo*）はここでは読まない。coordinate.csv が正本。
                     case "showBones": es.showBones = PBool(cols, 1, true); break;
                     case "showUnselectedBones": es.showUnselectedBones = PBool(cols, 1); break;
@@ -105,15 +100,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             // 名前ベース解決
-            if (model != null && (selectedMeshName != null || selectedBoneName != null || selectedVertexMorphName != null))
+            if (model != null && (selectedMeshName != null || selectedBoneName != null))
             {
                 var nameToIndex = BuildNameToIndex(model);
                 if (selectedMeshName != null && nameToIndex.TryGetValue(selectedMeshName, out int mi))
                     es.selectedMeshIndex = mi;
                 if (selectedBoneName != null && nameToIndex.TryGetValue(selectedBoneName, out int bi))
                     es.selectedBoneIndex = bi;
-                if (selectedVertexMorphName != null && nameToIndex.TryGetValue(selectedVertexMorphName, out int vi))
-                    es.selectedVertexMorphIndex = vi;
             }
 
             return es;
@@ -183,7 +176,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         /// <summary>
-        /// フォルダ内の全mesh/bone/morph CSVからエントリを読み込む
+        /// フォルダ内の全mesh/bone CSVからエントリを読み込む（種類 Morph の行は読まない）
         /// model.csvを無視し、ファイル内の順序でそのまま返す
         /// </summary>
         public static List<CsvMeshEntry> LoadAllMeshEntriesFromFolder(string folderPath)
@@ -201,8 +194,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // 1. 命名規約ファイル (*.mesh.csv, *.bone.csv, *.morph.csv, *.pmx_physics.csv)
-            foreach (var type in new[] { "mesh", "bone", "morph", "pmx_physics" })
+            // 1. 命名規約ファイル (*.mesh.csv, *.bone.csv, *.pmx_physics.csv)。*.morph.csv（旧モーフ。段 7 で廃止）は読まない。
+            foreach (var type in new[] { "mesh", "bone", "pmx_physics" })
             {
                 var csvFiles = Directory.GetFiles(folder, $"*.{type}.csv");
                 foreach (var csvFile in csvFiles)
@@ -228,7 +221,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                             firstLine = firstLine.TrimStart('\uFEFF').Trim(); // BOM除去
                             if (firstLine.StartsWith("#PolyLing_Mesh") ||
                                 firstLine.StartsWith("#PolyLing_Bone") ||
-                                firstLine.StartsWith("#PolyLing_Morph") ||
                                 firstLine.StartsWith("#PolyLing_PmxPhysics"))
                             {
                                 result.AddRange(CsvMeshSerializer.ReadFile(csvFile));

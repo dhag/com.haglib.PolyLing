@@ -13,8 +13,8 @@
 //   ・選択された頂点（Selection.Vertices）… 写す。どの面にも入らなければ単独の頂点になる。
 //
 // 【頂点の並び】
-//   元の番号の小さい順に並べる。MorphBaseData.RemoveVertices が「残った頂点を元の順に
-//   詰める」形なので、この並びにしておけばモーフ基準データをそのまま間引ける。
+//   元の番号の小さい順に並べる（頂点番号に結びついた配列 OriginalPositions を、残った頂点の順に間引くため）。
+//   形の控えは頂点が持つので、頂点と一緒に写る。
 //
 // 【オブジェクトの属性】
 //   MeshContextCloneOps.Clone（NewObject）で丸ごと複製してから、頂点と面だけを差し替える。
@@ -199,9 +199,6 @@ namespace Poly_Ling.Ops
             // 頂点番号に結びついた配列を、残した頂点に合わせて間引く。
             var removed = new HashSet<int>();
             for (int i = 0; i < n; i++) if (!map.ContainsKey(i)) removed.Add(i);
-
-            if (dup.MorphBaseData != null && removed.Count > 0)
-                dup.MorphBaseData.RemoveVertices(removed);
 
             if (dup.OriginalPositions != null)
             {

@@ -29,8 +29,43 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     [Poly_Ling.Data.PLTool("pointDefined", Description = "点指定図形（確定は CreatePointDefinedPrimitiveCommand）")]
-    public class PointDefinedToolHandler : IPlayerToolHandler
+    public class PointDefinedToolHandler : IPlayerToolHandler, IPointerAxisClient
     {
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>
+        /// 吸着候補の判定（Viewer が縦横制限の AcceptsCandidate を刺す）。引数は候補の画面位置（Y=0 下）。
+        /// false の候補には吸着しない（制限方向を崩さない）。null なら判定しない。
+        /// </summary>
+        public Func<Vector2, bool> SnapCandidateFilter;
+
+        /// <summary>
+        /// 点が 1 つ以上あり、まだ点を置ける間は「点を指定」とし、直前に確定した点を基準にする。
+        /// 基準点は直前の点のワールド位置を今のカメラで画面へ写したもの。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = Vector2.zero;
+            if (_picks.Count == 0 || _picks.Count >= RequiredPoints) return AxisConstraintUse.None;
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return AxisConstraintUse.None;
+            anchor = ToHandlerScreen(ctx, _picks[_picks.Count - 1].WorldPosition);
+            return AxisConstraintUse.PointSpec;
+        }
+
+        /// <summary>ワールド → 画面（Y=0 下）。</summary>
+        private static Vector2 ToHandlerScreen(ToolContext ctx, Vector3 world)
+        {
+            Vector2 s = ctx.WorldToScreen(world);
+            return new Vector2(s.x, ctx.PreviewRect.height - s.y);
+        }
+
+        /// <summary>吸着候補が縦横制限を崩さないか。判定が無ければ true。</summary>
+        private bool AcceptsSnap(ToolContext ctx, Vector3 world)
+            => SnapCandidateFilter == null || SnapCandidateFilter(ToHandlerScreen(ctx, world));
+
         /// <summary>吸着しない点をカメラから置く距離（カメラ距離に対する倍率）。面追加と同じ値。</summary>
         private const float DefaultDistance = 1.5f;
 
@@ -206,12 +241,15 @@ namespace Poly_Ling.Player
         /// </summary>
         private PointPick ResolvePickAt(Vector2 screenPos, ToolContext ctx)
         {
+            // 吸着候補は縦横制限で固定中なら制限方向上のものだけ（AcceptsSnap）。外れたら次の候補へ。
             if (GetHoverElement != null
-                && TryPickFromHover(GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex), out var p))
+                && TryPickFromHover(GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex), out var p)
+                && AcceptsSnap(ctx, p.WorldPosition))
                 return p;
 
             if (_snapToUnselected && GetSnapHoverElement != null
-                && TryPickFromHover(GetSnapHoverElement(), out p))
+                && TryPickFromHover(GetSnapHoverElement(), out p)
+                && AcceptsSnap(ctx, p.WorldPosition))
                 return p;
 
             // UpdateHover / クリックの screenPos は GPU Y。ScreenPosToRay は IMGUI Y（Y=0 上）を取る。
@@ -220,7 +258,7 @@ namespace Poly_Ling.Player
             if ((SnapToBones || SnapToObjectOrigins) && GetSnapPointWorld != null)
             {
                 var sw = GetSnapPointWorld(imgui, SnapToBones, SnapToObjectOrigins);
-                if (sw.HasValue)
+                if (sw.HasValue && AcceptsSnap(ctx, sw.Value))
                     return new PointPick { WorldPosition = sw.Value, MeshIndex = -1, VertexIndex = -1 };
             }
 

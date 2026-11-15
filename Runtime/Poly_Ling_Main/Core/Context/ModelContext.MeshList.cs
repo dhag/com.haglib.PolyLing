@@ -66,13 +66,6 @@ namespace Poly_Ling.Context
                 // 選択インデックス調整（挿入位置以降は+1）- 各カテゴリ個別に
                 SelectedDrawableMeshIndices = AdjustIndicesForInsert(SelectedDrawableMeshIndices, index);
                 SelectedBoneIndices = AdjustIndicesForInsert(SelectedBoneIndices, index);
-                SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
-            }
-
-            // モーフエクスプレッションのインデックス調整（常に実行）
-            foreach (var set in MorphExpressions)
-            {
-                set.AdjustIndicesOnInsert(index);
             }
         }
 
@@ -202,15 +195,8 @@ namespace Poly_Ling.Context
                 // 選択インデックス調整 - 各カテゴリ個別に
                 SelectedDrawableMeshIndices = AdjustIndicesForRemove(SelectedDrawableMeshIndices, index);
                 SelectedBoneIndices = AdjustIndicesForRemove(SelectedBoneIndices, index);
-                SelectedMorphIndices = AdjustIndicesForRemove(SelectedMorphIndices, index);
 
                 ValidateSelection();
-            }
-
-            // モーフエクスプレッションのインデックス調整（常に実行）
-            foreach (var set in MorphExpressions)
-            {
-                set.AdjustIndicesOnRemove(index);
             }
 
             return true;
@@ -251,7 +237,6 @@ namespace Poly_Ling.Context
             // 選択インデックス調整 - 各カテゴリ個別に
             SelectedDrawableMeshIndices = AdjustIndicesForMove(SelectedDrawableMeshIndices, fromIndex, toIndex);
             SelectedBoneIndices = AdjustIndicesForMove(SelectedBoneIndices, fromIndex, toIndex);
-            SelectedMorphIndices = AdjustIndicesForMove(SelectedMorphIndices, fromIndex, toIndex);
 
             InvalidateTypedIndices();
             IsDirty = true;
@@ -675,9 +660,9 @@ namespace Poly_Ling.Context
                 var ctx = MeshContextList[i];
                 if (ctx == null) continue;
 
-                // ボーン・モーフ・剛体・ジョイント・グループ・作業軸は対象外
+                // ボーン・剛体・ジョイント・グループ・作業軸は対象外
                 var t = ctx.Type;
-                if (t == MeshType.Bone     || t == MeshType.Morph       ||
+                if (t == MeshType.Bone     ||
                     t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
                     t == MeshType.Group     || t == MeshType.WorkAxis)
                     continue;

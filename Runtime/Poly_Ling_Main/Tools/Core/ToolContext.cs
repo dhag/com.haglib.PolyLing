@@ -219,9 +219,6 @@ namespace Poly_Ling.Tools
         /// <summary>ボーンが選択されているか</summary>
         public bool HasBoneSelection => Model?.HasBoneSelection ?? false;
 
-        /// <summary>頂点モーフが選択されているか</summary>
-        public bool HasMorphSelection => Model?.HasMorphSelection ?? false;
-
         /// <summary>有効なメッシュが選択されているか</summary>
         public bool HasValidMeshSelection => Model?.HasValidMeshContextSelection ?? false;
 
@@ -352,7 +349,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 頂点ドラッグ開始時に呼ぶ（ワイヤ/頂点再構築・ヒットテスト等をスキップ）
-        /// 対応: MoveTool, SculptTool, SimpleMorphPanel等
+        /// 対応: MoveTool, SculptTool 等
         /// </summary>
         public Action EnterTransformDragging { get; set; }
 

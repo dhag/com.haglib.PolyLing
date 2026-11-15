@@ -336,6 +336,9 @@ namespace Poly_Ling.Player
                         var basePos = mc.MeshObject.Vertices[v].Position;
                         mirrorCtx.MeshObject.Vertices[v].Position = mirrorMatrix.MultiplyPoint3x4(basePos);
                     }
+                    // 形ごとの位置も実体側から取り直す（どちらも形を持たなければ何もしない）。
+                    Poly_Ling.Ops.ShapeOps.SyncMirrorShapes(mc.MeshObject, mirrorCtx.MeshObject, null,
+                        p => mirrorMatrix.MultiplyPoint3x4(p));
                     bm.UpdatePositions(mirrorCtx.MeshObject, mirrorUnifiedIdx);
                 }
             }

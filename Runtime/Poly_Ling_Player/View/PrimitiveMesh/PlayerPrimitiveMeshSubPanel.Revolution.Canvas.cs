@@ -298,6 +298,8 @@ namespace Poly_Ling.Player
                 foreach (var i in _revSel)
                     if (i >= 0 && i < _revProfile.Count) _revDragStart[i] = _revProfile[i];
             _revDragStartCursorProf = RevC2P(cp, w, h);
+            // 縦横制限の基準点はドラッグを始めた位置（挿入してそのまま動かす場合も同じ）。
+            _revAxis?.Begin(cp, false);
 
             // マグネット影響点（非選択で半径内）を確定
             _revMagnetStart.Clear(); _revMagnetW.Clear();
@@ -601,33 +603,74 @@ namespace Poly_Ling.Player
 
             if (_revDrag && _revCanvas.HasPointerCapture(e.pointerId))
             {
-                if (_revProfile != null && _revDragStart.Count > 0)
-                {
-                    // 選択点を一括で delta 移動（カーソル追従・グラブ相対を維持）。
-                    var delta = RevC2P(cp, w, h) - _revDragStartCursorProf;
-                    foreach (var kv in _revDragStart)
-                    {
-                        int idx = kv.Key;
-                        if (idx < 0 || idx >= _revProfile.Count) continue;
-                        var np = kv.Value + delta;
-                        np.x = Mathf.Max(0f, np.x);
-                        _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
-                    }
-                    // マグネット: 非選択点を delta×weight で追従
-                    foreach (var kv in _revMagnetStart)
-                    {
-                        int idx = kv.Key;
-                        if (idx < 0 || idx >= _revProfile.Count) continue;
-                        var np = kv.Value + delta * _revMagnetW[idx];
-                        np.x = Mathf.Max(0f, np.x);
-                        _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
-                    }
-                    _revP.CurrentPreset = ProfilePreset.Custom;
-                    D(); RefreshRevCanvas(); RefreshRevPointUI();
-                }
+                // Shift の縦横制限を通した操作座標で動かす。
+                RevDragMoveTo(_revAxis.Apply(cp, e.shiftKey), w, h);
                 e.StopPropagation(); return;
             }
 
+            RevUpdateHover(cp, w, h);
+        }
+
+        // ── 縦横制限（計画と規約/PolyLing_縦横制限計画.md）────────────────
+
+        /// <summary>選択点のドラッグ（挿入して動かす場合も）に使う縦横制限。</summary>
+        private CanvasPointerAxis _revAxis;
+
+        /// <summary>キャンバスへ縦横制限を組み込む（キャンバスを作った直後に呼ぶ）。</summary>
+        private void AttachRevAxis()
+        {
+            _revAxis = new CanvasPointerAxis(_revCanvas, "rev", op =>
+            {
+                if (!_revDrag) return;
+                RevDragMoveTo(op, _revCanvas.resolvedStyle.width, _revCanvas.resolvedStyle.height);
+            })
+            {
+                Describe = () =>
+                {
+                    if (_revProfile == null || _revSelIdx < 0 || _revSelIdx >= _revProfile.Count)
+                        return $"selected={_revSel.Count}";
+                    float w = _revCanvas.resolvedStyle.width, h = _revCanvas.resolvedStyle.height;
+                    var pt = _revProfile[_revSelIdx];
+                    var c  = RevP2C(pt, w, h);
+                    return System.FormattableString.Invariant(
+                        $"selected={_revSel.Count} primary={_revSelIdx} canvas=({c.x:0.0},{c.y:0.0}) pos=({pt.x:0.0000},{pt.y:0.0000})");
+                },
+            };
+        }
+
+        /// <summary>
+        /// 選択点を、ドラッグ開始時のカーソル位置から操作座標までの差だけ動かす（開始位置から毎回計算）。
+        /// </summary>
+        private void RevDragMoveTo(Vector2 cp, float w, float h)
+        {
+            if (_revProfile == null || _revDragStart.Count == 0) return;
+
+            // 選択点を一括で delta 移動（カーソル追従・グラブ相対を維持）。
+            var delta = RevC2P(cp, w, h) - _revDragStartCursorProf;
+            foreach (var kv in _revDragStart)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= _revProfile.Count) continue;
+                var np = kv.Value + delta;
+                np.x = Mathf.Max(0f, np.x);
+                _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
+            }
+            // マグネット: 非選択点を delta×weight で追従
+            foreach (var kv in _revMagnetStart)
+            {
+                int idx = kv.Key;
+                if (idx < 0 || idx >= _revProfile.Count) continue;
+                var np = kv.Value + delta * _revMagnetW[idx];
+                np.x = Mathf.Max(0f, np.x);
+                _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
+            }
+            _revP.CurrentPreset = ProfilePreset.Custom;
+            D(); RefreshRevCanvas(); RefreshRevPointUI();
+        }
+
+        /// <summary>非ドラッグ中のハンドル・辺のホバー更新。</summary>
+        private void RevUpdateHover(Vector2 cp, float w, float h)
+        {
             // ハンドルホバー更新（非ドラッグ中。ギズモ表示OFF/アンカー設定中は無効）
             var revHovType = (_revAnchor.Mode || !_revShowGizmo)
                                              ? Canvas2DHandle.HandleType.None
@@ -669,7 +712,7 @@ namespace Poly_Ling.Player
             _revBgDrag  = false;
             _revPanDrag = false;
             _revAnchorDrag = false;
-            if (wasRevDrag) RevCommit("プロファイル点編集");
+            if (wasRevDrag) { _revAxis?.End(); RevCommit("プロファイル点編集"); }
             e.StopPropagation();
         }
     }

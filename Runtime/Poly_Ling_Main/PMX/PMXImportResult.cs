@@ -65,6 +65,9 @@ namespace Poly_Ling.PMX
         /// <summary>インポートされたモーフエクスプレッション</summary>
         public List<MorphExpression> MorphExpressions { get; } = new List<MorphExpression>();
 
+        /// <summary>形の一覧（頂点モーフ・UV モーフ 1 本＝形 1 つ。頂点の控えは MeshContexts の頂点が持つ）。</summary>
+        public List<ShapeDef> Shapes { get; } = new List<ShapeDef>();
+
         /// <summary>PMX のモデル情報（名前・英語名・コメント）。</summary>
         public PmxModelInfoData ModelInfo { get; set; }
 

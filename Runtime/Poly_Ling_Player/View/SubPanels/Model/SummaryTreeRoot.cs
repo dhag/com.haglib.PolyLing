@@ -116,7 +116,7 @@ namespace Poly_Ling.MeshListV2
                 _adapterByMasterIndex[v.MasterIndex] = adapter;
             }
 
-            if (category == MeshCategory.Drawable || category == MeshCategory.Morph)
+            if (category == MeshCategory.Drawable)
                 BuildHierarchyFromDepth(allAdapters, resultParents);
             else
                 BuildHierarchyFromParentIndex(allAdapters);

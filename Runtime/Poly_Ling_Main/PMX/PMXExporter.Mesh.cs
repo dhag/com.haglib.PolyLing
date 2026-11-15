@@ -32,9 +32,12 @@ namespace Poly_Ling.PMX
             List<MeshContext> meshContexts,
             PMXDocument document,
             Dictionary<int, string> boneNameByMaster,
-            PMXExportSettings settings)
+            PMXExportSettings settings,
+            out Dictionary<MeshContext, Dictionary<(int vIdx, int uvIdx), int>> contextMaps)
         {
             var vertexMaps = new Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>>();
+            // 形の差分を写すのは描画オブジェクトそのものを鍵にする（同じ名前のオブジェクトがあっても取り違えない）。
+            contextMaps = new Dictionary<MeshContext, Dictionary<(int vIdx, int uvIdx), int>>();
 
             // メッシュをObjectName別にグループ化
             // MeshContext.Name をObjectNameとして使用
@@ -46,7 +49,6 @@ namespace Poly_Ling.PMX
                 if (ctx?.MeshObject == null) continue;
                 // 空メッシュかつミラーはスキップ（ミラー材質を作らない）
                 if (ctx.MeshObject.VertexCount == 0 && (ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide)) continue;
-                if (ctx.Type == MeshType.Morph) continue;  // モーフは除外
                 if (ctx.Type == MeshType.RigidBody || ctx.Type == MeshType.RigidBodyJoint) continue;  // 剛体/JOINTはメッシュ変換対象外（頂点ゼロのメタデータ専用）
                 if (ctx.ExcludeFromExport) continue;       // エクスポート除外
 
@@ -86,6 +88,7 @@ namespace Poly_Ling.PMX
                     var map = ConvertSingleMeshWithObjectName(
                         ctx, document, boneNameByMaster, settings, objectName, isMirror, pendingFaces);
                     if (ctx?.Name != null) vertexMaps[ctx.Name] = map;
+                    if (ctx != null) contextMaps[ctx] = map;
                 }
             }
 

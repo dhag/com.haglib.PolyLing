@@ -297,6 +297,7 @@ namespace Poly_Ling.Player
             var src = source.MeshObject;
             var mo = new MeshObject(name);
             foreach (var v in src.Vertices) mo.Vertices.Add(v.Clone());
+            Poly_Ling.Ops.ShapeOps.ClearShapes(mo);   // 出力は形を持たない（入力の今の形に追随する）
             foreach (var f in src.Faces) mo.Faces.Add(f.Clone());
             var lgs = new List<LineGroup>();
             if (src.LineGroups != null) foreach (var lg in src.LineGroups) if (lg != null) lgs.Add(lg.Clone());
@@ -517,14 +518,10 @@ namespace Poly_Ling.Player
             var output = ModifierChainHandler.EvaluateOnSource(model, targets, source, out string evalErr);
             if (output == null) return $"適用できません: {evalErr}";
 
-            int sourceIndex = model.MeshContextList.IndexOf(source);
-            if (output.VertexCount != source.MeshObject.VertexCount)
-                for (int i = 0; i < model.MeshContextCount; i++)
-                {
-                    var mc = model.GetMeshContext(i);
-                    if (mc != null && mc.Type == MeshType.Morph && mc.MorphParentIndex == sourceIndex)
-                        return $"{source.Name} はモーフを持つので、頂点数を変えるモディファイアは適用できません";
-                }
+            // 形は形ごとに流し直して結果に付ける（PolyLing_モーフ整理計画.md 段 7。頂点数が変わっても、
+            // 形ごとの結果の頂点数・面の構成が同じなら引き継げる）。合わない形があれば何も変えずに断る。
+            string shapeErr = ModifierChainHandler.AttachShapes(model, targets, source, output);
+            if (shapeErr != null) return $"{source.Name}: {shapeErr}";
 
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -1018,7 +1015,8 @@ namespace Poly_Ling.Player
         /// 【実体】元の行を残して結果の頂点・面・線分を写し、結果の行を消す。元の行に付いている名前・親子・姿勢・
         ///   パーツ選択辞書・ObjectId（他のスタックの入力からの参照）はそのまま残る。結果を指していた参照は元へ付け替える。
         /// 【履歴】元を出力に持つ生成の項目も外す。残すと次の作り直しで適用した形を上書きするため（Collapse All も履歴ごと畳む）。
-        /// 【モーフ】頂点数が変わるなら、モーフを持つオブジェクトには適用できない（Blender と同じ）。何も変えずに失敗する。
+        /// 【形】形ごとに処理列を流し直して引き継ぐ（ModifierChainHandler.AttachShapes）。形ごとの結果の
+        ///   頂点数・面の構成が今の形と違えば、何も変えずに失敗する。
         /// </summary>
         private string ExecuteApplyMeshModifierChain(ProjectContext project, ModelContext model, ApplyMeshModifierChainCommand c)
         {
@@ -1037,13 +1035,11 @@ namespace Poly_Ling.Player
                 return DetachModifierResult(project, model, g, pair);
 
             int sourceIndex = model.MeshContextList.IndexOf(source);
-            if (result.MeshObject.VertexCount != source.MeshObject.VertexCount)
-                for (int i = 0; i < model.MeshContextCount; i++)
-                {
-                    var mc = model.GetMeshContext(i);
-                    if (mc != null && mc.Type == MeshType.Morph && mc.MorphParentIndex == sourceIndex)
-                        return $"{source.Name} はモーフを持つので、頂点数を変えるモディファイアは適用できません";
-                }
+            // 結果は形を持たない。形ごとに処理列を流し直して、結果の写しに形の控えとして付ける
+            // （PolyLing_モーフ整理計画.md 段 7）。形ごとの結果の頂点数・面の構成が今の形と違えば何も変えずに断る。
+            var applied = result.MeshObject.Clone();
+            string shapeErr = AttachShapesForStack(model, g, source, applied);
+            if (shapeErr != null) return $"{source.Name}: {shapeErr}";
 
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -1062,7 +1058,7 @@ namespace Poly_Ling.Player
                 var sourcePeers = new List<int>();
                 MirrorBranchOps.CollectMirrorPeers(model, sourceIndex, sourcePeers);
 
-                Poly_Ling.Modifiers.ModifierResultOps.CopyGeometry(result.MeshObject, source.MeshObject);
+                Poly_Ling.Modifiers.ModifierResultOps.CopyGeometry(applied, source.MeshObject);
                 source.Selection?.ClearAll();
 
                 var gone = new List<MeshContext> { result };
@@ -1125,11 +1121,41 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 結果を今の形のまま独立したオブジェクトにする。元・元の履歴・他の項目の参照には触らない。
+        /// スタックの結果の写し applied に、形ごとの控えを付ける（段 7）。成功なら null。
+        ///   処理列：形ごとに有効な実行項目を流し直す（ModifierChainHandler.AttachShapes）。
+        ///   それ以外（サブディビジョン）：形ごとに流し直す口が無い。頂点数が元と同じなら元の控えを頂点番号で写し、
+        ///   違えば、元が形を持つときは断る。
+        /// </summary>
+        private static string AttachShapesForStack(ModelContext model, ModifierStack g, MeshContext source, MeshObject applied)
+        {
+            if (g.IsChain)
+                return ModifierChainHandler.AttachShapes(model,
+                    g.Steps.FindAll(s => s != null && s.IsExecutable && s.Enabled), source, applied);
+
+            Poly_Ling.Ops.ShapeOps.ClearShapes(applied);
+            if (!Poly_Ling.Ops.ShapeOps.HasAnyShapeData(source.MeshObject)) return null;
+            if (applied.VertexCount != source.MeshObject.VertexCount)
+                return "形を持つので、頂点数を変えるサブディビジョンは適用できません";
+            Poly_Ling.Ops.ShapeOps.RestoreShapes(applied, Poly_Ling.Ops.ShapeOps.CaptureShapes(source.MeshObject));
+            return null;
+        }
+
+        /// <summary>
+        /// 結果を独立したオブジェクトにする（形ごとの控えも付ける）。元・元の履歴・他の項目の参照には触らない。
         /// </summary>
         private string DetachModifierResult(ProjectContext project, ModelContext model, ModifierStack g,
                                             Poly_Ling.Modifiers.ModifierResultOps.Pair pair)
         {
+            // 独立した結果も形を持つ（形ごとに流し直して付ける。段 7）。合わない形があれば何も変えずに断る。
+            // サブディビジョンは形ごとに流し直す口が無いので、今の形のまま（形を持たない）独立させる。
+            var detached = pair.Result.MeshObject.Clone();
+            if (g.IsChain)
+            {
+                string shapeErr = AttachShapesForStack(model, g, pair.Source, detached);
+                if (shapeErr != null) return $"{pair.Result.Name}: {shapeErr}";
+            }
+            else Poly_Ling.Ops.ShapeOps.ClearShapes(detached);
+
             _undoController?.SetModelContext(model);
             var listBefore = MeshFilterToSkinnedRecord.CaptureList(model);
             var changes    = new List<ModifierStackChangeRecord>();
@@ -1140,6 +1166,7 @@ namespace Poly_Ling.Player
                 RemoveModifierLink(model, pair, changes);
                 if (pair.IsSubdivision) SubdivisionSync.Forget(pair.Result);
                 pair.Result.IsLocked = false;
+                Poly_Ling.Modifiers.ModifierResultOps.CopyGeometry(detached, pair.Result.MeshObject);
                 var source = pair.Source;
                 if (!Poly_Ling.Modifiers.ModifierResultOps.CollectPairs(model).Exists(p => ReferenceEquals(p.Source, source)))
                 {

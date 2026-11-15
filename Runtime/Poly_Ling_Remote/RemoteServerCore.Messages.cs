@@ -102,6 +102,17 @@ namespace Poly_Ling.Remote
                     return BuildSuccessResponse(msg.Id,
                         RemoteDataProvider.QueryAvailableFields());
 
+                // 形の一覧と今の形（段 7。切り替えは setCurrentShape / swapShape のコマンド、
+                // 切り替わったら push の shapeChanged が届く）。
+                case "shapes":
+                {
+                    var proj = GetProjectContext();
+                    int mi   = GetParamInt(msg, "modelIndex", proj?.CurrentModelIndex ?? 0);
+                    var model = (proj != null && mi >= 0 && mi < proj.ModelCount) ? proj.Models[mi] : null;
+                    if (model == null) return BuildErrorResponse(msg.Id, $"Invalid modelIndex: {mi}");
+                    return BuildSuccessResponse(msg.Id, RemoteDataProvider.QueryShapes(model));
+                }
+
                 case "project_header":    return ProcessProjectHeaderQuery(msg);
                 case "model_meta":        return ProcessModelMetaQuery(msg);
                 case "mesh_data":         return ProcessMeshDataQuery(msg);
@@ -283,7 +294,7 @@ namespace Poly_Ling.Remote
             switch (category)
             {
                 case "bone":  entries = model.Bones;  break;
-                case "morph": entries = model.Morphs; break;
+                // "morph"（旧モーフ）は段 7 で廃止。既定（drawable）として扱う。
                 case "all":   entries = model.TypedIndices.GetEntries(MeshCategory.All); break;
                 default:      entries = model.DrawableMeshes; break;
             }
@@ -485,10 +496,6 @@ namespace Poly_Ling.Remote
                     slot.Bone = indices;
                     slot.Category = ModelContext.SelectionCategory.Bone;
                     break;
-                case MeshCategory.Morph:
-                    slot.Morph = indices;
-                    slot.Category = ModelContext.SelectionCategory.Morph;
-                    break;
                 default:
                     slot.Drawable = indices;
                     slot.Category = ModelContext.SelectionCategory.Mesh;
@@ -531,7 +538,6 @@ namespace Poly_Ling.Remote
             jb.KeyValue("category",   (int)sel.Category);
             jb.KeyValue("drawable",   UserSelection.Csv(sel.Drawable));
             jb.KeyValue("bone",       UserSelection.Csv(sel.Bone));
-            jb.KeyValue("morph",      UserSelection.Csv(sel.Morph));
             jb.EndObject();
 
             string json = BuildPushMessage("selectionChanged", jb.ToString());

@@ -84,8 +84,6 @@ namespace Poly_Ling.Player
         private Toggle _kindMirrorBoneWeightToggle;
         [UiControl("kind.vertexId", Description = "頂点 ID を転送する（インデックス対応のときだけ意味がある）")]
         private Toggle _kindVertexIdToggle;
-        [UiControl("kind.morphBase", Description = "モーフ基準データを転送する")]
-        private Toggle _kindMorphBaseToggle;
         [UiControl("kind.partsSelectionSet", Description = "パーツ選択辞書を転送する（頂点・辺のみ）")]
         private Toggle _kindPartsSelectionSetToggle;
         [UiControl("preview", Safety = UiSafety.SafeWrite, Description = "対応を確認する（モデルは変えない）")]
@@ -198,14 +196,12 @@ namespace Poly_Ling.Player
                 "GPUバッファの再構築を伴います");
             _kindVertexIdToggle = AddKindToggle(root, VertexDataKind.VertexId,        "頂点ID",
                 "インデックス対応のときだけ意味があります。転送後に重複が出れば警告します");
-            _kindMorphBaseToggle = AddKindToggle(root, VertexDataKind.MorphBase,       "モーフ基準データ",
-                "対応の取れなかった頂点は転送先の現在値を保ちます");
             _kindPartsSelectionSetToggle = AddKindToggle(root, VertexDataKind.PartsSelectionSet, "パーツ選択辞書",
                 "頂点・辺のみ引き継ぎます。面/線分ベースの辞書は読み替えられないため除外します");
 
             var costNote = new Label(
                 "※重い項目はGPUバッファ構築時に焼き込まれるため、転送後に全体の再構築が要ります。"
-              + "頂点位置のみなら差分同期で済みます。頂点ID・モーフ基準・選択辞書は描画に出ないため再構築なしです。");
+              + "頂点位置のみなら差分同期で済みます。頂点ID・選択辞書は描画に出ないため再構築なしです。");
             costNote.style.fontSize     = 9;
             costNote.style.whiteSpace   = WhiteSpace.Normal;
             costNote.style.color        = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
@@ -480,7 +476,7 @@ namespace Poly_Ling.Player
         // ヘルパー
         // ================================================================
 
-        /// <summary>転送の対象にする描画メッシュとモーフメッシュの MeshContextList インデックス。</summary>
+        /// <summary>転送の対象にする描画メッシュ（ミラー実体を含む）の MeshContextList インデックス。</summary>
         private List<int> CollectMeshIndices(Poly_Ling.View.IModelView model)
         {
             var list = new List<int>();
@@ -489,9 +485,8 @@ namespace Poly_Ling.Player
             {
                 var mc = model.GetMesh(i);
                 if (mc == null) continue;
-                // ボーン等の非メッシュは除外。モーフは対象に含める
-                // （モーフ基準データの転送を手動ペアで行えるようにするため）。
-                if (mc.Type != MeshType.Mesh && mc.Type != MeshType.BakedMirror && mc.Type != MeshType.Morph)
+                // ボーン等の非メッシュは除外。
+                if (mc.Type != MeshType.Mesh && mc.Type != MeshType.BakedMirror)
                     continue;
                 list.Add(i);
             }

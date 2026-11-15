@@ -449,20 +449,39 @@ namespace Poly_Ling.Vrm10Impl
             ModelContext model, HierarchyBuildResult hierarchy,
             Vrm10ExportSettings settings, AssembleReport report)
         {
-            var expressions = model.MorphExpressions;
-            if (expressions == null || expressions.Count == 0) return 0;
+            // 書く表情：モデルの表情 ＋ 表情に無い形（形 1 つ＝頂点の表情 1 つ。PolyLing_モーフ整理計画.md 3.5）。
+            // 同じ名前の頂点の表情があれば、その表情（VRM の付帯データ）で形を指す（ShapeBlendOps.ExpandExpression）。
+            var expressions = new List<MorphExpression>();
+            var exprNames = new HashSet<string>();
+            if (model.MorphExpressions != null)
+                foreach (var e in model.MorphExpressions)
+                {
+                    if (e == null) continue;
+                    expressions.Add(e);
+                    if (!string.IsNullOrEmpty(e.Name)) exprNames.Add(e.Name);
+                }
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                {
+                    // UV の形は VRM の表情に出さない（ブレンドシェイプにならない。ShapeData.cs の冒頭注記）。
+                    if (s == null || s.IsUV || string.IsNullOrEmpty(s.Name) || exprNames.Contains(s.Name)) continue;
+                    expressions.Add(new MorphExpression(s.Name, MorphType.Vertex) { NameEnglish = s.NameEnglish ?? "", Panel = s.Panel });
+                    exprNames.Add(s.Name);
+                }
+            if (expressions.Count == 0) return 0;
 
-            // モーフ索引 → 載せたブレンドシェイプ（実体側とミラー枝の両方に載ることがある）
-            var shapesByMorph = new Dictionary<int, List<MorphShapeSlot>>();
+            // 相手（形・旧モーフ）→ 載せたブレンドシェイプ（実体側とミラー枝の両方に載ることがある）
+            var shapesByMorph = new Dictionary<MorphTargetKey, List<MorphShapeSlot>>();
             foreach (var slot in hierarchy.MorphShapes)
             {
-                if (!shapesByMorph.TryGetValue(slot.MorphContextIndex, out var list))
+                if (!shapesByMorph.TryGetValue(slot.Key, out var list))
                 {
                     list = new List<MorphShapeSlot>();
-                    shapesByMorph[slot.MorphContextIndex] = list;
+                    shapesByMorph[slot.Key] = list;
                 }
                 list.Add(slot);
             }
+            var terms = new List<MorphTargetTerm>();
 
             var target = VrmObject.Expression;
             var usedPresets = new HashSet<ExpressionPreset>();
@@ -473,10 +492,12 @@ namespace Poly_Ling.Vrm10Impl
             {
                 if (expr == null || string.IsNullOrEmpty(expr.Name)) continue;
 
-                // 材質色・UV バインドだけの表情（MeshEntries が空）も VRM では成立する。
+                // 材質色・UV バインドだけの表情（指す相手が無い）も VRM では成立する。
                 // MorphExpression.IsValid は MeshEntries を要求するので、ここでは使わない。
                 bool hasMaterialBinds = expr.Vrm != null && expr.Vrm.HasMaterialBinds;
-                if (expr.MeshEntries.Count == 0 && !hasMaterialBinds) continue;
+                terms.Clear();
+                ShapeBlendOps.ExpandExpression(model, expr, 1f, terms);
+                if (terms.Count == 0 && !hasMaterialBinds) continue;
 
                 // 頂点モーフとグループモーフだけを扱う。
                 // UV・材質・ボーンモーフは PolyLing 側に対応するデータが無い。
@@ -489,11 +510,11 @@ namespace Poly_Ling.Vrm10Impl
                 }
 
                 var bindings = new List<MorphTargetBinding>();
-                foreach (var entry in expr.MeshEntries)
+                foreach (var term in terms)
                 {
-                    if (!shapesByMorph.TryGetValue(entry.MeshIndex, out var slots)) continue;
+                    if (!shapesByMorph.TryGetValue(term.Key, out var slots)) continue;
 
-                    float weight = Mathf.Clamp01(entry.Weight);
+                    float weight = Mathf.Clamp01(term.Weight);
                     foreach (var slot in slots)
                     {
                         if (slot.Renderer == null) continue;

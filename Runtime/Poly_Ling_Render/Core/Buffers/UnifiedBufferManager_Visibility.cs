@@ -149,12 +149,13 @@ namespace Poly_Ling.Core
 
                 var meshInfo = _meshInfos[meshIdx];
 
-                // line.FaceIndex はグローバル。ローカルへ直して Face.IsHidden を見る。
+                // line.FaceIndex はグローバル。ローカルへ直して Face.IsLineHidden を見る
+                // （非表示の面と、曲線で見せる弦。Build の BuildLineData と同じ規則）。
                 bool faceHidden = false;
                 int localFaceIndex = (int)(line.FaceIndex - meshInfo.FaceStart);
                 var faces = meshContext.MeshObject.Faces;
                 if (localFaceIndex >= 0 && localFaceIndex < faces.Count)
-                    faceHidden = faces[localFaceIndex].IsHidden;
+                    faceHidden = faces[localFaceIndex].IsLineHidden;
 
                 bool lineVisible = meshContext.IsVisible && !faceHidden;
 

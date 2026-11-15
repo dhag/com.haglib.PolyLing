@@ -2,7 +2,7 @@
 // プログレッシブ転送の付帯（CSV と揃えるための欄）。
 //
 //   PLRH v2 … 作業軸辞書（workaxis_library.csv）
-//   PLRS v8 … モーフ基準データの作成日時（.mfproj の morphBaseData.createdAt。書き読みは本体側）
+//   PLRM v17 / PLRS v12 … 旧モーフの欄を廃止（段 7。PLRS v8 のモーフ基準データの作成日時も消した）
 //   PLRM v13 … 処理列の印と項目の有効（modifierStacks[] の isChain、steps[] の disabled）
 //   PLRM v12 … 表情の作成日時（.mfproj の morphExpressions[].createdAt）と ModifierStack の付帯
 //              （modifierStacks[] の createdAt・scenarioOutputs、steps[] の usageScene・profileDim）
@@ -257,6 +257,141 @@ namespace Poly_Ling.Remote
                     bool enabled = r.ReadBoolean();
                     if (g?.Steps == null || s >= g.Steps.Count || g.Steps[s] == null) continue;
                     g.Steps[s].Enabled = enabled;
+                }
+            }
+        }
+
+        // ================================================================
+        // PLRM v14：形の一覧と今の形
+        // ================================================================
+
+        private static void WriteShapes(BinaryWriter w, ModelContext model)
+        {
+            w.Write(model.CurrentShapeId);
+
+            var shapes = model.Shapes;
+            int n = 0;
+            if (shapes != null) foreach (var s in shapes) if (s != null) n++;
+            w.Write(n);
+            if (shapes == null) return;
+            foreach (var s in shapes)
+            {
+                if (s == null) continue;
+                w.Write(s.Id);
+                WriteString(w, s.Name ?? "");
+                WriteString(w, s.NameEnglish ?? "");
+                w.Write(s.Panel);
+            }
+        }
+
+        private static void ReadShapes(BinaryReader r, ModelContext model)
+        {
+            model.CurrentShapeId = r.ReadInt32();
+            model.PreviousShapeId = 0;
+
+            int n = r.ReadInt32();
+            var list = new List<ShapeDef>(n);
+            for (int i = 0; i < n; i++)
+            {
+                var s = new ShapeDef();
+                s.Id          = r.ReadInt32();
+                s.Name        = ReadString(r);
+                s.NameEnglish = ReadString(r);
+                s.Panel       = r.ReadInt32();
+                list.Add(s);
+            }
+            model.Shapes = list;
+        }
+
+        // ================================================================
+        // PLRM v16：形の種類（ShapeDef.Kind）
+        //   [4B] 個数 × ([4B] 形の番号 [1B] 種類（0 位置 / 1 UV）)。UV の形だけを書く。
+        // ================================================================
+
+        private static void WriteShapeKinds(BinaryWriter w, ModelContext model)
+        {
+            var items = new List<ShapeDef>();
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                    if (s != null && s.Kind != ShapeKind.Position) items.Add(s);
+            w.Write(items.Count);
+            foreach (var s in items)
+            {
+                w.Write(s.Id);
+                w.Write((byte)s.Kind);
+            }
+        }
+
+        private static void ReadShapeKinds(BinaryReader r, ModelContext model)
+        {
+            int n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                int id = r.ReadInt32();
+                byte kind = r.ReadByte();
+                var def = model.FindShapeById(id);
+                if (def != null) def.Kind = kind == 1 ? ShapeKind.UV : ShapeKind.Position;
+            }
+        }
+
+        // ================================================================
+        // PLRM v15：形の読み込み元（ShapeDef.Source・ModelContext.BaseShapeSource。shapes.csv の source 行と揃える）
+        //   [4B] 個数 × ([4B] 形の番号（0 は基本の形） [string] パス [4B float] 倍率 [1B] flipX [1B] flipZ
+        //               [4B] 組の数 × ([string] モデル側の名前 [string] MQO 側の名前))
+        // ================================================================
+
+        private static void WriteShapeSources(BinaryWriter w, ModelContext model)
+        {
+            var items = new List<(int id, ShapeSource src)>();
+            if (model.BaseShapeSource != null) items.Add((0, model.BaseShapeSource));
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                    if (s?.Source != null) items.Add((s.Id, s.Source));
+
+            w.Write(items.Count);
+            foreach (var (id, src) in items)
+            {
+                w.Write(id);
+                WriteString(w, src.Path ?? "");
+                w.Write(src.Scale);
+                w.Write(src.FlipX);
+                w.Write(src.FlipZ);
+                int n = src.Pairs?.Count ?? 0;
+                w.Write(n);
+                for (int i = 0; i < n; i++)
+                {
+                    WriteString(w, src.Pairs[i].Model ?? "");
+                    WriteString(w, src.Pairs[i].Mqo ?? "");
+                }
+            }
+        }
+
+        private static void ReadShapeSources(BinaryReader r, ModelContext model)
+        {
+            model.BaseShapeSource = null;
+            int count = r.ReadInt32();
+            for (int k = 0; k < count; k++)
+            {
+                int id = r.ReadInt32();
+                var src = new ShapeSource
+                {
+                    Path  = ReadString(r),
+                    Scale = r.ReadSingle(),
+                    FlipX = r.ReadBoolean(),
+                    FlipZ = r.ReadBoolean(),
+                };
+                int n = r.ReadInt32();
+                for (int i = 0; i < n; i++)
+                {
+                    string m = ReadString(r);
+                    string q = ReadString(r);
+                    src.Pairs.Add(new ShapeSourcePair(m, q));
+                }
+                if (id == 0) model.BaseShapeSource = src;
+                else
+                {
+                    var def = model.FindShapeById(id);
+                    if (def != null) def.Source = src;
                 }
             }
         }
@@ -1323,11 +1458,6 @@ namespace Poly_Ling.Remote
                 mc.ParentIndex            = Map(mc.ParentIndex);
                 mc.HierarchyParentIndex   = Map(mc.HierarchyParentIndex);
                 mc.BakedMirrorSourceIndex = Map(mc.BakedMirrorSourceIndex);
-                if (mc.IsMorph)
-                {
-                    mc.MorphParentIndex   = Map(mc.MorphParentIndex);
-                    mc.MirrorOfMorphIndex = Map(mc.MirrorOfMorphIndex);
-                }
 
                 var mo = mc.MeshObject;
                 if (mo == null) continue;

@@ -305,6 +305,8 @@ namespace Poly_Ling.Player
             foreach (var morph in result.MorphExpressions)
                 model.MorphExpressions.Add(morph);
 
+            model.Shapes.AddRange(result.Shapes);
+
             foreach (var pair in result.MirrorPairs)
                 model.MirrorPairs.Add(pair);
 

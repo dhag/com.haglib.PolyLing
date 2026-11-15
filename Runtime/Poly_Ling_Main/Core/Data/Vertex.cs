@@ -86,6 +86,114 @@ namespace Poly_Ling.Data
         /// </summary>
         public List<Vector3> ControlPoints = null;
 
+        /// <summary>
+        /// 形ごとの位置（ShapeData.cs の冒頭注記）。null = 保持なし（既定）。
+        /// 今の形の位置は Position にあり、ここには今の形でない形の位置だけが入る。
+        /// 読み書きは ShapeOps を通す（直接書くと決まりが崩れる）。
+        /// </summary>
+        public List<ShapePosition> Shapes = null;
+
+        /// <summary>形ごとの位置を 1 件以上持つか。</summary>
+        public bool HasShapes => Shapes != null && Shapes.Count > 0;
+
+        /// <summary>形 shapeId の控えを取り出す。無ければ false。</summary>
+        public bool TryGetShape(int shapeId, out Vector3 position)
+        {
+            if (Shapes != null)
+            {
+                for (int i = 0; i < Shapes.Count; i++)
+                {
+                    if (Shapes[i].ShapeId != shapeId) continue;
+                    position = Shapes[i].Position;
+                    return true;
+                }
+            }
+            position = default;
+            return false;
+        }
+
+        /// <summary>形 shapeId の控えを書く（あれば上書き、無ければ足す）。</summary>
+        public void SetShape(int shapeId, Vector3 position)
+        {
+            if (Shapes == null) Shapes = new List<ShapePosition>();
+            for (int i = 0; i < Shapes.Count; i++)
+            {
+                if (Shapes[i].ShapeId != shapeId) continue;
+                Shapes[i] = new ShapePosition(shapeId, position);
+                return;
+            }
+            Shapes.Add(new ShapePosition(shapeId, position));
+        }
+
+        /// <summary>形 shapeId の控えを消す。消したら true。空になったら Shapes を null へ戻す。</summary>
+        public bool RemoveShape(int shapeId)
+        {
+            if (Shapes == null) return false;
+            bool removed = false;
+            for (int i = Shapes.Count - 1; i >= 0; i--)
+            {
+                if (Shapes[i].ShapeId != shapeId) continue;
+                Shapes.RemoveAt(i);
+                removed = true;
+            }
+            if (Shapes.Count == 0) Shapes = null;
+            return removed;
+        }
+
+        /// <summary>
+        /// 形ごとの UV（UV スロット 0。種類が UV の形が使う。ShapeData.cs の冒頭注記）。null = 保持なし（既定）。
+        /// 決まりは Shapes と同じ（今の形の UV は UVs[0] にあり、ここには今の形でない形の UV だけが入る）。
+        /// UV を 1 つも持たない頂点は持たない。読み書きは ShapeOps を通す。
+        /// </summary>
+        public List<ShapeUV> UVShapes = null;
+
+        /// <summary>形ごとの UV を 1 件以上持つか。</summary>
+        public bool HasUVShapes => UVShapes != null && UVShapes.Count > 0;
+
+        /// <summary>形 shapeId の UV の控えを取り出す。無ければ false。</summary>
+        public bool TryGetUVShape(int shapeId, out Vector2 uv)
+        {
+            if (UVShapes != null)
+            {
+                for (int i = 0; i < UVShapes.Count; i++)
+                {
+                    if (UVShapes[i].ShapeId != shapeId) continue;
+                    uv = UVShapes[i].UV;
+                    return true;
+                }
+            }
+            uv = default;
+            return false;
+        }
+
+        /// <summary>形 shapeId の UV の控えを書く（あれば上書き、無ければ足す）。</summary>
+        public void SetUVShape(int shapeId, Vector2 uv)
+        {
+            if (UVShapes == null) UVShapes = new List<ShapeUV>();
+            for (int i = 0; i < UVShapes.Count; i++)
+            {
+                if (UVShapes[i].ShapeId != shapeId) continue;
+                UVShapes[i] = new ShapeUV(shapeId, uv);
+                return;
+            }
+            UVShapes.Add(new ShapeUV(shapeId, uv));
+        }
+
+        /// <summary>形 shapeId の UV の控えを消す。消したら true。空になったら UVShapes を null へ戻す。</summary>
+        public bool RemoveUVShape(int shapeId)
+        {
+            if (UVShapes == null) return false;
+            bool removed = false;
+            for (int i = UVShapes.Count - 1; i >= 0; i--)
+            {
+                if (UVShapes[i].ShapeId != shapeId) continue;
+                UVShapes.RemoveAt(i);
+                removed = true;
+            }
+            if (UVShapes.Count == 0) UVShapes = null;
+            return removed;
+        }
+
         /// <summary>スキニングデータを持つか</summary>
         public bool HasBoneWeight => BoneWeight.HasValue;
 
@@ -283,6 +391,13 @@ namespace Poly_Ling.Data
             // オプション位置リストは null なら null のまま複製する
             clone.ControlPoints = this.ControlPoints != null
                 ? new List<Vector3>(this.ControlPoints)
+                : null;
+            // 形ごとの位置も null なら null のまま複製する
+            clone.Shapes = this.Shapes != null
+                ? new List<ShapePosition>(this.Shapes)
+                : null;
+            clone.UVShapes = this.UVShapes != null
+                ? new List<ShapeUV>(this.UVShapes)
                 : null;
             return clone;
         }

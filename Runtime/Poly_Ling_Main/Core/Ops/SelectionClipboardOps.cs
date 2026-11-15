@@ -63,10 +63,8 @@ namespace Poly_Ling.Ops
         /// <summary>元のオブジェクトの属性の写し（同じモデルへ新規オブジェクトとして貼るときに使う）。</summary>
         public MeshContext Template;
 
-        /// <summary>写したときの親・モーフの親・ミラー元モーフ（実体）。貼るときに今の番号へ引き直す。</summary>
+        /// <summary>写したときの親（実体）。貼るときに今の番号へ引き直す。</summary>
         public MeshContext ParentRef;
-        public MeshContext MorphParentRef;
-        public MeshContext MirrorOfMorphRef;
 
         /// <summary>頂点（モデル空間。ID は 0）。</summary>
         public List<Vertex> Vertices;
@@ -144,6 +142,10 @@ namespace Poly_Ling.Ops
                     v.Id = 0;
                     v.Position = m.MultiplyPoint3x4(v.Position);
                     TransformNormals(v, nm);
+                    // クリップボードは形を運ばない。貼るときの「今の形」や貼り先のモデルが、
+                    // 写したときと違いうるので、控えの意味（番号・基本の位置）が通じない。
+                    // 貼った頂点は「どの形でも同じ位置」になる（計画書 6 の 4）。
+                    ShapeOps.ClearShapes(v);
                 }
                 foreach (var f in ex.Faces) f.Id = 0;
 
@@ -154,8 +156,6 @@ namespace Poly_Ling.Ops
                     SourceContext    = src,
                     Template         = template,
                     ParentRef        = SafeGet(list, src.HierarchyParentIndex),
-                    MorphParentRef   = SafeGet(list, src.MorphParentIndex),
-                    MirrorOfMorphRef = SafeGet(list, src.MirrorOfMorphIndex),
                     Vertices         = ex.Vertices,
                     Faces            = ex.Faces,
                     Selection        = MapSelection(src.Selection, ex),
@@ -330,8 +330,6 @@ namespace Poly_Ling.Ops
                     int parent = IndexOf(list, part.ParentRef);
                     mc.HierarchyParentIndex = parent;
                     if (parent < 0) mc.Depth = 0;
-                    mc.MorphParentIndex   = IndexOf(list, part.MorphParentRef);
-                    mc.MirrorOfMorphIndex = IndexOf(list, part.MirrorOfMorphRef);
                 }
                 else
                 {

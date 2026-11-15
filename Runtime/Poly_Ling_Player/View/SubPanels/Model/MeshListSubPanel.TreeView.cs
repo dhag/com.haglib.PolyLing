@@ -107,11 +107,9 @@ namespace Poly_Ling.MeshListV2
 
         private void SwitchTab(TabType tab)
         {
-            if (_currentTab == TabType.Morph && tab != TabType.Morph) SendEndMorphPreview();
             _currentTab = tab;
             SetTabActive(_tabDrawable, tab == TabType.Drawable);
             SetTabActive(_tabBone,     tab == TabType.Bone);
-            SetTabActive(_tabMorph,    tab == TabType.Morph);
             SetTabActive(_tabRigidBody, tab == TabType.RigidBody);
             SetTabActive(_tabJoint,    tab == TabType.Joint);
 
@@ -123,7 +121,6 @@ namespace Poly_Ling.MeshListV2
                 if (_indexInfo     != null) _indexInfo.style.display     = DisplayStyle.None;
                 if (_bonePoseSection != null) _bonePoseSection.style.display = DisplayStyle.Flex;
                 if (_mainContent   != null) _mainContent.style.display   = DisplayStyle.Flex;
-                if (_morphEditor   != null) _morphEditor.style.display   = DisplayStyle.None;
             }
             else
             {
@@ -131,17 +128,13 @@ namespace Poly_Ling.MeshListV2
                     _indexInfo.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
                 if (_bonePoseSection != null)
                     _bonePoseSection.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
-                bool isMorph = tab == TabType.Morph;
-                if (_mainContent != null) _mainContent.style.display = isMorph ? DisplayStyle.None : DisplayStyle.Flex;
-                if (_morphEditor != null) _morphEditor.style.display = isMorph ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_mainContent != null) _mainContent.style.display = DisplayStyle.Flex;
             }
 
             _selectedAdapters.Clear();
-            bool showMorph = !simpleMode && tab == TabType.Morph;
-            if (!showMorph) CreateTreeRoot();
-            if (showMorph) RefreshMorphEditor();
+            CreateTreeRoot();
             RefreshAllImmediate();
-            // 名称一括変更はタブ（メッシュ／ボーン／モーフ…）ごとに独立させる
+            // 名称一括変更はタブ（メッシュ／ボーン…）ごとに独立させる
             ResetRenameState();
             RefreshSelectionDictionary();
             // タブでピック対象（ボーン / 描画メッシュ）が変わる。
@@ -154,7 +147,6 @@ namespace Poly_Ling.MeshListV2
         private void OnDetailModeChanged()
         {
             _selectedAdapters.Clear();
-            if (IsSimpleMode) SendEndMorphPreview();
             SwitchTab(IsSimpleMode ? TabType.Drawable : _currentTab);
             UpdateBonePosePanel();
             UpdateTransformPanel();

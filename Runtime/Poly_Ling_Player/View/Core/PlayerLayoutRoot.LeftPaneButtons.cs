@@ -201,8 +201,9 @@ namespace Poly_Ling.Player
         public Button        BooleanBtn            { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        MorphBtn              { get; private set; }
+        /// <summary>形（名前付きの頂点位置）のパネルを開く。PolyLing_モーフ整理計画.md 3.11。</summary>
         [UiControl(Safety = UiSafety.SafeWrite)]
-        public Button        MorphCreateBtn        { get; private set; }
+        public Button        ShapeBtn              { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        TPoseBtn              { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
@@ -904,7 +905,8 @@ namespace Poly_Ling.Player
 
             // ブレンド / シュリンカー / TPSモーフ / 格子変形は「特殊な変形」へ移動した。
 
-            MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
+            // 形（名前付きの頂点位置）。一覧・切り替え・入れ替え・追加・複製・削除・左右反転。
+            ShapeBtn       = MakeBtn("形");                           foBoneMorph.Add(ShapeBtn);
             MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
 
             // 揺れもの（VRM SpringBone）の編集。Humanoid 割当・T ポーズと同じ

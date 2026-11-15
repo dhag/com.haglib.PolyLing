@@ -37,6 +37,8 @@ namespace Poly_Ling.Player
                 OnChanged = RefreshBillboardProfile,
                 // 吸着・選択は面追加と同じ GPU ホバー。ポインタ移動では候補表示だけ更新する。
                 GetHoverElement = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                // Line／Freeform の点指定で、制限方向から外れる頂点には吸着しない（縦横制限計画 段7）。
+                SnapCandidateFilter = p => _axisConstraint.AcceptsCandidate(p),
                 OnHoverChanged  = UpdateBillboardEditPreview,
                 OnModeChanged   = OnBillboardProfileModeChanged,
                 // 描画オブジェクトが無い・選ばれていないときは面追加と同じく「New Mesh」を作る。

@@ -10,7 +10,7 @@ namespace Poly_Ling.Data
 {
     /// <summary>切れ目の辺に沿って頂点を分け、面どうしのつながりを切る。</summary>
     [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology,
-        Hazards = PLCommandHazard.MaySplitVertices | PLCommandHazard.InvalidatesMorphs,
+        Hazards = PLCommandHazard.MaySplitVertices,
         Verification = PLCommandVerification.VertexCount | PLCommandVerification.UVSeams,
         Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets,
         Description = "頂点の分離。faces モードは選択面を周りの面から切り離し、edges モードは選択辺に沿って切り開く。切れ目の辺の端の頂点を、切れ目でない辺でつながる面の扇形ごとに複製して分ける（UV・法線スロット・ウェイトも写す）。面の並び・Id と線分は変えない。UV の作業空間の代理に使うと、反映で元の UV の継ぎ目になる。")]

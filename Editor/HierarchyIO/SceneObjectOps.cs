@@ -59,10 +59,12 @@ namespace Poly_Ling.EditorIO
             switch (action)
             {
                 case "help":             message = Help(); return true;
+                case "open_scene":       return OpenScene(args, out message);
                 case "hierarchy":        return Hierarchy(args, out message);
                 case "create_empty":     return CreateEmpty(args, out message);
                 case "create_primitive": return CreatePrimitive(args, out message);
                 case "add_component":    return AddComponent(args, out message);
+                case "set_active":       return SetActive(args, out message);
                 case "get_properties":   return GetProperties(args, out message);
                 case "set_property":     return SetProperty(args, out message);
                 case "delete":           return Delete(args, out message);
@@ -82,6 +84,8 @@ namespace Poly_Ling.EditorIO
           + "\n"
           + "help\n"
           + "  この一覧。\n"
+          + "open_scene  args: path（必須。\"Assets/...unity\"）, additive（任意。既定 false で単独に開く。true で追加で開く）, save（任意。既定 false）\n"
+          + "  シーンアセットをエディタで開く。save=true なら今開いているシーンの変更を先に保存する。additive=false は今開いているシーンを閉じて置き換える。\n"
           + "hierarchy  args: rootPath（任意。その下だけ）, depth（任意。並べる深さ。rootPath かシーンのルートが 1。既定 2）,\n"
           + "           components（任意。true でコンポーネント名も）, maxLines（任意。既定 300）\n"
           + "  オブジェクトを \"Root/Child\" のパスで 1 行ずつ返す。非アクティブには (inactive)、深さの上限で止めた所には「…子孫 n」を付ける。\n"
@@ -92,6 +96,8 @@ namespace Poly_Ling.EditorIO
           + "  Unity 標準の形を作る。name の既定は type。\n"
           + "add_component  args: objectPath（必須）, componentType（必須。完全名か短い名前）, allowMultiple（任意。既定 false）\n"
           + "  コンポーネントを付ける。既に同じ型があれば allowMultiple=true のときだけ 2 つ目を付ける。\n"
+          + "set_active  args: objectPath（必須）, active（必須。true / false）\n"
+          + "  GameObject の activeSelf を切り替える（inactive 表示の原因を直す）。\n"
           + "get_properties  args: objectPath（必須）, componentType（任意。省くと付いているコンポーネントの一覧）, componentIndex（任意。既定 0）\n"
           + "  プロパティのパス・型・今の値を返す。set_property の propertyPath にはここのパスを使う。\n"
           + "set_property  args: objectPath（必須）, componentType（必須）, propertyPath（必須）, value（必須）, componentIndex（任意）\n"
@@ -104,6 +110,55 @@ namespace Poly_Ling.EditorIO
           + "  オブジェクトを子ごと消す（Undo で戻せる）。プレファブインスタンスの途中の子は消せない（インスタンスのルートを指す）。\n"
           + "\n"
           + "objectPath / parentPath は \"Root/Child\" 形式。\"/\" の無い名前だけなら、シーン全体から同じ名前を 1 つ探す。";
+
+        // ================================================================
+        // open_scene
+        // ================================================================
+
+        private static bool OpenScene(Dictionary<string, string> args, out string message)
+        {
+            if (!Get(args, "path", out string path))
+            {
+                message = "path がありません（\"Assets/...unity\"）";
+                return false;
+            }
+
+            if (!path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase) || !path.StartsWith("Assets/", StringComparison.Ordinal))
+            {
+                message = "path は \"Assets/...unity\" の形で指定してください: " + path;
+                return false;
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<SceneAsset>(path);
+            if (asset == null)
+            {
+                message = "シーンアセットが見つかりません: " + path;
+                return false;
+            }
+
+            bool additive = false;
+            if (!ReadBool(args, "additive", ref additive, out message)) return false;
+
+            bool save = false;
+            if (!ReadBool(args, "save", ref save, out message)) return false;
+
+            if (save && !EditorSceneManager.SaveOpenScenes())
+            {
+                message = "今開いているシーンの保存に失敗しました。save=false で試すか、先に手で保存してください";
+                return false;
+            }
+
+            var scene = EditorSceneManager.OpenScene(path, additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
+            if (!scene.IsValid())
+            {
+                message = "開けませんでした: " + path;
+                return false;
+            }
+
+            SceneManager.SetActiveScene(scene);
+            message = $"開きました: {scene.path}（{(additive ? "追加" : "単独")}）; activeScene={SceneManager.GetActiveScene().path}";
+            return true;
+        }
 
         // ================================================================
         // hierarchy
@@ -303,6 +358,37 @@ namespace Poly_Ling.EditorIO
 
             EditorSceneManager.MarkSceneDirty(target.gameObject.scene);
             message = $"付けました: {type.FullName} → {where}（{existing + 1} 個目）";
+            return true;
+        }
+
+        // ================================================================
+        // set_active
+        // ================================================================
+
+        private static bool SetActive(Dictionary<string, string> args, out string message)
+        {
+            if (!RequireObject(args, out Transform target, out message)) return false;
+
+            if (!Get(args, "active", out string activeText))
+            {
+                message = "active がありません（true / false）";
+                return false;
+            }
+            if (!bool.TryParse(activeText, out bool active))
+            {
+                message = "active は true / false で指定してください: " + activeText;
+                return false;
+            }
+
+            var go = target.gameObject;
+            string where = PrefabInstantiateOps.GetHierarchyPath(target);
+            bool before = go.activeSelf;
+
+            Undo.RecordObject(go, "PolyLing: Set Active");
+            go.SetActive(active);
+            EditorSceneManager.MarkSceneDirty(go.scene);
+
+            message = $"{(active ? "有効" : "無効")}にしました: {where}（前 {(before ? "有効" : "無効")}）";
             return true;
         }
 

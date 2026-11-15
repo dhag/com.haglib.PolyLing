@@ -144,11 +144,6 @@ namespace Poly_Ling.Player
                     if (transferred == 0)
                     { Fail("差し替えが 1 頂点も走りませんでした"); return true; }
 
-                    // 位置を入れ替えたので、そのベースを持つモーフの基準を追従させる。
-                    // 頂点数も索引も動かないので old→new のマップは要らない。
-                    Poly_Ling.PMX.PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                        pairModel, model, remapPosition: true, remapUV: c.ImportUV);
-
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
 
@@ -293,11 +288,6 @@ namespace Poly_Ling.Player
                     if (transferred == 0)
                     { Fail("差し替えが 1 頂点も走りませんでした"); return true; }
 
-                    // 位置を入れ替えたので、そのベースを持つモーフの基準を追従させる。
-                    Poly_Ling.PMX.PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                        pairModel, model,
-                        remapPosition: c.ImportPosition,
-                        remapUV:       c.ImportUV);
 
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);

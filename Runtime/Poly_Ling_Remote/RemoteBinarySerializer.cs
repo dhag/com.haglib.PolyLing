@@ -373,7 +373,8 @@ namespace Poly_Ling.Remote
 
         // ================================================================
         // 追加の欄（MeshFieldFlags.Extras。CSV の mesh 行と揃える）
-        //   並びは NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets。
+        //   並びは NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets
+        //   → NormalExcludeLocks → Shapes。
         // ================================================================
 
         private static void WriteExtras(BinaryWriter w, MeshObject mesh, MeshFieldFlags flags)
@@ -428,6 +429,37 @@ namespace Poly_Ling.Remote
                 w.Write(n);
                 if (list != null)
                     foreach (var s in list) if (s != null) w.Write(s.ProtectManualNormalEdit);
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.Shapes))
+            {
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    var shs = mesh.Vertices[i].Shapes;
+                    int n = shs?.Count ?? 0;
+                    w.Write(n);
+                    for (int j = 0; j < n; j++)
+                    {
+                        w.Write(shs[j].ShapeId);
+                        RemoteBinaryIO.WriteVector3(w, shs[j].Position);
+                    }
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.UVShapes))
+            {
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    var shs = mesh.Vertices[i].UVShapes;
+                    int n = shs?.Count ?? 0;
+                    w.Write(n);
+                    for (int j = 0; j < n; j++)
+                    {
+                        w.Write(shs[j].ShapeId);
+                        w.Write(shs[j].UV.x);
+                        w.Write(shs[j].UV.y);
+                    }
+                }
             }
         }
 
@@ -492,6 +524,42 @@ namespace Poly_Ling.Remote
                     bool locked = r.ReadBoolean();
                     if (list != null && i < list.Count && list[i] != null)
                         list[i].ProtectManualNormalEdit = locked;
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.Shapes))
+            {
+                EnsureVertexCount(mesh, vertexCount);
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int n = r.ReadInt32();
+                    if (n == 0) { mesh.Vertices[i].Shapes = null; continue; }
+                    var list = new List<Poly_Ling.Data.ShapePosition>(n);
+                    for (int j = 0; j < n; j++)
+                    {
+                        int shapeId = r.ReadInt32();
+                        list.Add(new Poly_Ling.Data.ShapePosition(shapeId, RemoteBinaryIO.ReadVector3(r)));
+                    }
+                    mesh.Vertices[i].Shapes = list;
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.UVShapes))
+            {
+                EnsureVertexCount(mesh, vertexCount);
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int n = r.ReadInt32();
+                    if (n == 0) { mesh.Vertices[i].UVShapes = null; continue; }
+                    var list = new List<Poly_Ling.Data.ShapeUV>(n);
+                    for (int j = 0; j < n; j++)
+                    {
+                        int shapeId = r.ReadInt32();
+                        float u = r.ReadSingle();
+                        float v = r.ReadSingle();
+                        list.Add(new Poly_Ling.Data.ShapeUV(shapeId, new Vector2(u, v)));
+                    }
+                    mesh.Vertices[i].UVShapes = list;
                 }
             }
         }

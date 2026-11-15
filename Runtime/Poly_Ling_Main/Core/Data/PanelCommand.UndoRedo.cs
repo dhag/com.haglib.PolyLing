@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
     /// 変更されるのは対象穴のメッシュだけで、基準穴は頂点数を読むだけ。
     /// 基準と対象が同じメッシュにあってもよい。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -100,7 +100,7 @@ namespace Poly_Ling.Data
     /// （EdgeChainOps.SplitIntoTwoChains。構成頂点の最小番号が小さい方が辺群①）。
     /// 開いた辺群の端点は動かさない。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "辺群ブリッジの 2 つの辺群の頂点数を、基準側に合わせて揃える。揃うと辺群ブリッジの面が全部四角形になる。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "辺群ブリッジの 2 つの辺群の頂点数を、基準側に合わせて揃える。揃うと辺群ブリッジの面が全部四角形になる。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]

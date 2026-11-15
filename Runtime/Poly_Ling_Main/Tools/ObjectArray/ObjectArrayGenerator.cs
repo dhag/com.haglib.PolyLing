@@ -263,6 +263,7 @@ namespace Poly_Ling.Tools.ObjectArray
                         if (src == null) continue;
 
                         var mo = src.Clone();
+                        Poly_Ling.Ops.ShapeOps.ClearShapes(mo);   // 並べて変形した複製は形を運ばない
 
                         // Vertex は参照型（MeshObject.cs:78）なので直接書き換える。
                         for (int i = 0; i < mo.VertexCount; i++)

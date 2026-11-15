@@ -44,6 +44,8 @@ namespace Poly_Ling.Tools
 
         // ドラッグ開始時の位置
         private Vector3[] _dragStartPositions;
+        // 開始時の「頂点が持つ形ごとの位置」。位置と同じ逆補正を毎回ここから掛け直す。
+        private Poly_Ling.Ops.ShapeSnapshot _dragStartShapes;
         private BoneTransformSnapshot _dragStartBoneSnapshot;   // ← 追加
         private Vector3 _totalOffset = Vector3.zero;  // 表示用の総オフセット
 
@@ -163,6 +165,7 @@ namespace Poly_Ling.Tools
 
             // 全頂点の開始位置を記録
             _dragStartPositions = (Vector3[])ctx.ActiveMeshObject.Positions.Clone();
+            _dragStartShapes    = Poly_Ling.Ops.ShapeOps.CaptureShapes(ctx.ActiveMeshObject);
 
             // BoneTransform の開始状態を記録
             var mc = ctx.ActiveMeshContext;
@@ -238,6 +241,10 @@ namespace Poly_Ling.Tools
             // 頂点を -localDelta、ピボットを +worldDelta とすると見かけが厳密に相殺される
             // （回転・スケールがあっても保持される）。
             Vector3 localDelta = _dragStartWorldMatrix.inverse.MultiplyVector(worldDelta);
+
+            // 形ごとの位置にも同じ逆補正（-localDelta の平行移動）を、開始時の控えから掛け直す。
+            // 位置（下の _dragStartPositions[i] - localDelta）と同じ式で出す。
+            Poly_Ling.Ops.ShapeOps.MapShapesFrom(mo, _dragStartShapes, p => p - localDelta);
 
             int n = Mathf.Min(mo.VertexCount, _dragStartPositions.Length);
             for (int i = 0; i < n; i++)
@@ -319,6 +326,8 @@ namespace Poly_Ling.Tools
                     NewVertexPositions = newPositions.ToArray(),
                     OldBoneTransform   = _dragStartBoneSnapshot,
                     NewBoneTransform   = mc.BoneTransform.CreateSnapshot(),
+                    OldShapes          = _dragStartShapes,
+                    NewShapes          = Poly_Ling.Ops.ShapeOps.CaptureShapes(ctx.ActiveMeshObject),
                 };
 
                 ctx.UndoController.SetModelContext(ctx.Model);

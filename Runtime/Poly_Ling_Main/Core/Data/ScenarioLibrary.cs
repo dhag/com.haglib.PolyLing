@@ -13,7 +13,7 @@
 // 【なぜプロジェクトの外に置くか】
 //   手順の知識はプロジェクトをまたいで貯まる。ProjectContext.WorkAxes は
 //   プロジェクトファイルと同じフォルダに置く形だが、こちらは
-//   DisplaySettings / ParameterLimits と同じく persistentDataPath へ置く。
+//   作業フォルダ（PLSandbox.WorkFolder）のデータフォルダの中へ置く。
 //
 // 【型は分けない】
 //   中身は ModifierStack そのもの。実体付きとの違いは置き場と、
@@ -26,7 +26,11 @@
 //   書き戻したいときは Register で明示的に登録する。
 //
 // 【保存先】
-//   <persistentDataPath>/PolyLing/scenarios/<フォルダ>/<名前>.csv
+//   <作業フォルダ>/<DataFolder>/<ScenarioFolder>/<フォルダ>/<名前>.csv
+//   （既定は <作業フォルダ>/データとツール/シナリオ/…。名前は PLProjectLayout）
+//   作業フォルダが未設定のときは <persistentDataPath>/PolyLing/scenarios/… を使う。
+//   作業フォルダの下の置き場が無く、persistentDataPath の scenarios があれば、初回の読み込みで
+//   フォルダの形ごと写す（元は残す）。作業フォルダが変わったら次の読み書きで読み直す。
 //   1 シナリオ 1 ファイル。フォルダは何階層でもよく、置き場所（整理）だけを表す。
 //   どのフォルダにあるかは、読んだファイルの場所で決まる（ModifierStack には持たせない）。
 //   名前は全フォルダを通して一意。親は名前で子を引くので、フォルダを移しても参照は切れない。
@@ -53,6 +57,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using Poly_Ling.Core;
 using Poly_Ling.Serialization;
 
 namespace Poly_Ling.Data
@@ -73,8 +78,26 @@ namespace Poly_Ling.Data
         private static readonly object _lock = new object();
 
         private static string Dir        => Path.Combine(Application.persistentDataPath, "PolyLing");
-        private static string FolderName => Path.Combine(Dir, "scenarios");
+        /// <summary>作業フォルダが無いときの置き場。作業フォルダの下へ移す前の置き場でもある。</summary>
+        private static string FallbackFolder => Path.Combine(Dir, "scenarios");
         private static string LegacyFile => Path.Combine(Dir, "scenarios.csv");
+
+        /// <summary>
+        /// 置き場。作業フォルダが決まっていれば &lt;作業フォルダ&gt;/&lt;DataFolder&gt;/&lt;ScenarioFolder&gt;、
+        /// 決まっていなければ FallbackFolder。
+        /// </summary>
+        private static string FolderName
+        {
+            get
+            {
+                string work = PLSandbox.WorkFolder;
+                if (string.IsNullOrEmpty(work)) return FallbackFolder;
+                return Path.Combine(work, PLProjectLayout.DataFolder, PLProjectLayout.ScenarioFolder);
+            }
+        }
+
+        /// <summary>_items を読んだときの置き場。作業フォルダが変わったら読み直す。</summary>
+        private static string _loadedRoot;
 
         /// <summary>保存先フォルダの絶対パス（表示・手動バックアップ用）。</summary>
         public static string StorePath => FolderName;
@@ -93,11 +116,14 @@ namespace Poly_Ling.Data
         /// <summary>まだ読んでいなければ読む。</summary>
         private static void EnsureLoaded()
         {
-            if (_items != null) return;
+            string root = FolderName;
+            if (_items != null && root == _loadedRoot) return;
             lock (_lock)
             {
-                if (_items != null) return;
+                if (_items != null && root == _loadedRoot) return;
+                bool changed = _items != null;
                 ReadAll();
+                if (changed) Revision++;
             }
         }
 
@@ -121,9 +147,12 @@ namespace Poly_Ling.Data
             _fileOf  = new Dictionary<string, string>(StringComparer.Ordinal);
             _folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _reviewOf = new Dictionary<string, ScenarioReview>(StringComparer.Ordinal);
+            _loadedRoot = FolderName;
 
             try
             {
+                CopyFromFallbackIfNeeded();
+
                 if (!Directory.Exists(FolderName) && File.Exists(LegacyFile))
                 {
                     MigrateLegacy();
@@ -217,6 +246,39 @@ namespace Poly_Ling.Data
             for (int n = 1; File.Exists(bak); n++) bak = path + ".bak" + n;
             File.Move(path, bak);
             Debug.Log($"{LogTag} {fileRel} の {list.Count} 本をフォルダ {folder} へ分けました。元のファイル: {bak}");
+        }
+
+        /// <summary>
+        /// 置き場が作業フォルダの下で、まだ無く、FallbackFolder があれば、フォルダの形ごと写す。
+        /// 元は消さない。途中で失敗したら写しかけを消し、次の読み込みでやり直す。
+        /// </summary>
+        private static void CopyFromFallbackIfNeeded()
+        {
+            string root = Path.GetFullPath(FolderName);
+            string src  = Path.GetFullPath(FallbackFolder);
+            if (string.Equals(root, src, StringComparison.OrdinalIgnoreCase)) return;
+            if (Directory.Exists(root) || !Directory.Exists(src)) return;
+
+            int count = 0;
+            try
+            {
+                Directory.CreateDirectory(root);
+                foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
+                    Directory.CreateDirectory(Path.Combine(root, Path.GetRelativePath(src, dir)));
+                foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+                {
+                    File.Copy(file, Path.Combine(root, Path.GetRelativePath(src, file)), false);
+                    count++;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"{LogTag} {src} から {root} へ写せませんでした: {e.Message}");
+                try { Directory.Delete(root, true); }
+                catch (Exception e2) { Debug.LogError($"{LogTag} 写しかけを消せませんでした: {root}: {e2.Message}"); }
+                return;
+            }
+            Debug.Log($"{LogTag} {src} から {root} へ {count} ファイルを写しました。元のフォルダは残しています");
         }
 
         /// <summary>旧 scenarios.csv をシナリオごとのファイルへ分け、旧ファイルは .bak へ名前を変える。</summary>

@@ -84,6 +84,8 @@ namespace Poly_Ling.Player
             _commandDispatcher.ListTools   = () => ToolRegistry().Keys;
             _commandDispatcher.OnImportPmxFile       = ExecuteImportPmxFile;
             _commandDispatcher.OnExportPmxFile       = ExecuteExportPmxFile;
+            // 形を切り替えたら、表情の試し表示を終える（足し込みは切り替えで捨てられる。モーフ整理計画 3.4）。
+            _commandDispatcher.OnShapeSwitched       = () => _morphExpressionHandler?.OnShapeSwitched();
             _commandDispatcher.OnImportMqoFile       = ExecuteImportMqoFile;
             _commandDispatcher.OnSetUnderlay         = ExecuteSetUnderlay;
             _commandDispatcher.OnClearUnderlay       = ExecuteClearUnderlay;

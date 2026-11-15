@@ -508,12 +508,6 @@ namespace Poly_Ling.Player
                 return Ng("転送された頂点が 0 だった", null,
                     "対応が付いていても、片側の MeshObject が null なら組は飛ばされる。");
 
-            // 位置を動かしたので、そのベースを持つモーフの基準データを追従させる。
-            // 頂点数も順序も変えていないので索引マップは要らない
-            // （PMXPartialImportOps.cs:305-312）。
-            PMXPartialImportOps.RemapMorphBasesAfterVertexChange(
-                _pairModel, model, remapPosition: true, remapUV: false);
-
             // Undo は部分インポートパネルと同じ MeshListStack へ積む
             // （PlayerPartialImportSubPanel.cs:258-271）。
             var undo = GetUndoController?.Invoke();

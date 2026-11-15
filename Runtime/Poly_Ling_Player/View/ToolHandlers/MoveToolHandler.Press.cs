@@ -152,6 +152,23 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 縦横制限（IPointerAxisClient）。押下時追従で頂点を自由移動している間だけ
+        /// 「対象を動かす」として押下位置を基準にする。
+        /// X・Y・Z 軸ギズモをつかんでいるときは既存の軸制限を優先して制限しない。
+        /// 矩形／投げ縄選択中、選択専用モードも制限しない。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _pressOriginPos;
+            if (!_pressActive || _pressDragSelect || SelectOnly) return AxisConstraintUse.None;
+            if (_pressAxis != AxisGizmo.AxisType.None && _pressAxis != AxisGizmo.AxisType.Center)
+                return AxisConstraintUse.None;
+            if (_state != MoveState.MovingVertices && _state != MoveState.CenterDragging)
+                return AxisConstraintUse.None;
+            return AxisConstraintUse.ObjectMove;
+        }
+
+        /// <summary>
         /// しきい値未満の移動。押下位置からの総差分を毎回まとめて換算し、絶対量で適用する。
         /// </summary>
         public void OnLeftPressMove(Vector2 screenPos, Vector2 delta, ModifierKeys mods)

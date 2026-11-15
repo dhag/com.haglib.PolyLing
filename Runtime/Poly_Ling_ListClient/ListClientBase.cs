@@ -294,8 +294,9 @@ namespace Poly_Ling.ListClient
 
             model.SelectedDrawableMeshIndices = ParseCsv(ExtractStr(json, "drawable"));
             model.SelectedBoneIndices         = ParseCsv(ExtractStr(json, "bone"));
-            model.SelectedMorphIndices        = ParseCsv(ExtractStr(json, "morph"));
-            model.SetActiveCategory((ModelContext.SelectionCategory)cat);
+            // 選択カテゴリ 2（旧モーフ）は段 7 で廃止。範囲外はメッシュとして扱う。
+            model.SetActiveCategory(cat == (int)ModelContext.SelectionCategory.Bone
+                ? ModelContext.SelectionCategory.Bone : ModelContext.SelectionCategory.Mesh);
 
             Project.CurrentModelIndex = mi;
 

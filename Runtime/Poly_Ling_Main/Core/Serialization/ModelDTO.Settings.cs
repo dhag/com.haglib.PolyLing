@@ -171,9 +171,6 @@ namespace Poly_Ling.Serialization
         /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
         public int selectedBoneIndex = -1;
 
-        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
-        public int selectedVertexMorphIndex = -1;
-
         //ナイフツールの固有設定
         /// <summary>ナイフツールのモード</summary>
         public string knifeMode;
@@ -225,7 +222,6 @@ namespace Poly_Ling.Serialization
                 currentToolName = "Select",
                 selectedMeshIndex = -1,
                 selectedBoneIndex = -1,
-                selectedVertexMorphIndex = -1,
                 //ナイフツールの固有設定
                 knifeMode = "Cut",
                 knifeEdgeSelect = false,

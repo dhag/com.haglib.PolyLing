@@ -28,7 +28,6 @@ namespace Poly_Ling.UndoSystem
         // カテゴリ別選択インデックス（v2.0）- 選択順序を保持
         public List<int> SelectedDrawableMeshIndices;
         public List<int> SelectedBoneIndices;
-        public List<int> SelectedMorphIndices;
         
         // 後方互換用（廃止予定）
         public int SelectedMeshIndex
@@ -38,7 +37,6 @@ namespace Poly_Ling.UndoSystem
                 // 全カテゴリ中の先頭インデックスを返す
                 if (SelectedDrawableMeshIndices != null && SelectedDrawableMeshIndices.Count > 0) return SelectedDrawableMeshIndices[0];
                 if (SelectedBoneIndices != null && SelectedBoneIndices.Count > 0) return SelectedBoneIndices[0];
-                if (SelectedMorphIndices != null && SelectedMorphIndices.Count > 0) return SelectedMorphIndices[0];
                 return -1;
             }
             set
@@ -46,7 +44,6 @@ namespace Poly_Ling.UndoSystem
                 // 後方互換: 単一値をメッシュカテゴリに設定
                 SelectedDrawableMeshIndices = value >= 0 ? new List<int> { value } : new List<int>();
                 SelectedBoneIndices = new List<int>();
-                SelectedMorphIndices = new List<int>();
             }
         }
 
@@ -71,7 +68,6 @@ namespace Poly_Ling.UndoSystem
                 // カテゴリ別選択インデックス（v2.0）
                 SelectedDrawableMeshIndices = new List<int>(model.SelectedDrawableMeshIndices),
                 SelectedBoneIndices = new List<int>(model.SelectedBoneIndices),
-                SelectedMorphIndices = new List<int>(model.SelectedMorphIndices),
                 CurrentMaterialIndex = model.CurrentMaterialIndex,
                 DefaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex,
                 AutoSetDefaultMaterials = model.AutoSetDefaultMaterials
@@ -112,8 +108,6 @@ namespace Poly_Ling.UndoSystem
                 model.SelectedDrawableMeshIndices = new List<int>(SelectedDrawableMeshIndices);
             if (SelectedBoneIndices != null)
                 model.SelectedBoneIndices = new List<int>(SelectedBoneIndices);
-            if (SelectedMorphIndices != null)
-                model.SelectedMorphIndices = new List<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);
@@ -150,8 +144,6 @@ namespace Poly_Ling.UndoSystem
                 model.SelectedDrawableMeshIndices = new List<int>(SelectedDrawableMeshIndices);
             if (SelectedBoneIndices != null)
                 model.SelectedBoneIndices = new List<int>(SelectedBoneIndices);
-            if (SelectedMorphIndices != null)
-                model.SelectedMorphIndices = new List<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);

@@ -95,10 +95,6 @@ namespace Poly_Ling.View
         int BoneIndex { get; }
         IBonePoseView BonePose { get; }
 
-        // モーフ
-        bool IsMorph { get; }
-        int MorphParentIndex { get; }
-        string MorphName { get; }
         bool ExcludeFromExport { get; }
         bool IgnorePoseInArmature { get; }
         bool PreserveNormals { get; }
@@ -265,18 +261,15 @@ namespace Poly_Ling.View
 
         int DrawableCount { get; }
         int BoneCount { get; }
-        int MorphCount { get; }
         int TotalMeshCount { get; }
 
         IReadOnlyList<IMeshView> DrawableList { get; }
         IReadOnlyList<IMeshView> BoneList { get; }
-        IReadOnlyList<IMeshView> MorphList { get; }
         IReadOnlyList<IMeshView> RigidBodyList { get; }
         IReadOnlyList<IMeshView> RigidBodyJointList { get; }
 
         int[] SelectedDrawableIndices { get; }
         int[] SelectedBoneIndices { get; }
-        int[] SelectedMorphIndices { get; }
 
         /// <summary>
         /// オブジェクト選択辞書（ModelContext.MeshSelectionSets）の名前一覧。
@@ -354,6 +347,16 @@ namespace Poly_Ling.View
         /// <summary>モーフエクスプレッションの写し。スナップショットでは空。</summary>
         IReadOnlyList<MorphExpressionView> MorphExpressions { get; }
 
+        // 形（PlayerShapeSubPanel が読む項目。PolyLing_モーフ整理計画.md 3.2）
+        /// <summary>形の一覧の写し（基本の形は載せない）。スナップショットでは空。</summary>
+        IReadOnlyList<ShapeView> Shapes { get; }
+        /// <summary>今の形の番号。0 は基本の形。スナップショットでは 0。</summary>
+        int CurrentShapeId { get; }
+        /// <summary>直前の形の番号（入れ替え用）。0 は基本の形。スナップショットでは 0。</summary>
+        int PreviousShapeId { get; }
+        /// <summary>基本の形の写し（Id 0・名前は空。読み込み元の欄だけ意味がある）。スナップショットでは null。</summary>
+        ShapeView BaseShape { get; }
+
         // Tポーズ（PlayerTPoseSubPanel が読む項目）
         /// <summary>Humanoid ボーンマッピングの件数（未設定は 0）。スナップショットでは 0。</summary>
         int    HumanoidMappingCount { get; }
@@ -399,6 +402,21 @@ namespace Poly_Ling.View
         public bool  HasTranslationDoF;
     }
 
+    /// <summary>形（名前付きの頂点位置）の表示用の写し。</summary>
+    public sealed class ShapeView
+    {
+        public int    Id;
+        public string Name;
+        public string NameEnglish;
+        public int    Panel;
+        /// <summary>UV の形か（ShapeDef.Kind == UV）。</summary>
+        public bool   IsUV;
+        /// <summary>読み込み元の MQO のパス（ShapeDef.Source.Path）。読んでいなければ空。</summary>
+        public string SourcePath = "";
+        /// <summary>読み込み元が覚えている組の数。</summary>
+        public int    SourcePairCount;
+    }
+
     /// <summary>モーフエクスプレッションの表示用の写し。</summary>
     public sealed class MorphExpressionView
     {
@@ -406,16 +424,19 @@ namespace Poly_Ling.View
         public string NameEnglish;
         public string TypeName;
         public int    Panel;
-        public int    MeshCount;
-        public List<MorphEntryView> Entries = new List<MorphEntryView>();
+        /// <summary>グループの子（名前 × 重み）。形を指すものは IsShape。</summary>
+        public List<MorphChildView> Children = new List<MorphChildView>();
+        /// <summary>頂点の表情で、同じ名前の形があるか（あれば表情はその形を指す。無ければ何も指さない）。</summary>
+        public bool   HasSameNameShape;
     }
 
-    /// <summary>モーフエクスプレッションのエントリ（モーフメッシュとウェイト）の写し。</summary>
-    public sealed class MorphEntryView
+    /// <summary>グループの表情の子（名前 × 重み）の写し。</summary>
+    public sealed class MorphChildView
     {
-        public int    MeshIndex;
-        public string MeshName;
+        public string Name;
         public float  Weight;
+        /// <summary>同じ名前の形がある（表情はその形を指す）。</summary>
+        public bool   IsShape;
     }
 
     /// <summary>

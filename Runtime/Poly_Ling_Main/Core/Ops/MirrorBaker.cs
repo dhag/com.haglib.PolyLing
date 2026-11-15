@@ -437,6 +437,23 @@ namespace Poly_Ling.Tools
                 //   MaxPartsId + 1 のオフセットを足す。着手は保留（PolyLing 課題）。
                 var newVertex = new Vertex(pos);
 
+                // 形ごとの位置を引き継ぐ（位置と同じ扱い：ミラー側は鏡映、射影した境界は射影）。
+                // 引き継がないと、実体化した頂点が形の控えを失い、形の切り替えで動かなくなる。
+                if (srcVertex.Shapes != null)
+                {
+                    if (newOrigin[newV] == VertexOrigin.Mirrored)
+                        Poly_Ling.Ops.ShapeOps.MirrorShapesFrom(srcVertex, newVertex, p => Mirror(p, planeNormal, planeDistance));
+                    else
+                    {
+                        newVertex.Shapes = new List<ShapePosition>(srcVertex.Shapes);
+                        if (newOrigin[newV] == VertexOrigin.Merged && projectBoundaryToPlane)
+                            Poly_Ling.Ops.ShapeOps.MapVertexShapes(newVertex, p => ProjectToPlane(p, planeNormal, planeDistance));
+                    }
+                }
+                // 形の UV（UV スロット 0）は鏡映しない（UV は面の左右で写しのまま。UV をコピーする下の処理と同じ）。
+                if (srcVertex.UVShapes != null)
+                    newVertex.UVShapes = new List<ShapeUV>(srcVertex.UVShapes);
+
                 // 部品ID: 非ミラー側 0 / ミラー側 1。
                 // 境界で統合された頂点は両側に属するが、元からある頂点なので非ミラー側とする。
                 newVertex.PartsId = (newOrigin[newV] == VertexOrigin.Mirrored) ? 1 : 0;

@@ -56,10 +56,9 @@ namespace Poly_Ling.MeshListV2
             _tabHeader.style.marginBottom  = 3;
             _tabDrawable = MakeTabBtn("Mesh",  "tab-drawable");
             _tabBone     = MakeTabBtn("Bone",  "tab-bone");
-            _tabMorph    = MakeTabBtn("Morph", "tab-morph");
             _tabRigidBody = MakeTabBtn("剛体",  "tab-rigidbody");
             _tabJoint    = MakeTabBtn("Joint", "tab-joint");
-            _tabHeader.Add(_tabDrawable); _tabHeader.Add(_tabBone); _tabHeader.Add(_tabMorph);
+            _tabHeader.Add(_tabDrawable); _tabHeader.Add(_tabBone);
             _tabHeader.Add(_tabRigidBody); _tabHeader.Add(_tabJoint);
             root.Add(_tabHeader);
 
@@ -160,7 +159,7 @@ namespace Poly_Ling.MeshListV2
             // ── メインコンテンツ（ツリー + 詳細 + BonePose + Transform）
             _mainContent = new VisualElement { name = "main-content" };
             // flexGrow=1 だと親高いっぱいに伸び、内部 flexShrink でツリーの明示 height が縮み効かない。
-            // モーフ側コンテナ(_morphEditor)と同じ自然高にして、ツリーの明示 height をそのまま効かせる。
+            // 自然高にして、ツリーの明示 height をそのまま効かせる。
             _mainContent.style.flexGrow = 0;
 
             _treeView = new TreeView { name = "mesh-tree" };
@@ -239,12 +238,6 @@ namespace Poly_Ling.MeshListV2
             _mainContent.Add(_indexInfo);
 
             root.Add(_mainContent);
-
-            // ── モーフエディタ（詳細モード+Morphタブ時のみ表示）
-            _morphEditor = new VisualElement { name = "morph-editor" };
-            _morphEditor.style.display = DisplayStyle.None;
-            BuildMorphEditor(_morphEditor);
-            root.Add(_morphEditor);
 
             // ── 姿勢調整（常に表示。ビューポート操作モードに関わらず出す）
             root.Add(BuildObjectPoseSection());
@@ -712,84 +705,6 @@ namespace Poly_Ling.MeshListV2
             c.Add(_renameStatusLabel);
 
             UpdateRenameButtonStates();
-        }
-
-        private void BuildMorphEditor(VisualElement parent)
-        {
-            // カウント・フィルター
-            var topRow = new VisualElement(); topRow.style.flexDirection = FlexDirection.Row;
-            _morphCountLabel = new Label("モーフ: 0") { name = "morph-count-label" };
-            _morphCountLabel.style.color    = new StyleColor(Color.white);
-            _morphCountLabel.style.fontSize = 11;
-            topRow.Add(_morphCountLabel);
-            parent.Add(topRow);
-
-            _morphFilterField = new TextField(); _morphFilterField.style.marginBottom = 3;
-            parent.Add(_morphFilterField);
-
-            // リスト
-            _morphListView = new ListView(_morphFilteredData, 20, MorphMake, MorphBind);
-            _morphListView.style.flexGrow  = 0; _morphListView.style.height = _morphListHeight; _morphListView.style.minHeight = _morphListHeight; _morphListView.style.maxHeight = _morphListHeight;
-            _morphListView.selectionType   = SelectionType.Multiple;
-            _morphListView.selectionChanged += OnMorphSel;
-            parent.Add(_morphListView);
-            AddListResizeHandle(parent, _morphListView,
-                () => _morphListHeight, h => _morphListHeight = h, MorphListMinHeight);
-
-            // テストウェイト
-            // レンジの実体は ParameterLimits（persistentDataPath の CSV）にある。
-            // 同じキーを ApplyMorphPreviewCommand.Weight の PLParam(LimitKey) が指す。
-            var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
-            _morphTestWeight = new Slider(MorphWeightMin, MorphWeightMax); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
-            _morphTestWeight.style.color = new StyleColor(Color.white);
-            parent.Add(wRow);
-
-            // 選択操作ボタン
-            var selRow = new VisualElement(); selRow.style.flexDirection = FlexDirection.Row; selRow.style.marginTop = 3;
-            selRow.Add(_btnMorphTestSelectAll   = MakeSmallBtn("全選択",   "btn-morph-test-select-all"));
-            selRow.Add(_btnMorphTestDeselectAll = MakeSmallBtn("全解除",   "btn-morph-test-deselect-all"));
-            selRow.Add(_btnMorphTestReset       = MakeSmallBtn("リセット", "btn-morph-test-reset"));
-            parent.Add(selRow);
-
-            parent.Add(Separator());
-
-            // モーフ変換
-            parent.Add(SectionHeader("メッシュ→モーフ"));
-
-            _morphSourceMeshPopupContainer = new VisualElement { name = "morph-source-mesh-container" };
-            parent.Add(LabeledRow("元メッシュ", _morphSourceMeshPopupContainer));
-
-            _morphParentPopupContainer = new VisualElement { name = "morph-parent-container" };
-            parent.Add(LabeledRow("親", _morphParentPopupContainer));
-
-            _morphPanelPopupContainer = new VisualElement { name = "morph-panel-container" };
-            parent.Add(LabeledRow("パネル", _morphPanelPopupContainer));
-
-            _morphNameField = new TextField(); _morphNameField.name = "morph-name-field";
-            parent.Add(LabeledRow("名前", _morphNameField));
-
-            var convRow = new VisualElement(); convRow.style.flexDirection = FlexDirection.Row;
-            _btnMeshToMorph = MakeSmallBtn("Mesh→Morph", "btn-mesh-to-morph");
-            _btnMorphToMesh = MakeSmallBtn("Morph→Mesh", "btn-morph-to-mesh");
-            convRow.Add(_btnMeshToMorph); convRow.Add(_btnMorphToMesh);
-            parent.Add(convRow);
-
-            parent.Add(Separator());
-
-            // モーフセット作成
-            parent.Add(SectionHeader("モーフセット作成"));
-            _morphSetNameField = new TextField(); _morphSetNameField.name = "morph-set-name-field";
-            parent.Add(LabeledRow("セット名", _morphSetNameField));
-
-            _morphSetTypePopupContainer = new VisualElement { name = "morph-set-type-container" };
-            parent.Add(LabeledRow("種別", _morphSetTypePopupContainer));
-
-            _btnCreateMorphSet = MakeSmallBtn("セット作成", "btn-create-morph-set");
-            parent.Add(_btnCreateMorphSet);
-
-            _morphStatusLabel = new Label(""); _morphStatusLabel.style.fontSize = 10; _morphStatusLabel.style.color = new StyleColor(new Color(1f, 0.7f, 0.4f)); _morphStatusLabel.style.marginTop = 3;
-            _morphStatusLabel.style.color = new StyleColor(Color.white);
-            parent.Add(_morphStatusLabel);
         }
     }
 }

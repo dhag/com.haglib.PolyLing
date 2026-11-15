@@ -128,13 +128,19 @@ namespace Poly_Ling.Tools
                     if (mo == null) continue;
                     Matrix4x4 curInv = mc.WorldMatrixInverse;
                     int n = Mathf.Min(mo.VertexCount, startPos.Length);
+                    // 位置と形の控えは同じ関数で出す（式が違うと丸めの差で形が食い違う）。
+                    Matrix4x4 startWorldM = startWorld;
+                    System.Func<Vector3, Vector3> relocalize =
+                        p => curInv.MultiplyPoint3x4(startWorldM.MultiplyPoint3x4(p));
                     for (int i = 0; i < n; i++)
                     {
-                        Vector3 worldPos = startWorld.MultiplyPoint3x4(startPos[i]);
                         var v = mo.Vertices[i];
-                        v.Position = curInv.MultiplyPoint3x4(worldPos);
+                        v.Position = relocalize(startPos[i]);
                         mo.Vertices[i] = v;
                     }
+                    // 形ごとの位置も、開始時の控えから同じ再局所化を掛け直す。
+                    if (_originStartShapes.TryGetValue(idx, out var startShapes))
+                        Poly_Ling.Ops.ShapeOps.MapShapesFrom(mo, startShapes, relocalize);
                     mo.InvalidatePositionCache();
                 }
                 // 書き換えた頂点を GPU へ同期する（これが無いと自形状補償が描画されず、
@@ -395,13 +401,19 @@ namespace Poly_Ling.Tools
 
                     Matrix4x4 curInv = mc.WorldMatrixInverse;
                     int n = Mathf.Min(mo.VertexCount, startPos.Length);
+                    // 位置と形の控えは同じ関数で出す（式が違うと丸めの差で形が食い違う）。
+                    Matrix4x4 startWorldM = startWorld;
+                    System.Func<Vector3, Vector3> relocalize =
+                        p => curInv.MultiplyPoint3x4(startWorldM.MultiplyPoint3x4(p));
                     for (int i = 0; i < n; i++)
                     {
-                        Vector3 worldPos = startWorld.MultiplyPoint3x4(startPos[i]);
                         var v = mo.Vertices[i];
-                        v.Position = curInv.MultiplyPoint3x4(worldPos);
+                        v.Position = relocalize(startPos[i]);
                         mo.Vertices[i] = v;
                     }
+                    // 形ごとの位置も、開始時の控えから同じ再局所化を掛け直す。
+                    if (_originStartShapes.TryGetValue(idx, out var startShapes))
+                        Poly_Ling.Ops.ShapeOps.MapShapesFrom(mo, startShapes, relocalize);
                     mo.InvalidatePositionCache();
                 }
                 // 書き換えた頂点を GPU へ同期する。
@@ -543,7 +555,7 @@ namespace Poly_Ling.Tools
 
             // 原点だけ移動(OriginOnly): MeshFilter(非スキン)の自頂点補償用に開始状態を保存。
             _originStartPositions.Clear();
-            _originStartWorld.Clear();
+            _originStartWorld.Clear(); _originStartShapes.Clear();
             if (_settings.OriginOnly)
             {
                 foreach (int idx in AllSelectedIndices(ctx))
@@ -553,6 +565,7 @@ namespace Poly_Ling.Tools
                     if (mc.Type != MeshType.Mesh || mc.IsSkinned) continue; // MeshFilterのみ
                     _originStartPositions[idx] = (UnityEngine.Vector3[])mc.MeshObject.Positions.Clone();
                     _originStartWorld[idx]     = mc.WorldMatrix;
+                    _originStartShapes[idx]    = Poly_Ling.Ops.ShapeOps.CaptureShapes(mc.MeshObject);
                 }
             }
         }
@@ -592,6 +605,8 @@ namespace Poly_Ling.Tools
                         NewVertexPositions = newPos,
                         OldBoneTransform   = _beforeSnapshots.TryGetValue(idx, out var ob0) ? ob0 : mc.BoneTransform.CreateSnapshot(),
                         NewBoneTransform   = mc.BoneTransform.CreateSnapshot(),
+                        OldShapes          = _originStartShapes.TryGetValue(idx, out var os0) ? os0 : null,
+                        NewShapes          = Poly_Ling.Ops.ShapeOps.CaptureShapes(mc.MeshObject),
                     }, "原点だけ移動");
                 }
 
@@ -622,7 +637,7 @@ namespace Poly_Ling.Tools
                 _rebindStartSkinning.Clear();
                 _rebindStartBindPose.Clear();
                 _originStartPositions.Clear();
-                _originStartWorld.Clear();
+                _originStartWorld.Clear(); _originStartShapes.Clear();
                 ctx.ExitTransformDragging?.Invoke();
                 return;
             }

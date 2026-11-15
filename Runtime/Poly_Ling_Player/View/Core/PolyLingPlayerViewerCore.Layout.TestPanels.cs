@@ -326,6 +326,9 @@ namespace Poly_Ling.Player
             _motionClipHandler = new MotionClipHandler
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
+                // 表情が当たるクリップは基本の形で再生する（切り替えはコマンドで送る。モーフ整理計画 3.6）。
+                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand       = DispatchPanelCommand,
                 GetPmxUnityRatio  = () => _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f,
                 // 編集の口の取り消しの記録を積む先（サブウインドウスタック）。
                 GetUndoController = () => _editOps?.UndoController,

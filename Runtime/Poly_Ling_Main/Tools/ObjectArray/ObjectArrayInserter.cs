@@ -16,7 +16,7 @@
 //   付け替えは ModelContext.Insert (ModelContext.cs:1298) が行う。
 //   adjustSelection = true のとき RemapIndexReferences
 //   (ModelContext.cs:1229-1271) が ParentIndex / HierarchyParentIndex /
-//   MorphParentIndex / BakedMirrorSourceIndex / Humanoid 割当 / T ポーズ退避を
+//   BakedMirrorSourceIndex / Humanoid 割当 / T ポーズ退避を
 //   まとめて繰り下げるため、ここで先に足してはいけない。
 //   （以前ここに事前シフトがあり、Insert の付け替えと二重に掛かって
 //     挿入位置以降を親に持つ無関係な描画オブジェクトの親索引が

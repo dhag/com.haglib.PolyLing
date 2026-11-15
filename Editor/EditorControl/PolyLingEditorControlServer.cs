@@ -753,6 +753,7 @@ namespace Poly_Ling.EditorControl
             ReadBool(raw, "writeAttach",               ref opt.WriteAttach,               ref err);
             ReadBool(raw, "tolerantMirrorBranch",      ref opt.TolerantMirrorBranch,      ref err);
             ReadBool(raw, "applyModifiers",            ref opt.ApplyModifiers,            ref err);
+            ReadBool(raw, "exportMorphTargets",        ref opt.ExportMorphTargets,        ref err);
             if (err != null) return BuildError(op, err);
 
             if (TryGetParam(raw, "rendererMode", out string rendererMode))

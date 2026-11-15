@@ -34,7 +34,7 @@ namespace Poly_Ling.Core
             // TypedIndicesのキャッシュを無効化して最新のMeshContextListを反映
             model.InvalidateTypedIndices();
 
-            // Drawableのみを取得（Morph, Bone等を除外）
+            // Drawableのみを取得（Bone等を除外）
             var drawableEntries = model.TypedIndices.GetEntries(MeshCategory.Drawable);
             BuildFromTypedEntries(drawableEntries, modelIndex);
         }
@@ -614,7 +614,9 @@ namespace Poly_Ling.Core
 
                 // 面の非表示（Face.IsHidden）はその面が登録する線分にだけ効く。
                 // 同じ辺を可視面も持っている場合は可視面側の線分が別途登録される。
-                bool faceVisible = isVisible && !face.IsHidden;
+                // 曲線で見せる弦（Face.IsCurveChord）も線分は描かない。面のほうは非表示にしないので、
+                // GPU の ComputeFaceVisibility が端点の頂点をカリングから戻す（点は当たる）。
+                bool faceVisible = isVisible && !face.IsLineHidden;
 
                 if (face.VertexCount == 2)
                 {

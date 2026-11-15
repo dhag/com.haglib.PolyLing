@@ -13,8 +13,24 @@ using System.Reflection;
 
 namespace Poly_Ling.Data
 {
+    /// <summary>
+    /// 操作（[PLToolAction]）が false を返したときの理由をツールが持つ場合に実装する（任意）。
+    /// PLToolSurface.TryInvoke が失敗の理由に添える。
+    /// </summary>
+    public interface IPLToolActionReason
+    {
+        /// <summary>最後に実行されなかった操作の理由。無ければ null か空。</summary>
+        string LastActionFailure { get; }
+    }
+
     public static class PLToolSurface
     {
+        private static string ReasonSuffix(object handler)
+        {
+            string r = (handler as IPLToolActionReason)?.LastActionFailure;
+            return string.IsNullOrEmpty(r) ? "" : "：" + r;
+        }
+
         public struct Entry
         {
             public string Name;
@@ -228,7 +244,14 @@ namespace Poly_Ling.Data
                     else if (ps[i].HasDefaultValue) args[i] = ps[i].DefaultValue;
                     else { why = $"{name}: 引数 {ps[i].Name} がありません"; return false; }
                 }
-                m.Invoke(handler, args);
+                object ret = m.Invoke(handler, args);
+                // bool を返す操作の false は「実行しなかった」。成功として返すと呼び出し側（MCP・パネル）が
+                // 失敗に気づけない（縦横制限計画 段7：格子の姿勢設定が作業軸なしで黙って終わっていた）。
+                if (m.ReturnType == typeof(bool) && ret is bool ok && !ok)
+                {
+                    why = $"{name} は実行されませんでした" + ReasonSuffix(handler);
+                    return false;
+                }
                 return true;
             }
             why = $"操作がありません: {name}";

@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     /// 見た目・エクスポート用の別オブジェクトは作らない。頂点も面も選択メッシュの中に増える。
     /// メッシュが見た目用のミラーモード（MirrorType > 0）だった場合は、実体化と同時に解除する。
     /// </summary>
-    [PLCommand(Category = "mirror", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs | PLCommandHazard.BreaksMirrorRelation, Verification = PLCommandVerification.MirrorIntegrity | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "選択メッシュ自身にミラーの実体を生やす（ミラー実体化 / in-place）。")]
+    [PLCommand(Category = "mirror", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.BreaksMirrorRelation, Verification = PLCommandVerification.MirrorIntegrity | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "選択メッシュ自身にミラーの実体を生やす（ミラー実体化 / in-place）。")]
     public class BakeMirrorCommand : PanelCommand
     {
         /// <summary>

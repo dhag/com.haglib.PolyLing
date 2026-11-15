@@ -57,8 +57,46 @@ namespace Poly_Ling.Player
 {
     /// <summary>格子変形ハンドラ。</summary>
     [Poly_Ling.Data.PLTool("lattice", Description = "格子変形（確定は ApplyLatticeDeformCommand）")]
-    public class LatticeToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
+    public class LatticeToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPointerAxisClient,
+                                      Poly_Ling.Data.IPLToolActionReason
     {
+        /// <summary>
+        /// 最後に実行されなかった操作（姿勢設定・選択フィット・変形開始）の理由。成功したら空に戻す。
+        /// パネルの案内と invokeToolAction の失敗理由に出す。
+        /// </summary>
+        [Poly_Ling.Data.PLToolState(Description = "最後に実行されなかった操作の理由（成功したら空）")]
+        public string LastActionFailure { get; private set; } = "";
+
+        /// <summary>モデル・作業軸・対象頂点がそろわないときの理由。そろえば null。</summary>
+        private string CheckStart(out ModelContext model, out WorkAxisContext axis)
+        {
+            model = GetModel?.Invoke();
+            axis  = GetWorkAxis?.Invoke();
+            if (model == null) return "モデルがありません";
+            if (axis == null) return "作業軸オブジェクトがありません（作業軸パネルの「作業軸オブジェクトを作る」で作ってください）";
+            return null;
+        }
+
+        // ================================================================
+        // 縦横制限（計画と規約/PolyLing_縦横制限計画.md）
+        // ================================================================
+
+        /// <summary>ドラッグを始めた位置（Y=0 下）。縦横制限の基準点。</summary>
+        private Vector2 _dragOriginPos;
+
+        /// <summary>
+        /// 移動モードで中央ギズモから制御点を自由移動している間だけ「対象を動かす」。
+        /// 軸の移動（既存の軸制限を優先）、拡大縮小、回転、矩形選択では制限しない。
+        /// </summary>
+        public AxisConstraintUse QueryAxisConstraint(out Vector2 anchor)
+        {
+            anchor = _dragOriginPos;
+            return State == LatticeState.Deform && !_boxSelecting
+                && _pointMode == PointGizmoMode.Move && _dragAxis == AxisGizmo.AxisType.Center
+                ? AxisConstraintUse.ObjectMove
+                : AxisConstraintUse.None;
+        }
+
         /// <summary>Deform 中の格子点ギズモのサブモード。</summary>
         public enum PointGizmoMode
         {
@@ -227,25 +265,25 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolAction(Description = "格子の配置を始める（頂点は動かさない）")]
         public bool BeginPlacement()
         {
-            if (State != LatticeState.Idle) return false;
+            if (State != LatticeState.Idle) return Refuse("姿勢設定はすでに始まっています");
 
-            var model = GetModel?.Invoke();
-            var axis  = GetWorkAxis?.Invoke();
-            if (model == null || axis == null) return false;
+            string why = CheckStart(out var model, out var axis);
+            if (why != null) return Refuse(why);
 
             _applier.Reset();
             WireApplierWorldReaders();
-            if (!_applier.Begin(model, axis)) return false;
+            if (!_applier.Begin(model, axis)) return Refuse("選択された頂点がありません");
 
             if (!_deformer.FitToSelection(_applier.Context))
             {
                 _applier.Reset();
-                return false;
+                return Refuse("選択範囲に格子を合わせられません");
             }
 
             _selectedPoints.Clear();
             _hoverPoint = -1;
             State = LatticeState.Placement;
+            LastActionFailure = "";
 
             NotifyChanged();
             return true;
@@ -260,26 +298,24 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolAction(Description = "格子を選択範囲に合わせる")]
         public bool FitToSelection()
         {
-            if (State != LatticeState.Placement) return false;
+            if (State != LatticeState.Placement) return Refuse("姿勢設定中だけ合わせ直せます");
 
-            var model = GetModel?.Invoke();
-            var axis  = GetWorkAxis?.Invoke();
-            if (model == null || axis == null) return false;
+            string why = CheckStart(out var model, out var axis);
+            if (why != null) return Refuse(why);
 
             _applier.Reset();
             WireApplierWorldReaders();
             if (!_applier.Begin(model, axis))
-            {
-                NotifyChanged();
-                return false;
-            }
+                return Refuse("選択された頂点がありません");
 
             bool ok = _deformer.FitToSelection(_applier.Context);
             _selectedPoints.Clear();
             _hoverPoint = -1;
 
+            if (!ok) return Refuse("選択範囲に格子を合わせられません");
+            LastActionFailure = "";
             NotifyChanged();
-            return ok;
+            return true;
         }
 
         /// <summary>
@@ -325,16 +361,15 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolAction(Description = "変形（頂点を動かすプレビュー）を始める。対象のロックを取る")]
         public bool BeginDeform()
         {
-            if (State != LatticeState.Placement || !Grid.IsBuilt) return false;
+            if (State != LatticeState.Placement || !Grid.IsBuilt) return Refuse("姿勢設定中だけ変形を始められます");
 
-            var model = GetModel?.Invoke();
-            var axis  = GetWorkAxis?.Invoke();
-            if (model == null || axis == null) return false;
+            string why = CheckStart(out var model, out var axis);
+            if (why != null) return Refuse(why);
 
             // 変形（頂点を動かすプレビュー）の開始前に、選択の担当者判定とロック取得（H-2）。
             if (!_inCommand && TryBeginPreview != null && !_panelPreview)
             {
-                if (!TryBeginPreview()) return false;
+                if (!TryBeginPreview()) return Refuse("選択を操作できません（担当者判定かロック）");
                 _panelPreview = true;
             }
 
@@ -343,11 +378,11 @@ namespace Poly_Ling.Player
             if (!_applier.Begin(model, axis))
             {
                 EndPanelPreview();
-                NotifyChanged();
-                return false;
+                return Refuse("選択された頂点がありません");
             }
 
             State = LatticeState.Deform;
+            LastActionFailure = "";
             GetToolContext?.Invoke()?.EnterTransformDragging?.Invoke();
 
             // 無変形の状態で一度通しておく。結果は開始時と同じ位置になる。
@@ -667,7 +702,7 @@ namespace Poly_Ling.Player
             try
             {
             if (!BeginPlacement())
-            { reason = "選択された頂点がありません"; return false; }
+            { reason = LastActionFailure; return false; }
 
             // 格子は引数から共用の組み立てで組む（処理列の種類 lattice と同じ。モディファイア枠組み計画 段 7b）。
             // セル数 → 中心と大きさ → 作り直し → 動かした点の検査（長さ・索引の範囲）→ ずれを書く。
@@ -739,6 +774,7 @@ namespace Poly_Ling.Player
             _boxSelecting = false;
 
             State = LatticeState.Idle;
+            LastActionFailure = "";
 
             if (wasDeform) GetToolContext?.Invoke()?.ExitTransformDragging?.Invoke();
 
@@ -788,8 +824,15 @@ namespace Poly_Ling.Player
             _applier.GetShowBindPose       = () => lctx?.ShowBindPose ?? false;
         }
 
-        private void NotifyChanged()
+        /// <summary>操作を実行しなかった理由を残して false を返す（パネルへも知らせる）。</summary>
+        private bool Refuse(string why)
+        {
+            LastActionFailure = why ?? "";
+            NotifyChanged();
+            return false;
+        }
 
+        private void NotifyChanged()
         {
             OnStateChanged?.Invoke();
             OnRefreshOverlay?.Invoke();
@@ -832,8 +875,9 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            _dragAxis     = AxisGizmo.AxisType.None;
-            _boxSelecting = false;
+            _dragAxis      = AxisGizmo.AxisType.None;
+            _boxSelecting  = false;
+            _dragOriginPos = screenPos;
 
             if (State != LatticeState.Deform) return;
 

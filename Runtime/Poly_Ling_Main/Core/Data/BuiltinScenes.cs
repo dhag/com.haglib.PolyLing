@@ -52,7 +52,7 @@ namespace Poly_Ling.Data
             {
                 Name        = "新規形状作成",
                 Description = "形をゼロから作る段階。頂点・面の追加や削除、押し出し、ミラー、材質と UV の設定を使う。",
-                Notes       = "スキンウェイトやモーフを付ける前の段階を想定している。付けたあとで形を変えると壊れるので、その段階ではスキニングやモーフ・表情作成の利用シーンへ切り替える。",
+                Notes       = "スキンウェイトを付ける前の段階を想定している。付けたあとで頂点を増減するとウェイトが壊れるので、その段階ではスキニングの利用シーンへ切り替える。形（シェイプ）は頂点が持つので、頂点を増減しても壊れない。",
             };
             create.IncludeCategories.AddRange(new[] { "geometry", "selection", "query", "transform.object", "mirror", "material", "uv" });
             create.StateAssumptions["topologyLocked"] = false;
@@ -76,16 +76,15 @@ namespace Poly_Ling.Data
             skin.VerificationPolicy = PLCommandVerification.SkinWeights | PLCommandVerification.Visual;
             list.Add(skin);
 
-            // ---- モーフ・表情作成：頂点数と並びを保つ段階
+            // ---- モーフ・表情作成：形（シェイプ）と表情を作る段階
+            //      名前は利用者のシナリオ・設定が参照するので変えない（段 7 で中身だけ形と表情に合わせた）。
             var morph = new SceneDefinition
             {
                 Name        = "モーフ・表情作成",
-                Description = "表情などのモーフを作り、調整する段階。頂点位置の編集とモーフの作成・変換・プレビューを使う。",
-                Notes       = "モーフは頂点番号で基準メッシュと対応している。頂点の並びを変える操作は出さない。頂点を増減する操作は承認を求める。やむを得ず形を変える場合は、あとでモーフを作り直す前提で行う。",
+                Description = "形（シェイプ）を作って頂点位置を編集し、形を組み合わせて表情を作る段階。形の追加・切り替え・プレビューと表情の作成を使う。",
+                Notes       = "形は頂点ごとに持つので、頂点の増減では壊れない。別のモデルから形を足すとき（ブーリアン・貼り付け）は頂点の対応が崩れるので承認を求める。",
             };
             morph.IncludeCategories.AddRange(new[] { "morph", "geometry.position", "selection", "query" });
-            morph.StateAssumptions["topologyLocked"] = true;
-            morph.HazardPolicy[PLCommandHazard.ChangesVertexOrder] = PLHazardAction.Hide;
             morph.HazardPolicy[PLCommandHazard.InvalidatesMorphs]  = PLHazardAction.RequireConfirmation;
             morph.VerificationPolicy = PLCommandVerification.MorphIntegrity | PLCommandVerification.VertexCount | PLCommandVerification.Visual;
             list.Add(morph);
@@ -93,7 +92,7 @@ namespace Poly_Ling.Data
             // ---- 既存形状の改変
             list.Add(Make("既存形状の改変",
                 "できている形を直す段階。選択、頂点移動、作業軸による変形、面の分割・削除による部分置換を使う。",
-                "スキンウェイトやモーフが付いたモデルでは、頂点の増減で対応が崩れる。その操作は承認を得てから行う。",
+                "スキンウェイトが付いたモデルでは、頂点の増減で対応が崩れる。形（シェイプ）は頂点が持つので崩れないが、別のメッシュを合わせる操作（ブーリアン・貼り付け）では形が失われる。これらの操作は承認を得てから行う。",
                 new[] { "selection", "query", "geometry.position", "geometry.deform", "geometry.topology", "workaxis", "transform.object", "mirror" },
                 null,
                 PLCommandVerification.Geometry | PLCommandVerification.Visual,
@@ -142,10 +141,10 @@ namespace Poly_Ling.Data
 
             // ---- アニメーション編集
             list.Add(Make("アニメーション編集",
-                "ボーンの姿勢、マッスル可動域、モーフの効きを扱い、モーションを変換・書き出す段階。",
+                "ボーンの姿勢、マッスル可動域、形（シェイプ）の効きを扱い、モーションを変換・書き出す段階。",
                 "animation 分類のコマンドはモーション JSON・VMD・VRMA の検査・変換・書き出しで、キーを 1 つずつ編集するコマンドは無い。",
                 new[] { "animation", "rig.skeleton.pose", "selection", "query" },
-                new[] { "setHumanLimit", "clearHumanLimit", "startMorphPreview", "applyMorphPreview", "endMorphPreview" },
+                new[] { "setHumanLimit", "clearHumanLimit", "previewShapes", "endShapePreview" },
                 PLCommandVerification.Visual,
                 hazards: new[] { (PLCommandHazard.ChangesBindPose, PLHazardAction.RequireConfirmation) }));
 
@@ -154,7 +153,7 @@ namespace Poly_Ling.Data
                 "VRM のメタ・視線・一人称、揺れ物、表情を整えて書き出し、確かめる段階。",
                 "書き出しは作業フォルダの下だけへ書ける。",
                 new[] { "vrm", "dynamics.spring", "rig.skeleton.humanoid", "io.export", "query" },
-                new[] { "setMorphExpressionAttributes", "startMorphPreview", "applyMorphPreview", "endMorphPreview", "importVrmFile" },
+                new[] { "setExpressionAttributes", "previewShapes", "endShapePreview", "importVrmFile" },
                 PLCommandVerification.Visual,
                 states: new[] { ("hasHumanoid", true) }));
 
@@ -205,7 +204,7 @@ namespace Poly_Ling.Data
             // ---- 形状の転写・フィッティング
             list.Add(Make("形状の転写・フィッティング",
                 "別の形に合わせて変形し、頂点データ・法線・対称の片側を転写する段階。",
-                "スキンウェイトやモーフの付いた対象では、壊す操作は承認を求める。",
+                "スキンウェイトや形（シェイプ）の付いた対象では、壊す操作は承認を求める。",
                 new[] { "geometry.deform", "selection", "query" },
                 new[] { "surfaceSnap", "transferVertexData", "applyNormalTransplant", "applyReferenceSymmetry", "createBlendClone" },
                 PLCommandVerification.Geometry | PLCommandVerification.Visual,

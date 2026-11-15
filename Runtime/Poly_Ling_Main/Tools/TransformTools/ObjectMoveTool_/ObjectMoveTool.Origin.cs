@@ -55,7 +55,7 @@ namespace Poly_Ling.Tools
             _rebindStartSkinning.Clear();
             _rebindStartBindPose.Clear();
             _originStartPositions.Clear();
-            _originStartWorld.Clear();
+            _originStartWorld.Clear(); _originStartShapes.Clear();
             _originWorldTotal = Vector3.zero;
             _dragTargets.Clear();
             _freezeBefore = null;
@@ -487,8 +487,8 @@ namespace Poly_Ling.Tools
 
             var t = mc.Type;
 
-            // モーフ・剛体・ジョイント・グループ・作業軸は常に除外
-            if (t == MeshType.Morph || t == MeshType.RigidBody ||
+            // 剛体・ジョイント・グループ・作業軸は常に除外
+            if (t == MeshType.RigidBody ||
                 t == MeshType.RigidBodyJoint || t == MeshType.Group ||
                 t == MeshType.WorkAxis)
                 return false;

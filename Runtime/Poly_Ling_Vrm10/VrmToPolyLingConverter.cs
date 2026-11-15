@@ -22,7 +22,7 @@
 // ModelContext の並び
 // ============================================================
 //
-//   ボーン → 描画オブジェクト → モーフ の順（PMXImporter と同じ）。
+//   ボーン → 描画オブジェクト の順（PMXImporter と同じ）。モーフは形にする（隠しオブジェクトは作らない）。
 //   ・ボーン     … メッシュを持たないノード ＋ 実スキンの関節ノード。DFS 順。
 //                  ただし書き出し側が作る入れ物「Armature」は条件付きで読み飛ばす
 //                  （DetectContainerToSkip）。
@@ -35,8 +35,7 @@
 //        それ以外   … 頂点はノードのローカル。BoneTransform はノードのローカル変換、
 //                      親はノードの親。ModelReader がモーフだけのメッシュに付ける
 //                      仮スキン（GltfIndex = -1、ModelReader.cs:77-122）もこちら。
-//   ・モーフ     … モーフターゲットごとに、基底メッシュの複製へ差分を足したもの
-//                  （PMXImporter.Morph.cs:291-329 と同じ形）。
+//   ・形         … モーフターゲットの名前 1 つ＝形 1 つ（BuildShapes の注記）。
 //
 // ============================================================
 // 頂点と面
@@ -47,14 +46,10 @@
 //   統合しないのでモーフ差分の頂点番号がそのまま一致する。
 //
 // ============================================================
-// 表情（PMX のグループモーフと同じ規則：PMXImporter.Morph.cs:129-225）
+// 表情（BuildExpressions の注記。PolyLing_モーフ整理計画.md 3.5・段 6）
 // ============================================================
 //
-//   ・同名のモーフターゲットをまとめて仮の Vertex 表情にする。
-//   ・VRM の表情は Group にし、MorphTargetBinds を重み付きで展開する。
-//     子の名前は GroupChildren に残す。
-//   ・どの VRM 表情にも使われない仮表情は Vertex 表情として残す。
-//     使われたものは Group に吸収して消す。
+//   ・VRM の表情はグループの表情（形の名前 × 重み）にする。モーフターゲットの表情は作らない。
 //   ・プリセットは Name と NameEnglish にプリセット名を入れる。
 //     書き出しの ResolvePreset が NameEnglish で同じプリセットへ戻す
 //     （Vrm10SceneAssembler.cs の ResolvePreset）。
@@ -68,6 +63,7 @@ using UnityEngine;
 using UniGLTF;
 using UniVRM10;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Materials;
 using Poly_Ling.Vrm;
 
@@ -100,9 +96,11 @@ namespace Poly_Ling.Vrm10Impl
         // 読み飛ばす入れ物ノード（書き出し側が作る「Armature」。DetectContainerToSkip）。無ければ null。
         private VrmLib.Node _skippedContainer;
 
-        // (glTF ノード索引, ターゲット索引) → モーフ MeshContext 索引
-        private readonly Dictionary<(int node, int target), int> _morphCtx = new Dictionary<(int, int), int>();
-        // (glTF ノード索引, ターゲット索引) → ターゲット名
+        // (glTF ノード索引, ターゲット索引) → 作成待ちのモーフ（BuildShapes が埋める）
+        private readonly Dictionary<(int node, int target), PendingMorph> _pendingByKey = new Dictionary<(int, int), PendingMorph>();
+        // ターゲット名 → そのターゲットを持つ (ノード, ターゲット) の並び
+        private readonly Dictionary<string, List<(int node, int target)>> _targetsByName = new Dictionary<string, List<(int node, int target)>>();
+        // (glTF ノード索引, ターゲット索引) → ターゲット名（＝形の名前）
         private readonly Dictionary<(int node, int target), string> _morphName = new Dictionary<(int, int), string>();
 
         // 材質
@@ -121,7 +119,12 @@ namespace Poly_Ling.Vrm10Impl
             public int         NodeIndex;
             public int         TargetIndex;
             public string      Name;
+            /// <summary>差分（ファイルの値。スキンでもベイク行列は掛けていない）。</summary>
             public Vector3[]   Deltas;
+            /// <summary>頂点の位置（ファイルの値。ベイク行列を掛ける前）。</summary>
+            public Vector3[]   RawPositions;
+            public bool        Skinned;
+            public Matrix4x4   Bake;
         }
         private readonly List<PendingMorph> _pendingMorphs = new List<PendingMorph>();
 
@@ -179,7 +182,7 @@ namespace Poly_Ling.Vrm10Impl
             BuildBones();
             BuildMeshes();
             FinalizeMaterials();
-            BuildMorphContexts();
+            BuildShapes();
             FinalizeUnityMeshes();
 
             BuildHumanoid();
@@ -818,8 +821,9 @@ namespace Poly_Ling.Vrm10Impl
                 var targetDeltas = new List<Vector3[]>();
                 var targetNames  = new List<string>();
                 bool hasNormals  = true;
+                Vector3[] rawPositions;
 
-                if (!AppendMeshGroup(mg, mo, skinned, bake, jointToCtx, targetDeltas, targetNames, ref hasNormals))
+                if (!AppendMeshGroup(mg, mo, skinned, bake, jointToCtx, targetDeltas, targetNames, out rawPositions, ref hasNormals))
                     continue;
 
                 if (!hasNormals) mo.RecalculateSmoothNormals();
@@ -854,6 +858,9 @@ namespace Poly_Ling.Vrm10Impl
                             TargetIndex = t,
                             Name        = targetNames[t],
                             Deltas      = targetDeltas[t],
+                            RawPositions = rawPositions,
+                            Skinned     = skinned,
+                            Bake        = bake,
                         });
                     }
                 }
@@ -891,10 +898,11 @@ namespace Poly_Ling.Vrm10Impl
         /// </summary>
         private bool AppendMeshGroup(
             VrmLib.MeshGroup mg, MeshObject mo, bool skinned, Matrix4x4 bake, int[] jointToCtx,
-            List<Vector3[]> targetDeltas, List<string> targetNames, ref bool hasNormals)
+            List<Vector3[]> targetDeltas, List<string> targetNames, out Vector3[] rawPositions, ref bool hasNormals)
         {
             int totalVertices = 0;
             foreach (var m in mg.Meshes) totalVertices += m?.VertexBuffer?.Count ?? 0;
+            rawPositions = new Vector3[totalVertices];
             if (totalVertices == 0) return false;
 
             bool multi = mg.Meshes.Count > 1;
@@ -941,6 +949,7 @@ namespace Poly_Ling.Vrm10Impl
                 for (int i = 0; i < count; i++)
                 {
                     Vector3 p = positions[i];
+                    if (vbase + i < rawPositions.Length) rawPositions[vbase + i] = p;
                     Vector3 n = hasN ? normals[i] : Vector3.up;
                     Vector2 uv = hasUV ? uvs[i] : Vector2.zero;
 
@@ -1000,8 +1009,8 @@ namespace Poly_Ling.Vrm10Impl
                     var dst = targetDeltas[t];
                     for (int i = 0; i < count && i < deltas.Length; i++)
                     {
-                        Vector3 d = deltas[i];
-                        dst[vbase + i] = skinned ? bake.MultiplyVector(d) : d;
+                        // ベイク行列は形の位置を作るときに (p + d) へ掛ける（BuildShapes）。
+                        dst[vbase + i] = deltas[i];
                     }
                 }
             }
@@ -1097,45 +1106,59 @@ namespace Poly_Ling.Vrm10Impl
         }
 
         // ================================================================
-        // モーフ
+        // 形（PolyLing_モーフ整理計画.md 3.9・段 6）
+        //
+        //   モーフターゲットの名前 1 つ＝形 1 つ（同じ名前のターゲットは、ノードをまたいで 1 つの形にまとめる）。
+        //   隠しオブジェクト（種類 Morph）は作らない。差分は、そのノードの描画オブジェクトの頂点に入れる。
+        //   形の位置は頂点の位置と同じ計算で出す：スキンはベイク行列を (p + d) に掛ける、それ以外は p + d。
+        //   （差分にだけ行列を掛けて足すと、丸めの差で動いていない頂点が「形で動いた頂点」になる。段 2 の規則）
         // ================================================================
 
-        private void BuildMorphContexts()
+        private void BuildShapes()
         {
-            var usedNames = new HashSet<string>();
-            foreach (var mc in _result.MeshContexts)
-                if (!string.IsNullOrEmpty(mc?.Name)) usedNames.Add(mc.Name);
-
+            var idByName = new Dictionary<string, int>();
+            var setKeys = new HashSet<(int node, int target)>();
             foreach (var pm in _pendingMorphs)
             {
-                var baseMc = pm.BaseCtx;
-                var morphMc = new MeshContext
+                if (!idByName.TryGetValue(pm.Name, out int id))
                 {
-                    MeshObject        = baseMc.MeshObject.Clone(),
-                    Type              = MeshType.Morph,
-                    IsVisible         = false,
-                    ExcludeFromExport = true,
-                };
-                morphMc.MeshObject.Type = MeshType.Morph;
+                    id = _result.Shapes.Count + 1;
+                    idByName[pm.Name] = id;
+                    _result.Shapes.Add(new ShapeDef { Id = id, Name = pm.Name, NameEnglish = "", Panel = 3 });
+                }
 
-                string name = MakeUnique($"{baseMc.Name}_{pm.Name}", usedNames);
-                morphMc.MeshObject.Name = name;
-                morphMc.Name = name;
+                var key = (pm.NodeIndex, pm.TargetIndex);
+                if (!setKeys.Add(key)) continue;
+                if (!_targetsByName.TryGetValue(pm.Name, out var keys))
+                {
+                    keys = new List<(int, int)>();
+                    _targetsByName[pm.Name] = keys;
+                }
+                // 同じノードに同じ名前のターゲットが 2 つあると、後のものが前のものを上書きする。
+                foreach (var k in keys)
+                    if (k.node == pm.NodeIndex)
+                        _result.Warnings.Add($"\"{pm.BaseCtx.Name}\" に同じ名前のモーフターゲット \"{pm.Name}\" が複数あります。後のものを使います。");
+                keys.Add(key);
+                _pendingByKey[key] = pm;
+                _morphName[key] = pm.Name;
 
-                // 基準位置は差分を足す前に取る（PMXImporter.Morph.cs:303-319 と同じ順）。
-                morphMc.SetAsMorph(pm.Name);
-                if (morphMc.MorphBaseData != null)
-                    morphMc.MorphBaseData.BaseMeshName = baseMc.Name;
+                WriteShape(pm, id, 1f);
+            }
+            _result.MorphCount = _result.Shapes.Count;
+        }
 
-                var verts = morphMc.MeshObject.Vertices;
-                for (int i = 0; i < verts.Count && i < pm.Deltas.Length; i++)
-                    verts[i].Position += pm.Deltas[i];
-
-                int index = _result.MeshContexts.Count;
-                _result.MeshContexts.Add(morphMc);
-                _morphCtx[(pm.NodeIndex, pm.TargetIndex)]  = index;
-                _morphName[(pm.NodeIndex, pm.TargetIndex)] = pm.Name;
-                _result.MorphCount++;
+        /// <summary>ターゲット 1 本の差分 × 重みを、形 shapeId として頂点に書く（冒頭の規則）。</summary>
+        private static void WriteShape(PendingMorph pm, int shapeId, float weight)
+        {
+            var verts = pm.BaseCtx.MeshObject.Vertices;
+            int n = Mathf.Min(verts.Count, Mathf.Min(pm.Deltas.Length, pm.RawPositions.Length));
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 d = pm.Deltas[i];
+                if (d.x == 0f && d.y == 0f && d.z == 0f) continue;
+                Vector3 raw = pm.RawPositions[i] + (weight == 1f ? d : d * weight);
+                Vector3 p = pm.Skinned ? pm.Bake.MultiplyPoint3x4(raw) : raw;
+                if (!ShapeOps.Same(p, verts[i].Position)) verts[i].SetShape(shapeId, p);
             }
         }
 
@@ -1146,17 +1169,8 @@ namespace Poly_Ling.Vrm10Impl
             {
                 if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
 
-                if (mc.Type == MeshType.Morph)
-                {
-                    mc.UnityMesh = mc.MeshObject.ToUnityMeshShared(matCount);
-                    mc.UnityMesh.name = mc.MeshObject.Name;
-                    mc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                }
-                else
-                {
-                    mc.UnityMesh = mc.MeshObject.ToUnityMesh(matCount);
-                    mc.UnityMesh.name = mc.Name;
-                }
+                mc.UnityMesh = mc.MeshObject.ToUnityMesh(matCount);
+                mc.UnityMesh.name = mc.Name;
             }
         }
 
@@ -1389,28 +1403,24 @@ namespace Poly_Ling.Vrm10Impl
         }
 
         // ================================================================
-        // 表情
+        // 表情（PolyLing_モーフ整理計画.md 3.5・段 6）
+        //
+        //   ・VRM の表情はグループの表情（形の名前 × 重み。GroupChildren）にする。
+        //     旧モーフのエントリ（MeshEntries）は作らない。モーフターゲットの表情は作らない（形そのものが頂点の表情）。
+        //   ・バインドの重み：同じ名前のターゲットを持つノードが全部、同じ重みでバインドされていれば、
+        //     その形を子にする（名前 × 重み）。ノードごとに重みが違う、または一部のノードだけがバインドされているときは、
+        //     バインドどおりの差分（重みを掛けた差分の和）を焼いた専用の形「表情名_ターゲット名」を作り、重み 1 で子にする。
+        //     1 つの重みに丸めると、ファイルにある値が変わる（他のノードも動く・重みが変わる）ため。
+        //   ・子が 1 つで、表情と同じ名前の形を重み 1 で指すだけの表情は、形そのものなので作らない。
+        //     VRM の付帯データ（プリセット・上書き・二値・材質バインド）を持つときだけ、同じ名前の頂点の表情として残す
+        //     （書き出しでその付帯データで形を指す。ShapeBlendOps.ExpandExpression）。
+        //   ・形も材質バインドも指さない表情は書き出しでも出ない（Vrm10SceneAssembler.BuildExpressions）ので作らない。
+        //   ・プリセットは Name と NameEnglish にプリセット名を入れる（ResolvePreset が NameEnglish で戻す）。
         // ================================================================
 
         private void BuildExpressions(bool onlyTargets = false)
         {
-            // 同名のモーフターゲットを 1 つの仮表情にまとめる
-            var tempByName = new Dictionary<string, MorphExpression>();
-            var tempOrder  = new List<MorphExpression>();
-            foreach (var kv in _morphCtx)
-            {
-                string tname = _morphName[kv.Key];
-                if (!tempByName.TryGetValue(tname, out var me))
-                {
-                    me = new MorphExpression(tname, MorphType.Vertex);
-                    tempByName[tname] = me;
-                    tempOrder.Add(me);
-                }
-                me.AddMesh(kv.Value, 1f);
-            }
-
-            var absorbed = new HashSet<MorphExpression>();
-            var groups   = new List<MorphExpression>();
+            var groups = new List<MorphExpression>();
 
             if (!onlyTargets)
             {
@@ -1418,41 +1428,38 @@ namespace Poly_Ling.Vrm10Impl
                 var preset = ex?.Preset;
                 if (preset != null)
                 {
-                    AddExpression(groups, absorbed, tempByName, "happy",      preset.Happy,      3);
-                    AddExpression(groups, absorbed, tempByName, "angry",      preset.Angry,      3);
-                    AddExpression(groups, absorbed, tempByName, "sad",        preset.Sad,        3);
-                    AddExpression(groups, absorbed, tempByName, "relaxed",    preset.Relaxed,    3);
-                    AddExpression(groups, absorbed, tempByName, "surprised",  preset.Surprised,  3);
-                    AddExpression(groups, absorbed, tempByName, "aa",         preset.Aa,         2);
-                    AddExpression(groups, absorbed, tempByName, "ih",         preset.Ih,         2);
-                    AddExpression(groups, absorbed, tempByName, "ou",         preset.Ou,         2);
-                    AddExpression(groups, absorbed, tempByName, "ee",         preset.Ee,         2);
-                    AddExpression(groups, absorbed, tempByName, "oh",         preset.Oh,         2);
-                    AddExpression(groups, absorbed, tempByName, "blink",      preset.Blink,      1);
-                    AddExpression(groups, absorbed, tempByName, "blinkLeft",  preset.BlinkLeft,  1);
-                    AddExpression(groups, absorbed, tempByName, "blinkRight", preset.BlinkRight, 1);
-                    AddExpression(groups, absorbed, tempByName, "lookUp",     preset.LookUp,     1);
-                    AddExpression(groups, absorbed, tempByName, "lookDown",   preset.LookDown,   1);
-                    AddExpression(groups, absorbed, tempByName, "lookLeft",   preset.LookLeft,   1);
-                    AddExpression(groups, absorbed, tempByName, "lookRight",  preset.LookRight,  1);
-                    AddExpression(groups, absorbed, tempByName, "neutral",    preset.Neutral,    3);
+                    AddExpression(groups, "happy",      preset.Happy,      3);
+                    AddExpression(groups, "angry",      preset.Angry,      3);
+                    AddExpression(groups, "sad",        preset.Sad,        3);
+                    AddExpression(groups, "relaxed",    preset.Relaxed,    3);
+                    AddExpression(groups, "surprised",  preset.Surprised,  3);
+                    AddExpression(groups, "aa",         preset.Aa,         2);
+                    AddExpression(groups, "ih",         preset.Ih,         2);
+                    AddExpression(groups, "ou",         preset.Ou,         2);
+                    AddExpression(groups, "ee",         preset.Ee,         2);
+                    AddExpression(groups, "oh",         preset.Oh,         2);
+                    AddExpression(groups, "blink",      preset.Blink,      1);
+                    AddExpression(groups, "blinkLeft",  preset.BlinkLeft,  1);
+                    AddExpression(groups, "blinkRight", preset.BlinkRight, 1);
+                    AddExpression(groups, "lookUp",     preset.LookUp,     1);
+                    AddExpression(groups, "lookDown",   preset.LookDown,   1);
+                    AddExpression(groups, "lookLeft",   preset.LookLeft,   1);
+                    AddExpression(groups, "lookRight",  preset.LookRight,  1);
+                    AddExpression(groups, "neutral",    preset.Neutral,    3);
                 }
 
                 if (ex?.Custom != null)
                     foreach (var kv in ex.Custom)
-                        AddExpression(groups, absorbed, tempByName, kv.Key, kv.Value, 3, custom: true);
+                        AddExpression(groups, kv.Key, kv.Value, 3, custom: true);
             }
 
-            foreach (var me in tempOrder)
-                if (!absorbed.Contains(me)) _result.MorphExpressions.Add(me);
             _result.MorphExpressions.AddRange(groups);
-
             _result.ExpressionCount = groups.Count;
+            _result.MorphCount = _result.Shapes.Count;
         }
 
         private void AddExpression(
-            List<MorphExpression> groups, HashSet<MorphExpression> absorbed,
-            Dictionary<string, MorphExpression> tempByName,
+            List<MorphExpression> groups,
             string name, VrmExt.Expression src, int panel, bool custom = false)
         {
             if (src == null || string.IsNullOrEmpty(name)) return;
@@ -1465,24 +1472,57 @@ namespace Poly_Ling.Vrm10Impl
 
             if (src.MorphTargetBinds != null)
             {
+                // ターゲット名 → (キー → 重み)。並びは最初に出た順。
+                var byName = new Dictionary<string, Dictionary<(int, int), float>>();
+                var order  = new List<string>();
                 foreach (var b in src.MorphTargetBinds)
                 {
                     if (b?.Node == null || b.Index == null) continue;
                     var key = (b.Node.Value, b.Index.Value);
-                    if (!_morphCtx.TryGetValue(key, out int morphIndex))
+                    if (!_morphName.TryGetValue(key, out string tname))
                     {
                         _result.Warnings.Add($"表情 \"{name}\" のバインド（ノード {key.Item1} / ターゲット {key.Item2}）に対応するモーフがありません。");
                         continue;
                     }
+                    if (!byName.TryGetValue(tname, out var ws))
+                    {
+                        ws = new Dictionary<(int, int), float>();
+                        byName[tname] = ws;
+                        order.Add(tname);
+                    }
+                    ws.TryGetValue(key, out float prev);
+                    ws[key] = prev + (b.Weight ?? 1f);
+                }
 
-                    float w = b.Weight ?? 1f;
-                    string tname = _morphName[key];
-                    me.AddMesh(morphIndex, w);
+                foreach (var tname in order)
+                {
+                    var ws = byName[tname];
+                    var all = _targetsByName.TryGetValue(tname, out var ks) ? ks : new List<(int, int)>();
+                    float w0 = 0f;
+                    bool first = true, uniform = ws.Count == all.Count;
+                    foreach (var k in all)
+                    {
+                        if (!ws.TryGetValue(k, out float w)) { uniform = false; break; }
+                        if (first) { w0 = w; first = false; }
+                        else if (w != w0) { uniform = false; break; }
+                    }
 
-                    if (!me.GroupChildren.Exists(c => c.Name == tname))
-                        me.GroupChildren.Add(new MorphGroupChild(tname, w));
+                    if (uniform)
+                    {
+                        me.GroupChildren.Add(new MorphGroupChild(tname, w0));
+                        continue;
+                    }
 
-                    if (tempByName.TryGetValue(tname, out var temp)) absorbed.Add(temp);
+                    // 重みがそろわない：バインドどおりの差分を焼いた専用の形を作る。
+                    string dedicated = UniqueShapeName($"{name}_{tname}");
+                    int id = _result.Shapes.Count + 1;
+                    _result.Shapes.Add(new ShapeDef { Id = id, Name = dedicated, NameEnglish = "", Panel = panel });
+                    foreach (var kv in ws)
+                        if (_pendingByKey.TryGetValue(kv.Key, out var pm)) WriteShape(pm, id, kv.Value);
+                    me.GroupChildren.Add(new MorphGroupChild(dedicated, 1f));
+                    _result.Warnings.Add(
+                        $"表情 \"{name}\" のターゲット \"{tname}\" はノードごとの重みがそろわない（または一部のノードだけを指す）ので、"
+                      + $"バインドどおりの差分を焼いた形 \"{dedicated}\" を作りました。");
                 }
             }
 
@@ -1534,10 +1574,27 @@ namespace Poly_Ling.Vrm10Impl
                 || vrm.OverrideMouth  != VrmExpressionOverride.None;
             if (hasVrmValues) me.Vrm = vrm;
 
-            // モーフも材質バインドも無い表情は書き出しでも出ない（Vrm10SceneAssembler.BuildExpressions）。
-            if (me.MeshEntries.Count == 0 && !vrm.HasMaterialBinds) return;
+            // 形も材質バインドも指さない表情は書き出しでも出ない（Vrm10SceneAssembler.BuildExpressions）。
+            if (me.GroupChildren.Count == 0 && !vrm.HasMaterialBinds) return;
+
+            // 同じ名前の形を重み 1 で指すだけの表情は形そのもの。付帯データがあるときだけ頂点の表情として残す。
+            if (me.GroupChildren.Count == 1 && me.GroupChildren[0].Name == name && me.GroupChildren[0].Weight == 1f
+                && !vrm.HasMaterialBinds)
+            {
+                if (me.Vrm == null) return;
+                me.Type = MorphType.Vertex;
+                me.GroupChildren.Clear();
+            }
 
             groups.Add(me);
+        }
+
+        /// <summary>形の名前の中で重ならない名前（重なれば「名前_2」…）。</summary>
+        private string UniqueShapeName(string name)
+        {
+            bool Used(string n) { foreach (var s in _result.Shapes) if (s.Name == n) return true; return false; }
+            if (!Used(name)) return name;
+            for (int k = 2; ; k++) { string c = $"{name}_{k}"; if (!Used(c)) return c; }
         }
 
         private string MaterialNameOf(int? gltfMaterial)

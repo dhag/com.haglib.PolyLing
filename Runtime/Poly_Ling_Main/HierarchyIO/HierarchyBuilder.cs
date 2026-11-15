@@ -1395,57 +1395,38 @@ namespace Poly_Ling.HierarchyIO
         }
 
         // ================================================================
-        // モーフの取りこぼし検査
+        // 形の取りこぼし検査
         // ================================================================
 
         /// <summary>
-        /// ブレンドシェイプにできなかったモーフを理由つきで警告に残す。
-        /// 親が特定できない場合と、親が出力対象外だった場合を分ける。
+        /// ブレンドシェイプにできなかった形を警告に残す。
         /// </summary>
         private static void ReportUnattachedMorphs(ModelContext model, HierarchyBuildResult result)
         {
             if (model == null || result == null) return;
 
-            var attached = new HashSet<int>();
-            foreach (var slot in result.MorphShapes) attached.Add(slot.MorphContextIndex);
+            var attached = new HashSet<Poly_Ling.Ops.MorphTargetKey>();
+            foreach (var slot in result.MorphShapes) attached.Add(slot.Key);
 
-            var noBase          = new List<string>();
-            var baseNotExported = new List<string>();
-            int total = 0;
-
-            for (int i = 0; i < model.MeshContextCount; i++)
+            // 形：どの描画オブジェクトにも載らなかった形（差分が無い、または差分のあるオブジェクトが出力対象外）。
+            if (model.Shapes != null)
             {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || !mc.IsMorph) continue;
-
-                total++;
-                if (attached.Contains(i)) continue;
-
-                string name = string.IsNullOrEmpty(mc.Name) ? "[" + i + "]" : mc.Name;
-                int baseIndex = MorphPreviewState.FindBaseMeshIndex(model, mc);
-
-                if (baseIndex < 0)
+                var notAttached = new List<string>();
+                int uvShapes = 0;
+                foreach (var s in model.Shapes)
                 {
-                    noBase.Add(name);
+                    if (s == null) continue;
+                    if (s.IsUV) { uvShapes++; continue; }
+                    if (!attached.Contains(Poly_Ling.Ops.MorphTargetKey.Shape(s.Id)))
+                        notAttached.Add(s.Name);
                 }
-                else
-                {
-                    var baseCtx = model.GetMeshContext(baseIndex);
-                    baseNotExported.Add(name + " → " + (baseCtx?.Name ?? ("[" + baseIndex + "]")));
-                }
+                if (notAttached.Count > 0)
+                    result.Warn(
+                        "差分のある描画オブジェクトが出力に無い形 " + notAttached.Count + " 件はブレンドシェイプになりません: "
+                        + Join(notAttached));
+                if (uvShapes > 0)
+                    result.Warn("UV の形 " + uvShapes + " 件はブレンドシェイプに出しません（UV のブレンドシェイプが無いため）。");
             }
-
-            if (total == 0) return;
-
-            if (noBase.Count > 0)
-                result.Warn(
-                    "親メッシュを特定できないモーフ " + noBase.Count + " 件をブレンドシェイプにできませんでした: "
-                    + Join(noBase));
-
-            if (baseNotExported.Count > 0)
-                result.Warn(
-                    "親メッシュが出力対象外のモーフ " + baseNotExported.Count + " 件をブレンドシェイプにできませんでした: "
-                    + Join(baseNotExported));
         }
 
         /// <summary>警告文が延々と伸びないよう先頭 20 件までにする。</summary>

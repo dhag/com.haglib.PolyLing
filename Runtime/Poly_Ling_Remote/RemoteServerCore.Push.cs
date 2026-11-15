@@ -147,6 +147,39 @@ namespace Poly_Ling.Remote
         {
             FollowCurrentModel();
             CheckSelectionChanged();
+            CheckShapeChanged();
+        }
+
+        // ================================================================
+        // 形の切り替え push（段 7。PolyLing_モーフ整理計画.md 7 章の 3）
+        //   今の形・直前の形・形の一覧（番号と名前）が変わったら、全クライアントへ shapeChanged を送る。
+        //   中身は query "shapes" の応答と同じ（RemoteDataProvider.QueryShapes）に modelIndex を足したもの。
+        //   形はモデルのデータなので、選択と違ってユーザーごとに分けない。
+        //   NotifySelectionChanged と同じく本体の NotifyPanels から毎回呼ばれ、_lastShapeSig の差分で抑止する。
+        // ================================================================
+
+        private string _lastShapeSig;
+
+        private void CheckShapeChanged()
+        {
+            var proj  = Context?.Project;
+            var model = Context?.Model;
+            if (proj == null || model == null) { _lastShapeSig = null; return; }
+
+            var sb = new StringBuilder();
+            sb.Append(proj.CurrentModelIndex).Append('|').Append(model.CurrentShapeId).Append('|').Append(model.PreviousShapeId);
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                    if (s != null) sb.Append('|').Append(s.Id).Append(':').Append(s.Name).Append(':').Append(s.NameEnglish).Append(':').Append(s.Panel);
+            string sig = sb.ToString();
+            if (sig == _lastShapeSig) return;
+            bool first = _lastShapeSig == null;
+            _lastShapeSig = sig;
+            if (first || _wsServer == null || ClientCount == 0) return;
+
+            string shapes = RemoteDataProvider.QueryShapes(model);
+            string data = "{\"modelIndex\":" + proj.CurrentModelIndex + ",\"shapes\":" + shapes + "}";
+            BroadcastAsync(BuildPushMessage("shapeChanged", data));
         }
 
         /// <summary>
@@ -240,8 +273,7 @@ namespace Poly_Ling.Remote
         {
             return modelIndex + "|" + (int)model.ActiveCategory + "|"
                  + CsvIndices(model.SelectedDrawableMeshIndices) + "|"
-                 + CsvIndices(model.SelectedBoneIndices) + "|"
-                 + CsvIndices(model.SelectedMorphIndices);
+                 + CsvIndices(model.SelectedBoneIndices);
         }
 
         /// <summary>
@@ -267,7 +299,6 @@ namespace Poly_Ling.Remote
             jb.KeyValue("category",   (int)model.ActiveCategory);
             jb.KeyValue("drawable",   CsvIndices(model.SelectedDrawableMeshIndices));
             jb.KeyValue("bone",       CsvIndices(model.SelectedBoneIndices));
-            jb.KeyValue("morph",      CsvIndices(model.SelectedMorphIndices));
             jb.EndObject();
 
             string pushJson = BuildPushMessage("selectionChanged", jb.ToString());

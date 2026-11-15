@@ -27,8 +27,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         /// <summary>
         /// エントリがあれば書き出し、無ければ既存ファイルを削除する。
-        /// 削除しないと、ボーンやモーフを持たなくなったモデルを同じフォルダへ
-        /// 保存し直したときに古い *.bone.csv / *.morph.csv が残り、
+        /// 削除しないと、ボーンを持たなくなったモデルを同じフォルダへ
+        /// 保存し直したときに古い *.bone.csv が残り、
         /// 読込時に index が重なって片方が黙って上書きされる。
         /// </summary>
         private static void WriteOrDeleteMeshCsv(
@@ -59,7 +59,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string folderPath, ModelContext model,
             List<CsvMeshEntry> meshEntries,
             List<CsvMeshEntry> boneEntries,
-            List<CsvMeshEntry> morphEntries,
             List<CsvMeshEntry> pmxPhysicsEntries,
             bool useNameBased = false)
         {
@@ -82,11 +81,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 var e = boneEntries[o];
                 allEntries.Add((e.GlobalIndex, "bone", o, e.MeshContext.Type.ToString(), e.MeshContext.Name));
-            }
-            for (int o = 0; o < morphEntries.Count; o++)
-            {
-                var e = morphEntries[o];
-                allEntries.Add((e.GlobalIndex, "morph", o, e.MeshContext.Type.ToString(), e.MeshContext.Name));
             }
             for (int o = 0; o < pmxPhysicsEntries.Count; o++)
             {
@@ -494,25 +488,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_MorphGroups,version,1.0");
+            // 版 2.0（段 7）：旧モーフを指すエントリの列（entryCount,meshRef:weight…）を廃止した。
+            sb.AppendLine("#PolyLing_MorphGroups,version,2.0");
 
             foreach (var me in model.MorphExpressions)
             {
-                // name,nameEnglish,panel,type,entryCount,meshRef0:weight0,...
-                sb.Append($"{Esc(me.Name)},{Esc(me.NameEnglish)},{me.Panel},{(int)me.Type},{me.MeshEntries.Count}");
-                foreach (var entry in me.MeshEntries)
-                {
-                    if (useNameBased && indexToName != null)
-                    {
-                        string meshName = indexToName.TryGetValue(entry.MeshIndex, out var n) ? n : "";
-                        sb.Append($",{Esc(meshName)}:{Fl(entry.Weight)}");
-                    }
-                    else
-                    {
-                        sb.Append($",{entry.MeshIndex}:{Fl(entry.Weight)}");
-                    }
-                }
-                // グループの子（GroupChildren）：エントリの後ろに ,<子の数>,<名前:重み>…。
+                // name,nameEnglish,panel,type,childCount,<子の名前:重み>…,createdAt
+                sb.Append($"{Esc(me.Name)},{Esc(me.NameEnglish)},{me.Panel},{(int)me.Type}");
+                // グループの子（GroupChildren。形の名前 × 重み）：,<子の数>,<名前:重み>…。
                 //   子が 0 件でも数（0）を書く（後ろに作成日時の列が続くため）。名前と重みは最後の ':' で分ける。
                 //   PolyLing_Blender不具合修正計画.md の 9。
                 int childCount = me.GroupChildren?.Count ?? 0;
@@ -536,14 +519,19 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (!File.Exists(path)) return;
 
             model.MorphExpressions = new List<MorphExpression>();
-            bool needsNameResolution = false;
-            // 一時格納: (expressionIndex, entryIndex) → meshName
-            var nameRefs = new List<(int exprIdx, int entryIdx, string meshName)>();
 
-            int exprIdx = 0;
+            // 版 1.0 は 5 列目から旧モーフのエントリ（entryCount,meshRef:weight…）を持つ。読まずに飛ばす（段 7）。
+            bool v1 = true;
+            int skippedEntries = 0;
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
-                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.StartsWith("#"))
+                {
+                    var head = Split(line);
+                    if (head.Length >= 3 && head[0] == "#PolyLing_MorphGroups") v1 = head[2].StartsWith("1.");
+                    continue;
+                }
                 var cols = Split(line);
                 if (cols.Length < 5) continue;
 
@@ -555,33 +543,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     Type = (MorphType)PInt(cols, 3, 1)
                 };
 
-                int entryCount = PInt(cols, 4);
-                for (int i = 0; i < entryCount; i++)
+                int childAt = 4;
+                if (v1)
                 {
-                    int ci = 5 + i;
-                    if (ci >= cols.Length) break;
-                    var parts = cols[ci].Split(':');
-                    if (parts.Length >= 2)
-                    {
-                        float weight = float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ? w : 1f;
-
-                        if (int.TryParse(parts[0], out var meshIndex))
-                        {
-                            // インデックスベース
-                            me.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
-                        }
-                        else
-                        {
-                            // 名前ベース → 仮インデックス-1で格納、後で解決
-                            me.MeshEntries.Add(new MorphMeshEntry(-1, weight));
-                            nameRefs.Add((exprIdx, me.MeshEntries.Count - 1, Unesc(parts[0])));
-                            needsNameResolution = true;
-                        }
-                    }
+                    int entryCount = PInt(cols, 4);
+                    skippedEntries += entryCount;
+                    childAt = 5 + entryCount;
                 }
 
-                // グループの子（エントリの後ろ。無ければ 0 件）
-                int childAt = 5 + entryCount;
+                // グループの子（無ければ 0 件）
                 int childCount = PInt(cols, childAt);
                 for (int i = 0; i < childCount; i++)
                 {
@@ -601,23 +571,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     me.CreatedAt = meCreated;
 
                 model.MorphExpressions.Add(me);
-                exprIdx++;
             }
 
-            // 名前解決
-            if (needsNameResolution)
-            {
-                var nameToIndex = BuildNameToIndex(model);
-                foreach (var (ei, enti, meshName) in nameRefs)
-                {
-                    if (ei < model.MorphExpressions.Count && enti < model.MorphExpressions[ei].MeshEntries.Count)
-                    {
-                        int resolved = nameToIndex.TryGetValue(meshName, out var idx) ? idx : -1;
-                        var entry = model.MorphExpressions[ei].MeshEntries[enti];
-                        model.MorphExpressions[ei].MeshEntries[enti] = new MorphMeshEntry(resolved, entry.Weight);
-                    }
-                }
-            }
+            if (skippedEntries > 0)
+                Debug.LogWarning($"[CsvModelSerializer] morphgroups.csv の旧モーフのエントリ {skippedEntries} 件は読みません（段 7 で廃止）。");
         }
 
         // ================================================================

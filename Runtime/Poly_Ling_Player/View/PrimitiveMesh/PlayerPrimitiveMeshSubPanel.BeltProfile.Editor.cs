@@ -198,6 +198,7 @@ namespace Poly_Ling.Player
             canvas.RegisterCallback<PointerDownEvent>(e => OnBeltProfilePointerDown(e, ed));
             canvas.RegisterCallback<PointerMoveEvent>(e => OnBeltProfilePointerMove(e, ed));
             canvas.RegisterCallback<PointerUpEvent>(e   => OnBeltProfilePointerUp(e, ed));
+            AttachBeltAxis(ed);   // Shift の縦横制限（点のドラッグ）
             canvas.RegisterCallback<WheelEvent>(e =>
             {
                 if (ed.BgMode)

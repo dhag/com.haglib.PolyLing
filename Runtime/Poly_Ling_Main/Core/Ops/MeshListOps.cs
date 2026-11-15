@@ -24,10 +24,10 @@ namespace Poly_Ling.Ops
         public Action SyncMesh { get; set; }
         public Action Repaint { get; set; }
 
-        // モーフプレビュー状態
-        private bool _isMorphPreviewActive;
-        private Dictionary<int, Vector3[]> _morphPreviewBackups = new Dictionary<int, Vector3[]>();
-        private List<(int morphIndex, int baseIndex)> _morphPreviewTargets = new List<(int, int)>();
+        // 形の試し表示の状態（表情の試し表示と同じ足し込み。PolyLing_モーフ整理計画.md 3.6）
+        private bool _isShapePreviewActive;
+        private readonly ShapeBlendBuffer _shapePreview = new ShapeBlendBuffer();
+        private readonly float[] _shapePreviewWeight = new float[1];
 
         // スライダードラッグ用スナップショット（BonePose）
         private Dictionary<int, BonePoseDataSnapshot> _sliderDragBeforeSnapshots = new Dictionary<int, BonePoseDataSnapshot>();
@@ -35,7 +35,7 @@ namespace Poly_Ling.Ops
         // スライダードラッグ用スナップショット（BoneTransform）
         private Dictionary<int, BoneTransformSnapshot> _boneTransformSliderSnapshots = new Dictionary<int, BoneTransformSnapshot>();
 
-        public bool IsMorphPreviewActive => _isMorphPreviewActive;
+        public bool IsShapePreviewActive => _isShapePreviewActive;
 
         public MeshListOps(ModelContext model, MeshUndoController undo)
         {
@@ -45,7 +45,7 @@ namespace Poly_Ling.Ops
 
         public void SetContext(ModelContext model, MeshUndoController undo)
         {
-            EndMorphPreview();
+            EndShapePreview();
             _sliderDragBeforeSnapshots.Clear();
             _boneTransformSliderSnapshots.Clear();
             _model = model;
@@ -309,7 +309,7 @@ namespace Poly_Ling.Ops
 
             // 並べ替えで動いた索引参照を付け替える。
             // ここを飛ばすと、entries に入っていない要素（既定でツリーから外れる
-            // ミラー側など）が持つ BakedMirrorSourceIndex / MorphParentIndex /
+            // ミラー側など）が持つ BakedMirrorSourceIndex /
             // ParentIndex が並べ替え前の位置を指したまま残り、別のオブジェクトを
             // ミラー元や親として掴む。
             // 下の entries ループより先に呼ぶこと（明示指定の新しい親を最後に勝たせる）。
@@ -428,7 +428,6 @@ namespace Poly_Ling.Ops
             {
                 MeshCategory.Drawable => _model.SelectedDrawableMeshIndices,
                 MeshCategory.Bone => _model.SelectedBoneIndices,
-                MeshCategory.Morph => _model.SelectedMorphIndices,
                 _ => _model.SelectedDrawableMeshIndices
             };
             var selectedContexts = selectedIndices
@@ -453,14 +452,6 @@ namespace Poly_Ling.Ops
                     {
                         int newIdx = _model.MeshContextList.IndexOf(mc);
                         if (newIdx >= 0) _model.AddToBoneSelection(newIdx);
-                    }
-                    break;
-                case MeshCategory.Morph:
-                    _model.ClearMorphSelection();
-                    foreach (var mc in selectedContexts)
-                    {
-                        int newIdx = _model.MeshContextList.IndexOf(mc);
-                        if (newIdx >= 0) _model.AddToMorphSelection(newIdx);
                     }
                     break;
             }
@@ -723,310 +714,49 @@ namespace Poly_Ling.Ops
         }
         // ================================================================
 
-        public bool ConvertMeshToMorph(int sourceIndex, int parentIndex, string morphName, int panel)
+        // ================================================================
+        // 形の試し表示（previewShapes / endShapePreview。PolyLing_モーフ整理計画.md 3.6・段 7）
+        //   頂点位置は書き換えず、表示用の足し込み（WorkingPositions）に「Σ 重み ×（形 − 基本の形）」を書く
+        //   （表情の試し表示・モーション再生と同じ 1 系統。ShapeBlendBuffer）。
+        //   始める前に基本の形へ切り替えるのは呼び出し側（PlayerCommandDispatcher）。
+        // ================================================================
+
+        /// <summary>形の名前 × 重みで試し表示を始める（前の試し表示は終える）。当たった形の数を返す。</summary>
+        public int StartShapePreview(IList<string> shapes, IList<float> weights)
         {
-            if (_model == null) return false;
-            var ctx = GetMeshContext(sourceIndex);
-            if (ctx == null || ctx.MeshObject == null || ctx.IsMorph) return false;
-            if (string.IsNullOrEmpty(morphName)) morphName = ctx.Name;
+            if (_model == null) return 0;
+            EndShapePreview();
 
-            var undoRecord = new MorphConversionRecord
-            {
-                MasterIndex = sourceIndex,
-                OldType = ctx.Type, NewType = MeshType.Morph,
-                OldMorphBaseData = ctx.MorphBaseData?.Clone(),
-                OldMorphParentIndex = ctx.MorphParentIndex,
-                OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
-            };
-
-            MeshContext parentCtx = null;
-            if (parentIndex >= 0 && parentIndex < _model.MeshContextCount)
-                parentCtx = _model.GetMeshContext(parentIndex);
-            MeshObject baseMeshObject = parentCtx?.MeshObject;
-
-            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）。
-            // 継承で書き換わるので、変更前の設定を Undo 用に控える。
-            if (parentCtx != null)
-            {
-                undoRecord.HasMirrorChange = true;
-                undoRecord.OldMirror = (ctx.MirrorType, ctx.MirrorAxis, ctx.MirrorDistance, ctx.MirrorMaterialOffset);
-            }
-
-            ctx.SetAsMorph(morphName, baseMeshObject);
-            ctx.MorphPanel = panel;
-            ctx.MorphParentIndex = parentIndex;
-
-            if (parentCtx != null)
-            {
-                ctx.InheritMirrorSettingsFrom(parentCtx);
-                undoRecord.NewMirror = (ctx.MirrorType, ctx.MirrorAxis, ctx.MirrorDistance, ctx.MirrorMaterialOffset);
-
-                // モーフ実体の名前はシステムが決める（PMXImporter と同じ「{親名}_{モーフ名}」）。
-                // ユーザーが管理する名前は MorphExpression.Name ひとつだけにする。
-                ctx.Name = $"{parentCtx.Name}_{morphName}";
-            }
-
-            // ================================================================
-            // MorphExpression の自動生成
-            //   PMX の1モーフ＝ユーザーが名付ける単位。材質グループ分割や
-            //   Real/Mirror 分割はその下に隠す。
-            //   同名の Expression があればエントリを足し、無ければ作る。
-            //   ここで作らないと、ユーザーが手で Expression を組む手間が残る。
-            // ================================================================
-            undoRecord.OldExpressions = CloneExpressions(_model.MorphExpressions);
-
-            var expression = FindExpressionByName(morphName);
-            if (expression == null)
-            {
-                expression = new MorphExpression(morphName, MorphType.Vertex) { Panel = panel };
-                _model.MorphExpressions.Add(expression);
-            }
-            expression.AddMesh(sourceIndex);
-
-            undoRecord.NewExpressions = CloneExpressions(_model.MorphExpressions);
-            undoRecord.HasExpressionChange = true;
-            ctx.Type = MeshType.Morph;
-            ctx.IsVisible = false;
-            if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Morph;
-            ctx.ExcludeFromExport = true;
-
-            undoRecord.NewMorphBaseData = ctx.MorphBaseData?.Clone();
-            undoRecord.NewMorphParentIndex = ctx.MorphParentIndex;
-            undoRecord.NewName = ctx.Name;
-            undoRecord.NewExcludeFromExport = ctx.ExcludeFromExport;
-            RecordMorphUndo(undoRecord, "メッシュ→モーフ変換");
-
-            _model.RemoveFromSelectionByCategory(sourceIndex);
-            _model.TypedIndices?.Invalidate();
-            SelectFirstDrawableIfNeeded();
-            MarkDirty();
-            return true;
-        }
-
-        public bool ConvertMorphToMesh(int[] masterIndices)
-        {
-            if (_model == null || masterIndices == null || masterIndices.Length == 0) return false;
-            var targets = new List<int>();
-            foreach (int idx in masterIndices)
-            {
-                var ctx = GetMeshContext(idx);
-                if (ctx != null && (ctx.IsMorph || ctx.Type == MeshType.Morph))
-                    targets.Add(idx);
-            }
-            if (targets.Count == 0) return false;
-
-            foreach (int idx in targets)
-            {
-                var ctx = GetMeshContext(idx);
-                if (ctx == null) continue;
-                var undoRecord = new MorphConversionRecord
+            var terms = new List<MorphTargetTerm>();
+            if (shapes != null)
+                for (int k = 0; k < shapes.Count; k++)
                 {
-                    MasterIndex = idx,
-                    OldType = ctx.Type, NewType = MeshType.Mesh,
-                    OldMorphBaseData = ctx.MorphBaseData?.Clone(),
-                    OldMorphParentIndex = ctx.MorphParentIndex,
-                    OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
-                    NewMorphBaseData = null, NewMorphParentIndex = -1,
-                    NewName = ctx.Name, NewExcludeFromExport = false,
-                };
-                ctx.ClearMorphData();
-                ctx.Type = MeshType.Mesh;
-                if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Mesh;
-                ctx.ExcludeFromExport = false;
-                RecordMorphUndo(undoRecord, $"モーフ→メッシュ: {ctx.Name}");
-            }
-
-            foreach (int idx in targets)
-                _model.RemoveFromSelectionByCategory(idx);
-            _model.TypedIndices?.Invalidate();
-            SelectFirstDrawableIfNeeded();
-            MarkDirty();
-            return true;
-        }
-
-        public bool CreateMorphSet(string setName, int morphType, int[] morphIndices)
-        {
-            if (_model == null || morphIndices == null || morphIndices.Length == 0) return false;
-            if (string.IsNullOrEmpty(setName))
-                setName = _model.GenerateUniqueMorphExpressionName("MorphExpression");
-            if (_model.FindMorphExpressionByName(setName) != null) return false;
-
-            var set = new MorphExpression(setName, (MorphType)morphType);
-            foreach (int idx in morphIndices)
-            {
-                var ctx = GetMeshContext(idx);
-                if (ctx != null && ctx.IsMorph) set.AddMesh(idx);
-            }
-            if (set.MeshCount == 0) return false;
-
-            var record = new MorphExpressionChangeRecord
-            {
-                AddExpression = set.Clone(),
-                AddedIndex = _model.MorphExpressions.Count,
-            };
-            RecordMorphUndo(record, $"モーフセット生成: {setName}");
-            _model.MorphExpressions.Add(set);
-            MarkDirty();
-            return true;
-        }
-
-        // ================================================================
-        // モーフ全選択/全解除
-        // ================================================================
-
-        public void SelectAllMorphs(int[] allMorphIndices)
-        {
-            if (_model == null) return;
-            var oldIndices = _model.SelectedMorphIndices.ToArray();
-            _model.ClearMorphSelection();
-            if (allMorphIndices != null)
-                foreach (int idx in allMorphIndices)
-                    _model.AddToMorphSelection(idx);
-            var newIndices = _model.SelectedMorphIndices.ToArray();
-            RecordMorphSelectionUndo(oldIndices, newIndices, "モーフ全選択");
-        }
-
-        public void DeselectAllMorphs()
-        {
-            if (_model == null) return;
-            var oldIndices = _model.SelectedMorphIndices.ToArray();
-            _model.ClearMorphSelection();
-            var newIndices = _model.SelectedMorphIndices.ToArray();
-            RecordMorphSelectionUndo(oldIndices, newIndices, "モーフ全解除");
-        }
-
-        private void RecordMorphSelectionUndo(int[] oldIndices, int[] newIndices, string description)
-        {
-            if (_undo == null || oldIndices.SequenceEqual(newIndices)) return;
-            var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
-            {
-                string __dbgDesc = description;
-                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
-                _undo.MeshListStack.Record(record, __dbgDesc);
-            }
-            _undo.FocusMeshList();
-        }
-
-        // ================================================================
-        // モーフプレビュー
-        // ================================================================
-
-        public void StartMorphPreview(int[] morphIndices)
-        {
-            if (_model == null) return;
-            EndMorphPreview();
-
-            _morphPreviewTargets.Clear();
-            _morphPreviewBackups.Clear();
-
-            foreach (int morphIdx in morphIndices)
-            {
-                var morphCtx = GetMeshContext(morphIdx);
-                if (morphCtx == null || !morphCtx.IsMorph) continue;
-
-                int baseIdx = morphCtx.MorphParentIndex;
-                if (baseIdx < 0) baseIdx = FindBaseMeshIndex(morphIdx);
-                if (baseIdx < 0) continue;
-
-                var baseCtx = GetMeshContext(baseIdx);
-                if (baseCtx?.MeshObject == null) continue;
-
-                if (!_morphPreviewBackups.ContainsKey(baseIdx))
-                {
-                    var baseMesh = baseCtx.MeshObject;
-                    var backup = new Vector3[baseMesh.VertexCount];
-                    for (int i = 0; i < baseMesh.VertexCount; i++)
-                        backup[i] = baseMesh.Vertices[i].Position;
-                    _morphPreviewBackups[baseIdx] = backup;
+                    var def = ShapeBlendOps.FindShape(_model, shapes[k]);
+                    if (def == null) continue;
+                    float w = weights != null && k < weights.Count ? weights[k] : 1f;
+                    terms.Add(new MorphTargetTerm(MorphTargetKey.Shape(def.Id), w));
                 }
-                _morphPreviewTargets.Add((morphIdx, baseIdx));
-            }
-            _isMorphPreviewActive = true;
-        }
+            if (terms.Count == 0) return 0;
 
-        public void ApplyMorphPreview(float weight)
-        {
-            if (!_isMorphPreviewActive || _model == null) return;
-
-            foreach (var (baseIndex, backup) in _morphPreviewBackups)
-            {
-                var baseCtx = GetMeshContext(baseIndex);
-                if (baseCtx?.MeshObject == null) continue;
-                var baseMesh = baseCtx.MeshObject;
-                int count = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                for (int i = 0; i < count; i++)
-                    baseMesh.Vertices[i].Position = backup[i];
-            }
-
-            foreach (var (morphIndex, baseIndex) in _morphPreviewTargets)
-            {
-                var morphCtx = GetMeshContext(morphIndex);
-                var baseCtx = GetMeshContext(baseIndex);
-                if (morphCtx?.MeshObject == null || baseCtx?.MeshObject == null) continue;
-                var baseMesh = baseCtx.MeshObject;
-                foreach (var (vertexIndex, offset) in morphCtx.GetMorphOffsets())
-                    if (vertexIndex < baseMesh.VertexCount)
-                        baseMesh.Vertices[vertexIndex].Position += offset * weight;
-            }
-
-            foreach (var baseIndex in _morphPreviewBackups.Keys)
-            {
-                var baseCtx = GetMeshContext(baseIndex);
-                if (baseCtx != null) SyncPositionsOnly?.Invoke(baseCtx);
-            }
+            _shapePreview.Reset();
+            _shapePreview.AddChannel(_model, terms, out _);
+            _isShapePreviewActive = true;
+            _shapePreviewWeight[0] = 1f;
+            _shapePreview.Apply(_model, _shapePreviewWeight, SyncPositionsOnly);
             Repaint?.Invoke();
+            return terms.Count;
         }
 
-        public void EndMorphPreview()
+        /// <summary>形の試し表示を終え、表示を元へ戻す（頂点位置は変えていない）。</summary>
+        public void EndShapePreview()
         {
-            if (!_isMorphPreviewActive || _morphPreviewBackups.Count == 0)
+            if (_isShapePreviewActive && _model != null && _shapePreview.EntryCount > 0)
             {
-                _isMorphPreviewActive = false;
-                _morphPreviewBackups.Clear();
-                _morphPreviewTargets.Clear();
-                return;
+                _shapePreview.Clear(_model, SyncPositionsOnly);
+                Repaint?.Invoke();
             }
-
-            if (_model != null)
-            {
-                foreach (var (baseIndex, backup) in _morphPreviewBackups)
-                {
-                    var baseCtx = GetMeshContext(baseIndex);
-                    if (baseCtx?.MeshObject == null) continue;
-                    var baseMesh = baseCtx.MeshObject;
-                    int count = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                    for (int i = 0; i < count; i++)
-                        baseMesh.Vertices[i].Position = backup[i];
-                    SyncPositionsOnly?.Invoke(baseCtx);
-                }
-            }
-            _isMorphPreviewActive = false;
-            _morphPreviewBackups.Clear();
-            _morphPreviewTargets.Clear();
-            Repaint?.Invoke();
-        }
-
-        public int FindBaseMeshIndex(int morphMasterIndex)
-        {
-            if (_model == null) return -1;
-            var morphCtx = GetMeshContext(morphMasterIndex);
-            if (morphCtx == null) return -1;
-            if (morphCtx.MorphParentIndex >= 0) return morphCtx.MorphParentIndex;
-
-            string morphName = morphCtx.MorphName;
-            string meshName = morphCtx.Name;
-            if (!string.IsNullOrEmpty(morphName) && meshName.EndsWith($"_{morphName}"))
-            {
-                string baseName = meshName.Substring(0, meshName.Length - morphName.Length - 1);
-                for (int i = 0; i < _model.MeshContextCount; i++)
-                {
-                    var ctx = _model.GetMeshContext(i);
-                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror
-                                        || ctx.Type == MeshType.MirrorSide) && ctx.Name == baseName)
-                        return i;
-                }
-            }
-            return -1;
+            _isShapePreviewActive = false;
+            _shapePreview.Reset();
         }
 
         // ================================================================
@@ -1123,41 +853,6 @@ namespace Poly_Ling.Ops
                 record.Entries.Add(new MultiBonePoseChangeRecord.Entry
                     { MasterIndex = kvp.Key, OldSnapshot = kvp.Value, NewSnapshot = afterVal });
             }
-            {
-                string __dbgDesc = description;
-                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
-                _undo.MeshListStack.Record(record, __dbgDesc);
-            }
-            _undo.FocusMeshList();
-        }
-
-        /// <summary>MorphExpressions のディープコピー（Undo 用スナップショット）。</summary>
-        private static List<MorphExpression> CloneExpressions(List<MorphExpression> src)
-        {
-            if (src == null) return new List<MorphExpression>();
-
-            var dst = new List<MorphExpression>(src.Count);
-            for (int i = 0; i < src.Count; i++)
-                dst.Add(src[i]?.Clone());
-            return dst;
-        }
-
-        /// <summary>同名の MorphExpression を探す（無ければ null）。</summary>
-        private MorphExpression FindExpressionByName(string name)
-        {
-            var list = _model?.MorphExpressions;
-            if (list == null || string.IsNullOrEmpty(name)) return null;
-
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i] != null && list[i].Name == name) return list[i];
-            }
-            return null;
-        }
-
-        private void RecordMorphUndo(MeshListUndoRecord record, string description)
-        {
-            if (_undo == null) return;
             {
                 string __dbgDesc = description;
                 PLDiag.UndoRecord("MeshList", __dbgDesc, record);

@@ -20,7 +20,8 @@ namespace Poly_Ling.Player
         public Func<Poly_Ling.View.IProjectView>   GetView;
         public Action<PanelCommand> SendCommand;
 
-        private enum TabType { Drawable, Bone, Morph }
+        // モーフのタブは段 7 で撤去した（旧モーフが無くなった）。
+        private enum TabType { Drawable, Bone }
         private TabType _currentTab = TabType.Drawable;
 
         // UI 自動操作の ID は "meshSelectionSet.<下の Id>"（UiControlAttribute.cs）。
@@ -28,13 +29,11 @@ namespace Poly_Ling.Player
         private Button      _tabDrawable;
         [UiControl("tab.bone", Safety = UiSafety.SafeWrite, Description = "ボーンのタブ")]
         private Button      _tabBone;
-        [UiControl("tab.morph", Safety = UiSafety.SafeWrite, Description = "モーフのタブ")]
-        private Button      _tabMorph;
         [UiControl("filter", Description = "メッシュ名でフィルタ")]
         private TextField   _filterField;
         [UiControl("clearFilter", Safety = UiSafety.SafeWrite, Description = "フィルタを空にする")]
         private Button      _btnClearFilter;
-        private readonly string[] _filterTexts = new string[3]; // Drawable/Bone/Morph
+        private readonly string[] _filterTexts = new string[2]; // Drawable/Bone
         [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label       _warningLabel;
         [UiControl("setName", Description = "辞書エントリ名")]
@@ -73,7 +72,6 @@ namespace Poly_Ling.Player
         private MeshCategory CurrentCategory => _currentTab switch
         {
             TabType.Bone  => MeshCategory.Bone,
-            TabType.Morph => MeshCategory.Morph,
             _             => MeshCategory.Drawable,
         };
 
@@ -92,8 +90,7 @@ namespace Poly_Ling.Player
             var tabRow = new VisualElement(); tabRow.style.flexDirection = FlexDirection.Row; tabRow.style.marginBottom = 4;
             _tabDrawable = MkTab("Drawable", () => SwitchTab(TabType.Drawable));
             _tabBone     = MkTab("Bone",     () => SwitchTab(TabType.Bone));
-            _tabMorph    = MkTab("Morph",    () => SwitchTab(TabType.Morph));
-            tabRow.Add(_tabDrawable); tabRow.Add(_tabBone); tabRow.Add(_tabMorph);
+            tabRow.Add(_tabDrawable); tabRow.Add(_tabBone);
             root.Add(tabRow);
             UpdateTabColors();
 
@@ -216,7 +213,6 @@ namespace Poly_Ling.Player
             var inactive = PlayerLayoutRoot.BtnInactiveColor;
             if (_tabDrawable != null) _tabDrawable.style.backgroundColor = _currentTab == TabType.Drawable ? active : inactive;
             if (_tabBone     != null) _tabBone.style.backgroundColor     = _currentTab == TabType.Bone     ? active : inactive;
-            if (_tabMorph    != null) _tabMorph.style.backgroundColor    = _currentTab == TabType.Morph    ? active : inactive;
         }
 
         // ── Operations ───────────────────────────────────────────────────
@@ -232,7 +228,6 @@ namespace Poly_Ling.Player
             IReadOnlyList<IMeshView> source = _currentTab switch
             {
                 TabType.Bone  => liveModel.BoneList,
-                TabType.Morph => liveModel.MorphList,
                 _             => liveModel.DrawableList,
             };
             if (source == null) return;
@@ -368,7 +363,6 @@ namespace Poly_Ling.Player
             return _currentTab switch
             {
                 TabType.Bone  => model.SelectedBoneIndices     ?? Array.Empty<int>(),
-                TabType.Morph => model.SelectedMorphIndices    ?? Array.Empty<int>(),
                 _             => model.SelectedDrawableIndices ?? Array.Empty<int>(),
             };
         }

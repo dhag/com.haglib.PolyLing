@@ -118,6 +118,23 @@ namespace Poly_Ling.Serialization
             SaveMorphExpressionsToDTO(model, modelDTO);
 
             // ================================================================
+            // 形（一覧と今の形。頂点の控えは VertexDTO.shi / shp）
+            // ================================================================
+
+            modelDTO.shapes = new List<ShapeDefDTO>();
+            if (model.Shapes != null)
+                foreach (var s in model.Shapes)
+                    if (s != null)
+                        modelDTO.shapes.Add(new ShapeDefDTO
+                        {
+                            id = s.Id, name = s.Name ?? "", nameEnglish = s.NameEnglish ?? "", panel = s.Panel,
+                            kind = (int)s.Kind,
+                            source = ShapeSourceDTO.From(s.Source),
+                        });
+            modelDTO.currentShapeId = model.CurrentShapeId;
+            modelDTO.baseShapeSource = ShapeSourceDTO.From(model.BaseShapeSource);
+
+            // ================================================================
             // MeshSelectionSets
             // ================================================================
 
@@ -203,6 +220,14 @@ namespace Poly_Ling.Serialization
         {
             if (modelDTO == null)
                 return null;
+
+            // 旧モーフ（種類 Morph の隠しオブジェクト）を含む保存データは読まない（段 7。旧形式の読み込みは作らない）。
+            int retired = CountRetiredMorphRows(modelDTO.meshDTOList?.Select(m => m?.type));
+            if (retired > 0)
+            {
+                Debug.LogError($"[ModelSerializer] {RetiredMorphMessage(retired)}");
+                return null;
+            }
 
             // ModelContextを準備
             if (model == null)
@@ -298,6 +323,24 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             LoadMorphExpressionsFromDTO(modelDTO, model);
+
+            // ================================================================
+            // 形の復元（欄の無い旧データは一覧が空・今の形は基本）
+            // ================================================================
+
+            model.Shapes = new List<Poly_Ling.Data.ShapeDef>();
+            if (modelDTO.shapes != null)
+                foreach (var s in modelDTO.shapes)
+                    if (s != null)
+                        model.Shapes.Add(new Poly_Ling.Data.ShapeDef
+                        {
+                            Id = s.id, Name = s.name ?? "", NameEnglish = s.nameEnglish ?? "", Panel = s.panel,
+                            Kind = s.kind == 1 ? Poly_Ling.Data.ShapeKind.UV : Poly_Ling.Data.ShapeKind.Position,
+                            Source = ShapeSourceDTO.To(s.source),
+                        });
+            model.CurrentShapeId = modelDTO.currentShapeId;
+            model.PreviousShapeId = 0;
+            model.BaseShapeSource = ShapeSourceDTO.To(modelDTO.baseShapeSource);
 
             // ================================================================
             // MeshSelectionSets復元
@@ -433,8 +476,8 @@ namespace Poly_Ling.Serialization
                 // 線分群
                 SaveLineGroupsToDTO(meshContext, contextData);
 
-                // モーフデータ（Phase Morph追加）
-                SaveMorphDataToDTO(meshContext, contextData);
+                // 書き出し・姿勢・法線のフラグ
+                SaveMeshFlagsToDTO(meshContext, contextData);
 
                 // BonePoseData（Phase BonePose追加）
                 SaveBonePoseDataToDTO(meshContext, contextData);
@@ -535,8 +578,8 @@ namespace Poly_Ling.Serialization
             // 線分群を復元
             LoadLineGroupsFromDTO(meshDTO, meshContext);
 
-            // モーフデータを復元（Phase Morph追加）
-            LoadMorphDataFromDTO(meshDTO, meshContext);
+            // 書き出し・姿勢・法線のフラグを復元
+            LoadMeshFlagsFromDTO(meshDTO, meshContext);
 
             // BonePoseData復元（Phase BonePose追加）
             LoadBonePoseDataFromDTO(meshDTO, meshContext);
@@ -583,7 +626,6 @@ namespace Poly_Ling.Serialization
             bool vertexEditMode,
             int selectedMeshIndex,
             int selectedBoneIndex = -1,
-            int selectedVertexMorphIndex = -1,
             string currentToolName = null)
         {
             return new EditorStateDTO
@@ -597,7 +639,6 @@ namespace Poly_Ling.Serialization
                 vertexEditMode = vertexEditMode,
                 selectedMeshIndex = selectedMeshIndex,
                 selectedBoneIndex = selectedBoneIndex,
-                selectedVertexMorphIndex = selectedVertexMorphIndex,
                 currentToolName = currentToolName
             };
         }
