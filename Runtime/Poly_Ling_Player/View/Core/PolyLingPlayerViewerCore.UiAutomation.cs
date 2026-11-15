@@ -325,6 +325,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.PartsIdSection, ShowPartsIdPanel, _partsIdSubPanel);
             RegisterUiPanel("vertexTransfer", "モデル間の頂点データ転送",
                 _layoutRoot.VertexTransferSection, ShowVertexTransferPanel, _vertexTransferSubPanel);
+            RegisterUiPanel("twoModel", "2 モデル間の頂点取り込み（左右 2 列のドラッグで差し替え・形として取り込み・書き戻し）",
+                _layoutRoot.TwoModelSection, ShowTwoModelPanel, _twoModelSubPanel);
             RegisterUiPanel("sculpt", "スカルプト（盛り上げ・なめらか・膨らみ・平ら）",
                 _layoutRoot.SculptSection, () => ShowCategory1Panel(InteractionMode.Sculpt), _sculptSubPanel);
             RegisterUiPanel("advancedSelect", "高度な選択（接続・ベルト・辺ループ・最短・属性・エッジ）",

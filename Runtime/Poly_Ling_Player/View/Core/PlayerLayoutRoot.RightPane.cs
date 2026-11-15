@@ -110,6 +110,15 @@ namespace Poly_Ling.Player
         private static readonly Color RightSplitterColor      = new Color(1f, 1f, 1f, 0.12f);
         private static readonly Color RightSplitterHoverColor = new Color(1f, 1f, 1f, 0.35f);
 
+        /// <summary>
+        /// 右ペインを独り占めするセクション（2 モデル表示）。これが出ている間、上区画（常駐のリスト）と
+        /// 開閉ボタン行を隠し、右ペインを広げる（RefreshRightAreas）。
+        /// </summary>
+        public VisualElement SoloSection { get; set; }
+
+        /// <summary>右ペイン：2 モデル表示セクション（PlayerTwoModelSubPanel を Build する対象）。</summary>
+        public VisualElement TwoModelSection { get; private set; }
+
         /// <summary>右ペイン：モデルリストセクション（ModelListSubPanel を Build する対象）。</summary>
         public VisualElement ModelListSection { get; private set; }
 
@@ -607,6 +616,8 @@ namespace Poly_Ling.Player
             Quad4To1Section            = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             VertexIdSection            = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             VertexTransferSection      = AddSection(visible: false, kind: RightPanelKind.General);
+            TwoModelSection            = AddSection(visible: false, kind: RightPanelKind.General);
+            SoloSection                = TwoModelSection;
             PartsIdSection             = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             AddFaceSection             = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             FlipFaceSection            = AddSection(visible: false, kind: RightPanelKind.Tool3D);
@@ -759,6 +770,14 @@ namespace Poly_Ling.Player
 
             if (_editSpaceArea != null)
                 _editSpaceArea.style.display = editSpaceOpen ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // 独り占めのセクション（2 モデル表示）が出ている間は、常駐のリストとその開閉ボタン行を隠し、
+            // 右ペインを広げる。消えたら開く前の幅へ戻す（ApplySoloWidth）。
+            bool solo = SoloSection != null && SoloSection.style.display == DisplayStyle.Flex;
+            if (solo) pinnedOpen = false;
+            if (_rightPinnedBar != null)
+                _rightPinnedBar.style.display = solo ? DisplayStyle.None : DisplayStyle.Flex;
+            ApplySoloWidth(solo);
 
             _pinnedAreaOpen = pinnedOpen;
             if (_pinnedScroll != null)

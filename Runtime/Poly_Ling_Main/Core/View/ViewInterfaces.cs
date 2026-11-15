@@ -356,6 +356,11 @@ namespace Poly_Ling.View
         int PreviousShapeId { get; }
         /// <summary>基本の形の写し（Id 0・名前は空。読み込み元の欄だけ意味がある）。スナップショットでは null。</summary>
         ShapeView BaseShape { get; }
+        /// <summary>
+        /// masterIndex のオブジェクトで、形 shapeId が基本の形と位置の違う頂点の数（ModelVertexImportOps.CountMovedVertices）。
+        /// 2 モデル表示の行に出す。基本の形は 0。スナップショットでは -1（数えられない）。
+        /// </summary>
+        int CountShapeMovedVertices(int masterIndex, int shapeId);
 
         // Tポーズ（PlayerTPoseSubPanel が読む項目）
         /// <summary>Humanoid ボーンマッピングの件数（未設定は 0）。スナップショットでは 0。</summary>

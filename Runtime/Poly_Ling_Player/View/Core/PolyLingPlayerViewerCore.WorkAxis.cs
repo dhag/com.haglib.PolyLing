@@ -446,6 +446,32 @@ namespace Poly_Ling.Player
             _vertexTransferSubPanel?.Refresh();
         }
 
+        /// <summary>
+        /// 2 モデル表示を開く。右ペインは常駐のリストを隠して広がる（PlayerLayoutRoot.SoloSection）。
+        /// 閉じると（CloseToolArea・ほかのパネルを開く）元の幅とリストに戻る。
+        /// </summary>
+        private void ShowTwoModelPanel()
+        {
+            ApplyGeneralPanelMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.TwoModelSection, _layoutRoot?.TwoModelBtn);
+            _twoModelSubPanel?.Refresh();
+        }
+
+        private string ExecuteShowTwoModelView(ShowTwoModelViewCommand c)
+        {
+            if (_twoModelSubPanel == null || _layoutRoot?.TwoModelSection == null) return "2 モデル表示のパネルがありません";
+            ShowTwoModelPanel();
+            _twoModelSubPanel.SetModels(c.ModelIndex, c.ModelBIndex);
+            return null;
+        }
+
+        private string ExecuteCloseTwoModelView(CloseTwoModelViewCommand c)
+        {
+            if (_layoutRoot?.TwoModelSection == null) return "2 モデル表示のパネルがありません";
+            if (_layoutRoot.TwoModelSection.style.display == DisplayStyle.Flex) CloseToolArea();
+            return null;
+        }
+
         private void ShowMediaPipePanel()
         {
             // カテゴリ 3

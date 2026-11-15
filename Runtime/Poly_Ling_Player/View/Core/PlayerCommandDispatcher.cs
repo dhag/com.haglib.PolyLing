@@ -1445,6 +1445,7 @@ namespace Poly_Ling.Player
             if (DispatchClipboard(cmd, project, model))         return;
             if (DispatchShape(cmd, project, model))             return;
             if (DispatchShapeMqo(cmd, project, model))          return;
+            if (DispatchModelVertexImport(cmd, project, model)) return;
 
             // ── ここまでのどれにも当たらないコマンド
             Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");

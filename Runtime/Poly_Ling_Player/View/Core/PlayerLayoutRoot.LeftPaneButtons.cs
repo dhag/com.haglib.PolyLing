@@ -252,6 +252,8 @@ namespace Poly_Ling.Player
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        VertexTransferBtn          { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
+        public Button        TwoModelBtn                { get; private set; }
+        [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        PartsIdBtn                 { get; private set; }
         [UiControl(Safety = UiSafety.SafeWrite)]
         public Button        AddFaceBtn                 { get; private set; }
@@ -860,6 +862,11 @@ namespace Poly_Ling.Player
             VertexIdBtn = MakeBtn("頂点ID"); VertexIdBtn.style.flexGrow = 1; VertexIdBtn.style.marginRight = 2;
             VertexTransferBtn = MakeBtn("頂点データ転送"); VertexTransferBtn.style.flexGrow = 1;
             rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
+
+            // 2 モデル表示：2 つのモデルのオブジェクトをドラッグで組み、頂点位置を差し替える・形として取り込む。
+            var rowTwoModel = new VisualElement(); rowTwoModel.style.flexDirection = FlexDirection.Row; rowTwoModel.style.marginBottom = 2;
+            TwoModelBtn = MakeBtn("2 モデル間の頂点取り込み"); TwoModelBtn.style.flexGrow = 1;
+            rowTwoModel.Add(TwoModelBtn); foVertexTopo.Add(rowTwoModel);
 
             // パーツID / サブID の採番。頂点IDとは独立して掛ける。
             var rowPartsId = new VisualElement(); rowPartsId.style.flexDirection = FlexDirection.Row; rowPartsId.style.marginBottom = 2;

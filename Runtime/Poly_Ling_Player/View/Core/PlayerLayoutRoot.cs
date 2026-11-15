@@ -226,7 +226,8 @@ namespace Poly_Ling.Player
             }
             if (_rightPaneEl != null)
             {
-                float v = _rightPaneEl.resolvedStyle.width;
+                // 2 モデル表示で広げている間は、広げる前の幅を保存する（保存の幅は書き換えない）。
+                float v = _soloActive ? _soloSavedRightW : _rightPaneEl.resolvedStyle.width;
                 if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefRightW, v);
             }
             if (_splitTopFront != null)
@@ -240,6 +241,47 @@ namespace Poly_Ling.Player
                 if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefCenterH, v);
             }
             PlayerPrefs.Save();
+        }
+
+        // ================================================================
+        // 右ペインの一時的な拡幅（2 モデル表示。RefreshRightAreas から呼ぶ）
+        // ================================================================
+
+        /// <summary>独り占めのセクションで右ペインを広げているか。</summary>
+        private bool  _soloActive;
+        /// <summary>広げる前の右ペインの幅（閉じたら戻す・SaveLayout が保存する）。</summary>
+        private float _soloSavedRightW;
+        /// <summary>2 モデル表示のときの右ペインの幅の下限（左右 2 列のオブジェクト名が読める幅）。</summary>
+        private const float SoloRightW = 560f;
+
+        private void ApplySoloWidth(bool solo)
+        {
+            if (_rightPaneEl == null || _splitCR == null || solo == _soloActive) return;
+            _soloActive = solo;
+            if (solo)
+            {
+                float cur = _rightPaneEl.resolvedStyle.width;
+                if (float.IsNaN(cur) || cur <= 0f) cur = LoadPref(PrefRightW, DefRightW);
+                _soloSavedRightW = cur;
+                float target = Mathf.Max(cur, SoloRightW);
+                float total  = _splitCR.resolvedStyle.width;
+                if (!float.IsNaN(total) && total > 0f) target = Mathf.Min(target, Mathf.Max(cur, total - 200f));
+                SetRightPaneWidth(target);
+            }
+            else
+            {
+                SetRightPaneWidth(_soloSavedRightW);
+            }
+        }
+
+        /// <summary>右ペイン（_splitCR の固定側）の幅を変え、仕切りの位置を合わせる。</summary>
+        private void SetRightPaneWidth(float w)
+        {
+            w = Mathf.Max(100f, w);
+            _rightPaneEl.style.width = w;
+            float total = _splitCR.resolvedStyle.width;
+            if (_crDraglineAnchor != null && !float.IsNaN(total) && total > 0f)
+                _crDraglineAnchor.style.left = total - w;
         }
 
         private static float LoadPref(string key, float def)

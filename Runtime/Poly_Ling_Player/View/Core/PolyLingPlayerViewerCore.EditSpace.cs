@@ -264,6 +264,7 @@ namespace Poly_Ling.Player
                 case ImportMqoVertexPositionsCommand _:
                 case ImportShapeMqoCommand _:
                 case ReloadShapeMqoCommand _:
+                case ImportModelVerticesCommand _:
                 case ImportPmxVertexAttributesCommand _:
                 case ResetProjectCommand _:
                 case CreateEmptyModelCommand _:

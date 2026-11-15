@@ -54,6 +54,8 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
             _commandDispatcher.OnSplitObjectByConnectivity = ExecuteSplitObjectByConnectivity;
             _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
+            _commandDispatcher.OnShowTwoModelView    = ExecuteShowTwoModelView;
+            _commandDispatcher.OnCloseTwoModelView   = ExecuteCloseTwoModelView;
             _commandDispatcher.OnSculptStroke        = ExecuteSculptStroke;
             _commandDispatcher.OnMovePivot           = ExecuteMovePivot;
             _commandDispatcher.OnMoveSelectedVertices = ExecuteMoveSelectedVertices;

@@ -521,6 +521,15 @@ namespace Poly_Ling.Player
             };
             _vertexTransferSubPanel.Build(_layoutRoot.VertexTransferSection);
 
+            _twoModelSubPanel = new PlayerTwoModelSubPanel
+            {
+                GetView        = () => ActiveProjectView,
+                SendCommand    = cmd => DispatchHost(cmd),
+                GetLastSummary = () => _commandDispatcher?.LastModelVertexImportSummary ?? "",
+                OnClose        = () => DispatchHost(new CloseTwoModelViewCommand(ActiveProject?.CurrentModelIndex ?? 0)),
+            };
+            _twoModelSubPanel.Build(_layoutRoot.TwoModelSection);
+
             // 選択削除サブツール。InteractionMode を切り替えないため
             // _vertexInteractor.SetToolHandler には登録しない (入力を奪わない)。
             _deleteSelectionHandler = new DeleteSelectionToolHandler

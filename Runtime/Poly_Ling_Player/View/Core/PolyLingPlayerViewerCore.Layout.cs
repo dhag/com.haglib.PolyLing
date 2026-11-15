@@ -167,6 +167,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.VertexIdBtn.clicked          += ShowVertexIdPanel;
             if (_layoutRoot.VertexTransferBtn != null)
                 _layoutRoot.VertexTransferBtn.clicked    += ShowVertexTransferPanel;
+            if (_layoutRoot.TwoModelBtn != null)
+                _layoutRoot.TwoModelBtn.clicked          += ShowTwoModelPanel;
             if (_layoutRoot.PartsIdBtn != null)
                 _layoutRoot.PartsIdBtn.clicked           += ShowPartsIdPanel;
             _layoutRoot.AddFaceBtn.clicked               += ShowAddFacePanel;
@@ -774,6 +776,7 @@ namespace Poly_Ling.Player
             }));
             _sectionRefreshPairs.Add((_layoutRoot.VertexIdSection,          () => _vertexIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VertexTransferSection,    () => _vertexTransferSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.TwoModelSection,          () => _twoModelSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PartsIdSection,           () => _partsIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.AddFaceSection,           () => _addFaceSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FlipFaceSection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _flipFaceHandler?.Activate(ctx); _flipFaceSubPanel?.Refresh(); }));

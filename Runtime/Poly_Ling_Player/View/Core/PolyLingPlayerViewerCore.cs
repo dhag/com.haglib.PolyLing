@@ -365,6 +365,7 @@ namespace Poly_Ling.Player
         private PlayerPartsIdSubPanel            _partsIdSubPanel;
         // モデル間頂点データ転送。メッシュのペアを明示して 1 対 1 で転送する。
         private PlayerVertexTransferSubPanel     _vertexTransferSubPanel;
+        private PlayerTwoModelSubPanel           _twoModelSubPanel;
         private SplitVerticesToolHandler          _splitVerticesHandler;
         private VertexHoleToolHandler             _vertexHoleHandler;
         private EdgeRibbonFaceToolHandler        _edgeRibbonFaceHandler;

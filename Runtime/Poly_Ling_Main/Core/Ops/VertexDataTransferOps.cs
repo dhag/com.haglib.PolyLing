@@ -330,7 +330,7 @@ namespace Poly_Ling.Ops
         /// ウェイトのボーン番号を読み替える。
         /// 重み 0 のスロットは番号を見ない。1 つでも引けないボーンがあれば転送しない。
         /// </summary>
-        private static bool TryRemapWeight(
+        public static bool TryRemapWeight(
             BoneWeight? srcWeight, Dictionary<int, int> boneRemap, out BoneWeight? remapped)
         {
             remapped = null;

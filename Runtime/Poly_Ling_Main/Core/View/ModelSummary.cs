@@ -80,6 +80,7 @@ namespace Poly_Ling.View
         public int CurrentShapeId  => 0;
         public int PreviousShapeId => 0;
         public ShapeView BaseShape => null;
+        public int CountShapeMovedVertices(int masterIndex, int shapeId) => -1;
 
         /// <summary>Tポーズ関係はスナップショットに載せていない。</summary>
         public int    HumanoidMappingCount => 0;

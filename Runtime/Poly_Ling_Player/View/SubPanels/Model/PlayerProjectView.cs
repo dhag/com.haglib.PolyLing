@@ -102,6 +102,8 @@ namespace Poly_Ling.Player
         public int CurrentShapeId  => _model.CurrentShapeId;
         public int PreviousShapeId => _model.PreviousShapeId;
         public ShapeView BaseShape => Poly_Ling.View.LiveProjectView.BuildBaseShapeView(_model);
+        public int CountShapeMovedVertices(int masterIndex, int shapeId)
+            => Poly_Ling.Ops.ModelVertexImportOps.CountMovedVertices(_model, masterIndex, shapeId);
 
         public int    HumanoidMappingCount => (_model.HumanoidMapping == null || _model.HumanoidMapping.IsEmpty) ? 0 : _model.HumanoidMapping.Count;
         public bool   HasAnySkinWeight     => Poly_Ling.Ops.TPoseConverter.HasAnySkinWeight(_model.MeshContextList);
