@@ -75,6 +75,67 @@ namespace Poly_Ling.EditorPrimitive
         public const string Capsule  = "capsule";
         public const string Plane    = "plane";
         public const string Pyramid  = "pyramid";
+
+        // ── 一般形状 ──
+        public const string StadiumBox  = "stadiumBox";
+        public const string PipeStadium = "pipeStadium";
+        public const string NGonStar    = "nGonStar";
+        public const string RibbonBow   = "ribbonBow";
+
+        // ── 歯車 ──
+        public const string NGonGear          = "nGonGear";
+        public const string InvoluteGear      = "involuteGear";
+        public const string HelicalGear       = "helicalGear";
+        public const string InternalGear      = "internalGear";
+        public const string InvoluteRack      = "involuteRack";
+        public const string HelicalRack       = "helicalRack";
+        public const string StraightBevelGear = "straightBevelGear";
+        public const string SpiralBevelGear   = "spiralBevelGear";
+        public const string CylindricalWorm   = "cylindricalWorm";
+        public const string WormWheel         = "wormWheel";
+
+        // ── 機構部品 ──
+        public const string Nut = "nut";
+
+        // ── 記号 ──
+        public const string ZodiacSign = "zodiacSign";
+        public const string Emblem     = "emblem";
+    }
+
+    /// <summary>
+    /// ピボットを AABB 基準で合わせる。
+    ///
+    /// 元からある 6 図形は原点中心で組み立てたあと Params.Pivot でずらすので、
+    /// Pivot を渡すだけで「底面／中心」が原点に来る。
+    /// それ以外のジェネレータは PrimitiveMeshPostProcess.ApplyPivotOffset を使い、
+    /// これは「AABB 中心へ寄せる処理は行わない」（同ファイルのコメント）。
+    /// 原点中心で組まれていない図形では Pivot を渡しても底面が原点に来ないため、
+    /// 追加分は Pivot 0 で生成し、ここで AABB の「中心 + Pivot × サイズ」を原点へ移す。
+    /// </summary>
+    public static class PrimitiveSpawnAlign
+    {
+        public static MeshObject ToPivot(MeshObject mo, Vector3 pivot)
+        {
+            if (mo == null || mo.Vertices == null || mo.Vertices.Count == 0) return mo;
+
+            Vector3 min = mo.Vertices[0].Position, max = min;
+            foreach (var v in mo.Vertices)
+            {
+                min = Vector3.Min(min, v.Position);
+                max = Vector3.Max(max, v.Position);
+            }
+            Vector3 size   = max - min;
+            Vector3 center = (min + max) * 0.5f;
+            Vector3 offset = center + Vector3.Scale(pivot, size);
+            if (offset == Vector3.zero) return mo;
+
+            foreach (var v in mo.Vertices)
+                v.Position -= offset;
+
+            // Vertex.Position を直接書き換えたので位置キャッシュを落とす（MeshObject.cs の規約）。
+            mo.InvalidatePositionCache();
+            return mo;
+        }
     }
 
     /// <summary>1 図形ぶんの定義。</summary>
@@ -93,7 +154,17 @@ namespace Poly_Ling.EditorPrimitive
         /// </summary>
         public Func<Vector3, MeshObject> Generate { get; set; }
 
-        public PrimitiveSpawnDefinition(string id, string label, Func<Vector3, MeshObject> generate)
+        /// <summary>
+        /// パネルの図形リストでの分類（"歯車" など）。空なら分類なしで最上段に並ぶ。
+        /// GameObject 名には使わない（"/" を含めないため Label と分けて持つ）。
+        /// </summary>
+        public string Category { get; }
+
+        /// <summary>パネルのポップアップ表示用。分類があれば "分類/表示名"（Unity のポップアップは "/" で階層になる）。</summary>
+        public string MenuPath => string.IsNullOrEmpty(Category) ? Label : $"{Category}/{Label}";
+
+        public PrimitiveSpawnDefinition(string id, string label, Func<Vector3, MeshObject> generate,
+                                        string category = "")
         {
             if (string.IsNullOrEmpty(id))
                 throw new ArgumentException("id が空です。", nameof(id));
@@ -101,6 +172,7 @@ namespace Poly_Ling.EditorPrimitive
             Id       = id;
             Label    = string.IsNullOrEmpty(label) ? id : label;
             Generate = generate ?? throw new ArgumentNullException(nameof(generate));
+            Category = category ?? "";
         }
     }
 
@@ -216,6 +288,59 @@ namespace Poly_Ling.EditorPrimitive
                     p.Pivot = pivot;
                     return PyramidMeshGenerator.Generate(p);
                 }));
+
+            // ── 追加分 ──────────────────────────────────────────────
+            //   Default（Pivot 0）のまま生成し、PrimitiveSpawnAlign でピボットを合わせる。
+            //   理由は PrimitiveSpawnAlign のコメント。
+            const string General = "一般形状";
+            const string Gear    = "歯車";
+            const string Mech    = "機構部品";
+            const string Symbol  = "記号";
+
+            Add(PrimitiveSpawnIds.StadiumBox,  "Stadium Box",  General,
+                () => StadiumBoxMeshGenerator.Generate(StadiumBoxMeshGenerator.StadiumBoxParams.Default));
+            Add(PrimitiveSpawnIds.PipeStadium, "Pipe Stadium", General,
+                () => PipeStadiumMeshGenerator.Generate(PipeStadiumMeshGenerator.PipeStadiumParams.Default));
+            Add(PrimitiveSpawnIds.NGonStar,    "Star",         General,
+                () => NGonStarMeshGenerator.Generate(NGonStarMeshGenerator.NGonStarParams.Default));
+            Add(PrimitiveSpawnIds.RibbonBow,   "Ribbon Bow",   General,
+                () => Poly_Ling.Ribbon.RibbonBowMeshGenerator.Generate(Poly_Ling.Ribbon.RibbonBowParams.Default));
+
+            Add(PrimitiveSpawnIds.NGonGear,          "N-Gon Gear",          Gear,
+                () => NGonGearMeshGenerator.Generate(NGonGearMeshGenerator.NGonGearParams.Default));
+            Add(PrimitiveSpawnIds.InvoluteGear,      "Involute Gear",       Gear,
+                () => InvoluteTrochoidGearMeshGenerator.Generate(InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.Default));
+            Add(PrimitiveSpawnIds.HelicalGear,       "Helical Gear",        Gear,
+                () => HelicalGearMeshGenerator.Generate(HelicalGearMeshGenerator.HelicalGearParams.Default));
+            Add(PrimitiveSpawnIds.InternalGear,      "Internal Gear",       Gear,
+                () => InternalGearMeshGenerator.Generate(InternalGearMeshGenerator.InternalGearParams.Default));
+            Add(PrimitiveSpawnIds.InvoluteRack,      "Involute Rack",       Gear,
+                () => InvoluteRackMeshGenerator.Generate(InvoluteRackMeshGenerator.InvoluteRackParams.Default));
+            Add(PrimitiveSpawnIds.HelicalRack,       "Helical Rack",        Gear,
+                () => HelicalRackMeshGenerator.Generate(HelicalRackMeshGenerator.HelicalRackParams.Default));
+            Add(PrimitiveSpawnIds.StraightBevelGear, "Straight Bevel Gear", Gear,
+                () => StraightBevelGearMeshGenerator.Generate(StraightBevelGearMeshGenerator.StraightBevelGearParams.Default));
+            Add(PrimitiveSpawnIds.SpiralBevelGear,   "Spiral Bevel Gear",   Gear,
+                () => SpiralBevelGearMeshGenerator.Generate(SpiralBevelGearMeshGenerator.SpiralBevelGearParams.Default));
+            Add(PrimitiveSpawnIds.CylindricalWorm,   "Worm",                Gear,
+                () => CylindricalWormMeshGenerator.Generate(CylindricalWormMeshGenerator.CylindricalWormParams.Default));
+            Add(PrimitiveSpawnIds.WormWheel,         "Worm Wheel",          Gear,
+                () => WormWheelMeshGenerator.Generate(WormWheelMeshGenerator.WormWheelParams.Default));
+
+            Add(PrimitiveSpawnIds.Nut, "Nut", Mech,
+                () => NutMeshGenerator.Generate(NutMeshGenerator.NutParams.Default));
+
+            Add(PrimitiveSpawnIds.ZodiacSign, "Zodiac Sign", Symbol,
+                () => ZodiacSignMeshGenerator.Generate(ZodiacSignMeshGenerator.ZodiacSignParams.Default));
+            Add(PrimitiveSpawnIds.Emblem,     "Emblem",      Symbol,
+                () => EmblemMeshGenerator.Generate(EmblemMeshGenerator.EmblemParams.Default));
+        }
+
+        /// <summary>Pivot 0 で生成し AABB 基準でピボットを合わせる図形を登録する。</summary>
+        private static void Add(string id, string label, string category, Func<MeshObject> generate)
+        {
+            Register(new PrimitiveSpawnDefinition(
+                id, label, pivot => PrimitiveSpawnAlign.ToPivot(generate(), pivot), category));
         }
     }
 }

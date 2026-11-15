@@ -75,7 +75,7 @@ namespace Poly_Ling.EditorPrimitive
             }
 
             var labels = new string[defs.Count];
-            for (int i = 0; i < defs.Count; i++) labels[i] = defs[i].Label;
+            for (int i = 0; i < defs.Count; i++) labels[i] = defs[i].MenuPath;
 
             int index = PrimitiveSpawnRegistry.IndexOf(_shapeId);
             if (index < 0) index = 0;

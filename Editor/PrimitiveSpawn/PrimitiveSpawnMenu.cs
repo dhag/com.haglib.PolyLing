@@ -48,6 +48,52 @@ namespace Poly_Ling.EditorPrimitive
         [MenuItem(Root + "Pyramid",  false, Priority + 5)]
         private static void CreatePyramid(MenuCommand cmd)  => Create(PrimitiveSpawnIds.Pyramid, cmd);
 
+        // ── 追加分（分類ごとの下位メニュー） ──────────────────────────
+        //   下位メニューの並び位置は、その中で最小の priority で決まる。
+        //   6 図形（10〜15）の下、パネル（30）の上に置くため 16〜 を使う。
+        private const string General = Root + "一般形状/";
+        private const string Gear    = Root + "歯車/";
+        private const string Mech    = Root + "機構部品/";
+        private const string Symbol  = Root + "記号/";
+
+        [MenuItem(General + "Stadium Box",  false, Priority + 6)]
+        private static void CreateStadiumBox(MenuCommand cmd)  => Create(PrimitiveSpawnIds.StadiumBox, cmd);
+        [MenuItem(General + "Pipe Stadium", false, Priority + 6)]
+        private static void CreatePipeStadium(MenuCommand cmd) => Create(PrimitiveSpawnIds.PipeStadium, cmd);
+        [MenuItem(General + "Star",         false, Priority + 6)]
+        private static void CreateNGonStar(MenuCommand cmd)    => Create(PrimitiveSpawnIds.NGonStar, cmd);
+        [MenuItem(General + "Ribbon Bow",   false, Priority + 6)]
+        private static void CreateRibbonBow(MenuCommand cmd)   => Create(PrimitiveSpawnIds.RibbonBow, cmd);
+
+        [MenuItem(Gear + "N-Gon Gear",          false, Priority + 7)]
+        private static void CreateNGonGear(MenuCommand cmd)          => Create(PrimitiveSpawnIds.NGonGear, cmd);
+        [MenuItem(Gear + "Involute Gear",       false, Priority + 7)]
+        private static void CreateInvoluteGear(MenuCommand cmd)      => Create(PrimitiveSpawnIds.InvoluteGear, cmd);
+        [MenuItem(Gear + "Helical Gear",        false, Priority + 7)]
+        private static void CreateHelicalGear(MenuCommand cmd)       => Create(PrimitiveSpawnIds.HelicalGear, cmd);
+        [MenuItem(Gear + "Internal Gear",       false, Priority + 7)]
+        private static void CreateInternalGear(MenuCommand cmd)      => Create(PrimitiveSpawnIds.InternalGear, cmd);
+        [MenuItem(Gear + "Involute Rack",       false, Priority + 7)]
+        private static void CreateInvoluteRack(MenuCommand cmd)      => Create(PrimitiveSpawnIds.InvoluteRack, cmd);
+        [MenuItem(Gear + "Helical Rack",        false, Priority + 7)]
+        private static void CreateHelicalRack(MenuCommand cmd)       => Create(PrimitiveSpawnIds.HelicalRack, cmd);
+        [MenuItem(Gear + "Straight Bevel Gear", false, Priority + 7)]
+        private static void CreateStraightBevelGear(MenuCommand cmd) => Create(PrimitiveSpawnIds.StraightBevelGear, cmd);
+        [MenuItem(Gear + "Spiral Bevel Gear",   false, Priority + 7)]
+        private static void CreateSpiralBevelGear(MenuCommand cmd)   => Create(PrimitiveSpawnIds.SpiralBevelGear, cmd);
+        [MenuItem(Gear + "Worm",                false, Priority + 7)]
+        private static void CreateCylindricalWorm(MenuCommand cmd)   => Create(PrimitiveSpawnIds.CylindricalWorm, cmd);
+        [MenuItem(Gear + "Worm Wheel",          false, Priority + 7)]
+        private static void CreateWormWheel(MenuCommand cmd)         => Create(PrimitiveSpawnIds.WormWheel, cmd);
+
+        [MenuItem(Mech + "Nut", false, Priority + 8)]
+        private static void CreateNut(MenuCommand cmd) => Create(PrimitiveSpawnIds.Nut, cmd);
+
+        [MenuItem(Symbol + "Zodiac Sign", false, Priority + 9)]
+        private static void CreateZodiacSign(MenuCommand cmd) => Create(PrimitiveSpawnIds.ZodiacSign, cmd);
+        [MenuItem(Symbol + "Emblem",      false, Priority + 9)]
+        private static void CreateEmblem(MenuCommand cmd)     => Create(PrimitiveSpawnIds.Emblem, cmd);
+
         // ============================================================
         // パラメータ指定パネル
         // ============================================================
